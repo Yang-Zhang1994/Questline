@@ -93,8 +93,9 @@ questline/
 | `user_progress` | id, xp, level, current_streak, best_streak, last_active_date |
 | `stamps` | id, card_number, stamp_date |
 | `chat_messages` | id, goal_id (nullable), role (`user` / `mochi`), content, created_at |
+| `diary_notes` | id, goal_id → goals, note_date, content, updated_at (one per goal per day; #19) |
 
-Relationships: a Goal has many Milestones; a Milestone has many Quests. Dates are stored as ISO strings
+Relationships: a Goal has many Milestones; a Milestone has many Quests. A user can have several Goals; one is the active Goal (`goals.status = 'active'`, #18). Dates are stored as ISO strings
 (`YYYY-MM-DD` for calendar dates, full ISO for timestamps). Schema changes require a new migration file.
 Never edit an applied migration.
 
@@ -156,6 +157,7 @@ CI fails on lint errors, type errors, or failing tests.
 | US3 — Daily quests | #7, #8, #9 |
 | US4 — XP, levels, streak, stamps | #11, #12, #13 |
 | US5 — Reschedule and week planning | #14, #15 |
+| Prototype extras | #18, #19, #20, #21 |
 | Foundation / docs | #1, #16, #17 |
 
 ### 2.2 Mockup / prototype
@@ -194,9 +196,10 @@ CI fails on lint errors, type errors, or failing tests.
 - A **"Too much?" reshuffle** button asks Mochi to reschedule (#14); "♡ Plan my next days" when the stage
   has no quests (#15).
 - Empty states: nothing due today → head-start offer; all done → "Rest up"; no goal yet → "♡ Plan a quest with Mochi".
-- **Stamp grid** of the last 28 days: each active day gets a stamp, today is outlined, with an
-  "N active days" count (#13).
-- **"Diary note for today"** text area.
+- **Stamp card** (#13): each active day earns one stamp; today's slot is outlined. **Follow Issue #13, not
+  the prototype's 28-day grid:** the card has a fixed number of slots (`STAMPS_PER_CARD` in `config/game.ts`);
+  a full card shows a reward message from Mochi and starts a new card. Past cards are kept.
+- **"Diary note for today"** text area (#19).
 
 **View 2 — Map**
 - Illustrated SVG meadow: a winding road from a **Start house** through one node per milestone to the
@@ -223,12 +226,18 @@ CI fails on lint errors, type errors, or failing tests.
 - Friendly AI error messages, e.g., "Mochi needs a short break. Try again in a minute." and
   "The plan came out smudged. Tap the button to try again."
 
-**Terminology note.** In the prototype's UI copy, a "quest" is the whole goal and "tasks" are the daily
-items. In the PRD, the Issues, and this codebase, **Goal** = the whole goal and **Quest** = a daily task.
-Use the PRD/Issue terms in code; UI copy may follow the prototype.
+**Terminology rule — use the PRD terms everywhere (code, API, DB, and UI copy).**
+The prototype uses "quest" for the whole goal and "task" for daily items. Do **not** copy that.
+- **Goal** = the whole thing the user is working toward (e.g., "Read a Japanese novel on my own within one year").
+- **Milestone** (UI may say "stage") = one step on the roadmap.
+- **Quest** = a small daily task.
+Rename prototype copy when rebuilding it, for example: "＋ New quest" → "＋ New goal", "★ Start this quest" →
+"★ Start this goal", "Current quest" → "Current goal", "Delete quest" → "Delete goal", "New task" → "New quest",
+"No tasks here yet." → "No quests here yet." 
 
-**Prototype features not yet covered by an Issue** (do not build without a new Issue): multiple goals at
-once (goal selector), the daily diary note, manual task add/delete, and the manual plan form.
+**Prototype features tracked by Sprint 2 Issues** (build only when their Issue is in progress):
+multiple goals with a goal selector (#18), the daily diary note (#19), manual quest add/delete (#20), and the
+manual plan form (#21).
 
 When implementing UI, match the prototype first. If it doesn't cover a state (empty, loading, error),
 follow the tone in §2.3 and note the gap in the PR.
@@ -245,7 +254,7 @@ follow the tone in §2.3 and note the gap in the PR.
 | `DailyNote` / `QuestItem` | On app open, Mochi greets with only today's quests; short list; friendly rest-day message if none; check off and undo; done items look checked and faded | #8, #9 |
 | `XpBar` / `LevelUpToast` | XP added on completion, removed on undo; level + progress bar visible; short celebration on level-up | #11 |
 | `StreakCounter` | Current and best streak; +1 per day with ≥1 completed quest; resets after a full missed day; uses the user's local date | #12 |
-| `StampCard` | One stamp per active day; stamped vs empty slots; full card → reward message and new card | #13 |
+| `StampCard` | One stamp per active day; fixed number of slots; stamped vs empty slots; full card → reward message from Mochi and a new card; past cards kept | #13 |
 | `ReschedulePreview` | Overdue quests flagged; Mochi proposes new dates within time budget and milestone dates; preview → confirm; encouraging wording | #14 |
 | `WeekPlanPreview` | Next 7 days grouped by day; no duplicates of existing quests; accept or request changes | #15 |
 
