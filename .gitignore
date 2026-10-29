@@ -3,10 +3,12 @@ dist/
 build/
 coverage/
 *.sqlite
+server/data/
 .env
 .env.local
 .DS_Store
 *.log
 .vite/
+*.tsbuildinfo
 playwright-report/
 test-results/
