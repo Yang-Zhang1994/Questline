@@ -63,7 +63,7 @@ questline/
 
 ### 1.4 Data model
 
-See `docs/data-model.md` and Issue #17. Goal → Milestones → Quests; one active goal; calendar dates `YYYY-MM-DD`; timestamps ISO; DB columns `snake_case` (`completed_at`, not a separate boolean + camelCase twin). New migration per schema change — never edit an applied migration.
+See Issue #17 and `docs/data-model.md` when present. Goal → Milestones → Quests; one active goal; calendar dates `YYYY-MM-DD`; timestamps ISO; DB columns `snake_case` (`completed_at`, not a separate boolean + camelCase twin). New migration per schema change — never edit an applied migration.
 
 ### 1.5 Naming conventions and coding standards
 
@@ -114,7 +114,7 @@ Test behavior (role/label/text/`data-*` state), not CSS class names. **Never cal
 
 **Look:** cozy sky-and-meadow diary — light sky page, soft clouds/sparkles, rounded window cards (e.g. “✉ A note from Mochi”), glossy gel pills, Mochi avatar, bottom dock Today / Map / Talk. Tokens and walkthrough: `docs/design/README.md`; screenshots `today.png`, `map.png`, `talk.png`.
 
-1. Open **`docs/design/README.md`** and the matching screenshot (`today.png` / `map.png` / `talk.png`).
+1. Open the matching screenshot in `docs/design/` (`today.png` / `map.png` / `talk.png`) and `docs/design/README.md` when present.
 2. Copy color/font tokens into `client/src/styles/tokens.css` — do **not** invent an alternate “cozy” palette (green/cream paper, purple gradients, etc.).
 3. Rebuild as React + CSS Modules; do not copy the prototype’s single-file HTML, browser storage, or in-browser Claude calls.
 4. Use PRD terms (**Goal / Milestone / Quest**), not prototype “quest”/“task” wording for goals.
