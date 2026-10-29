@@ -1,0 +1,25 @@
+:root {
+  --page: #e8f4ff;
+  --sky-top: #38acf0;
+  --pink: #ff6fb1;
+  --pink-ink: #d23a82;
+  --pink-pale: #fff0f7;
+  --blue-ink: #1c7fc8;
+  --blue-pale: #f0f9ff;
+  --purple-pale: #f7f2ff;
+  --ink: #3d3570;
+  --ink-soft: #776ca8;
+  --panel: #ffffff;
+  --meadow: #cbf0b6;
+  --road: #fff8e6;
+  --walked: #ffd0e6;
+  --tree: #8cd96a;
+
+  --font-display: 'Mochiy Pop One', 'M PLUS Rounded 1c', 'Nunito', system-ui, sans-serif;
+  --font-body: 'M PLUS Rounded 1c', 'Nunito', Tahoma, Verdana, system-ui, sans-serif;
+  --font-ui: Tahoma, Verdana, system-ui, sans-serif;
+
+  --radius-window: 18px;
+  --radius-pill: 999px;
+  --shadow-window: 0 10px 0 rgba(61, 53, 112, 0.08), 0 18px 40px rgba(28, 127, 200, 0.18);
+}

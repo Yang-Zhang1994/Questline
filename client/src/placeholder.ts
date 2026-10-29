@@ -1,2 +1,2 @@
-/** Client scaffold placeholder until React + Vite app lands (Issue #1). */
-export const CLIENT_READY = false;
+/** Retained so older imports do not break; client entry is `main.tsx`. */
+export const CLIENT_READY = true;
