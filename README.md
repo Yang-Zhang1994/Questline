@@ -21,6 +21,18 @@ npm run format:check
 
 Full app (Vite client + Express server) lands with Issue #1 and follow-on feature Issues.
 
+### One-shot GitHub scrum (owner only)
+
+Cloud Agents authenticate as `cursor[bot]` (GitHub App) and **cannot** create the Project board, patch milestones, or reassign issues. As **Yang-Zhang1994** on your laptop:
+
+```bash
+gh auth login
+gh auth refresh -s repo,project,read:project
+bash docs/scripts/github-scrum-setup.sh
+```
+
+Never paste a personal access token into chat or the repo.
+
 ## Mockup
 
 https://claude.ai/artifact/EfxDnxdfnW3kGMqZzHoY6y
