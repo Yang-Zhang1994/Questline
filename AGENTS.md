@@ -3,6 +3,8 @@
 Instructions for AI coding agents working in this repo. Read fully before writing code.
 When this file and a GitHub Issue disagree, the Issue's acceptance criteria win; flag conflicts in the PR.
 
+**Source of truth with `docs/PRD.md` Decisions (2026-10-29):** Vite + Express + SQLite; vocabulary Goal → Milestone → Quest. Refined after Issue #9 rules A/B. Do not invent persistence, palette, folder layout, or Next/Supabase stacks that contradict this file.
+
 ---
 
 ## 1. Project Context
@@ -26,7 +28,7 @@ Pin exact versions in `package.json` and commit the lockfile. Do not upgrade maj
 | Frontend             | React + Vite                       | React 19.x, Vite 6.x |
 | Routing              | React Router                       | 7.x                  |
 | Backend              | Express                            | 5.x                  |
-| Database             | SQLite via `better-sqlite3`        | latest stable 11.x+  |
+| Database             | SQLite via `better-sqlite3`        | 11.x+ (13.x OK on Node 22) |
 | Validation           | `zod` (shared client/server)       | 3.x                  |
 | AI                   | Claude API via `@anthropic-ai/sdk` | latest stable        |
 | Unit/component tests | Vitest + React Testing Library     | Vitest 3.x           |
@@ -52,29 +54,32 @@ questline/
 **Key patterns**
 
 - **Layering:** `routes → services → repositories`. Routes never touch the DB; services never read `req`/`res`.
+- **Persistence:** SQLite + SQL migrations under `server/src/db/migrations/` only. **Never** JSON files, `localStorage`, or ad-hoc file stores for goals/milestones/quests/progress.
 - **Single AI gateway:** every Claude call goes through `server/src/ai/client.ts` only.
 - **Confirm-before-save:** Mochi proposals (goal, milestones, reschedule, week plan) are drafts until the user confirms.
-- **Shared schemas:** request/response shapes in `shared/schemas` as zod; types via `z.infer`.
+- **Shared schemas:** request/response shapes in `shared/schemas` as zod; types via `z.infer`. Hand-written duplicate interfaces are not a substitute.
 - **Server owns the API key:** the browser never calls Claude.
+- **Toggles:** prefer one `PATCH` with a boolean body (e.g. quest completion) over paired `/complete` + `/uncomplete` routes.
 
 ### 1.4 Data model
 
-See `docs/data-model.md` and Issue #17. Goal → Milestones → Quests; one active goal; ISO dates; new migration per schema change.
+See `docs/data-model.md` and Issue #17. Goal → Milestones → Quests; one active goal; calendar dates `YYYY-MM-DD`; timestamps ISO; DB columns `snake_case` (`completed_at`, not a separate boolean + camelCase twin). New migration per schema change — never edit an applied migration.
 
 ### 1.5 Naming conventions and coding standards
 
 | Thing               | Convention                                                          | Example                                |
 | ------------------- | ------------------------------------------------------------------- | -------------------------------------- |
-| React components    | PascalCase, one per file                                            | `MilestoneNode.tsx`                    |
+| React components    | PascalCase; folder `components/Name/Name.tsx` + `Name.module.css`   | `QuestItem/QuestItem.tsx`              |
+| Pages               | Under `client/src/pages/`                                           | `TodayPage.tsx`                        |
 | Hooks               | camelCase, `use` prefix                                             | `useDailyQuests.ts`                    |
 | Other TS files      | camelCase                                                           | `scheduleService.ts`                   |
 | Variables/functions | camelCase; verbs for functions                                      | `awardXp()`                            |
 | Constants           | UPPER_SNAKE_CASE                                                    | `XP_PER_QUEST`                         |
 | Types / zod         | PascalCase; schemas end in `Schema`                                 | `Quest`, `QuestSchema`                 |
 | DB / API / CSS      | snake_case tables; kebab-case `/api` routes; CSS Modules kebab-case | `quests.due_date`, `/api/quests/today` |
-| Tests               | `*.test.ts(x)` next to source or in `tests/`                        | `awardXp.test.ts`                      |
+| Tests               | `*.test.ts(x)` next to source                                       | `QuestItem.test.tsx`                   |
 
-**Coding standards:** TypeScript `strict`; no `any` (use `unknown`); functional React only; components under ~200 lines; validate bodies with zod at the route boundary; typed service errors → one Express error middleware `{ error: { code, message } }`; game config in `server/src/config/game.ts`; no commented-out code; `// TODO(#issue): ...` for follow-ups.
+**Coding standards:** TypeScript `strict`; no `any` (use `unknown`); functional React only; components under ~200 lines; validate bodies with zod at the route boundary; typed service errors → one Express error middleware `{ error: { code, message } }` (never a bare `{ error: string }`); game config in `server/src/config/game.ts`; no commented-out code; `// TODO(#issue): ...` for follow-ups.
 
 ### 1.6 Testing strategy
 
@@ -85,7 +90,7 @@ See `docs/data-model.md` and Issue #17. Goal → Milestones → Quests; one acti
 | API       | Supertest + in-memory SQLite | Success, validation, not found                  |
 | E2E       | Playwright                   | Onboarding, daily quests, reschedule (§2.4)     |
 
-Test behavior (role/label/text), not CSS classes. **Never call the real Claude API** — mock `server/src/ai/client.ts` with fixtures (include malformed JSON). Date logic uses an injectable clock. Map each Issue's AC to ≥1 test. Coverage: ≥80% `server/src/services` + `server/src/ai/parse.ts`; ≥70% overall. CI fails on lint, type errors, or failing tests.
+Test behavior (role/label/text/`data-*` state), not CSS class names. **Never call the real Claude API** — mock `server/src/ai/client.ts` with fixtures (include malformed JSON). Date logic uses an injectable clock (`server/src/clock.ts`). Map each Issue AC to ≥1 test. **If the Issue has interactive UI AC, include ≥1 RTL test** — API/store tests alone are not enough. Coverage: ≥80% `server/src/services` + `server/src/ai/parse.ts`; ≥70% overall. CI fails on lint, type errors, or failing tests.
 
 ---
 
@@ -105,9 +110,14 @@ Test behavior (role/label/text), not CSS classes. **Never call the real Claude A
 | Prototype extras                   | #18, #19, #20, #21 |
 | Foundation / docs                  | #1, #16, #17       |
 
-### 2.2 Mockup / prototype
+### 2.2 Mockup / prototype (read before any UI)
 
-Prototype: https://claude.ai/artifact/EfxDnxdfnW3kGMqZzHoY6y — full visual walkthrough, tokens, terminology, and view notes live in **`docs/design/README.md`**. Screenshots: `docs/design/`. Match the prototype; use PRD terms (Goal / Milestone / Quest), not prototype "quest"/"task" wording.
+1. Open **`docs/design/README.md`** and the matching screenshot (`today.png` / `map.png` / `talk.png`).
+2. Copy color/font tokens into `client/src/styles/tokens.css` — do **not** invent an alternate “cozy” palette (green/cream paper, purple gradients, etc.).
+3. Rebuild as React + CSS Modules; do not copy the prototype’s single-file HTML, browser storage, or in-browser Claude calls.
+4. Use PRD terms (**Goal / Milestone / Quest**), not prototype “quest”/“task” wording for goals.
+
+Prototype: https://claude.ai/artifact/EfxDnxdfnW3kGMqZzHoY6y
 
 ### 2.3 Key UI components and expected behavior
 
@@ -118,7 +128,7 @@ Prototype: https://claude.ai/artifact/EfxDnxdfnW3kGMqZzHoY6y — full visual wal
 | `GoalConfirmCard`                       | Proposed goal + deadline; Accept / revise; save only on Accept                           | #4       |
 | `MilestonePlanEditor`                   | 3–7 milestones; edit via Mochi; save only on confirm                                     | #5       |
 | `RoadmapView` / `MilestoneNode`         | Start → stages → goal; current highlighted; title + date                                 | #6, #10  |
-| `DailyNote` / `QuestItem`               | Today's quests or rest-day; check/undo; done faded                                       | #8, #9   |
+| `DailyNote` / `QuestItem`               | Window card “A note from Mochi”; today’s quests or rest-day; check/undo; done faded      | #8, #9   |
 | `XpBar` / `LevelUpToast`                | XP on complete/undo; level bar; short celebration                                        | #11      |
 | `StreakCounter`                         | Current/best; +1 per active day; reset after miss; local date                            | #12      |
 | `StampCard`                             | One stamp/active day; fixed slots; full card → reward + new card                         | #13      |
@@ -138,7 +148,7 @@ Prototype: https://claude.ai/artifact/EfxDnxdfnW3kGMqZzHoY6y — full visual wal
 
 ### 3.1 Board
 
-GitHub Project **Questline Sprint Board** columns: `Backlog → Sprint Todo → In Progress → In Review → Done`.
+GitHub Project **[Questline Sprint Board](https://github.com/users/Yang-Zhang1994/projects/1)** columns: `Backlog → Sprint Todo → In Progress → In Review → Done`.
 Move to **In Progress** on branch create, **In Review** on PR open, **Done** on merge. Work current-sprint Issues only unless told otherwise.
 
 ### 3.2 Branch naming
@@ -175,6 +185,7 @@ Commits end with `(#N)`. PRs: `Closes #N` / `Refs #N`. Code: `// TODO(#N): ...` 
 ### 4.1 Patterns to follow
 
 - Implement all Issue AC (or list leftovers in the PR).
+- Before UI: screenshot + `tokens.css` (§2.2); before schema: `docs/data-model.md`.
 - Prompts in `server/src/ai/prompts/` (one file per task); ask for JSON only; parse → zod; retry once; then friendly error.
 - Send full relevant history + goal/milestone state with each AI call.
 - Drafts until user confirms; loading/empty/error for every async UI.
@@ -183,9 +194,11 @@ Commits end with `(#N)`. PRs: `Closes #N` / `Refs #N`. Code: `// TODO(#N): ...` 
 ### 4.2 Patterns to avoid
 
 - Claude from the browser / exposing `ANTHROPIC_API_KEY`.
+- JSON/`localStorage` persistence for domain data; inventing palettes instead of design tokens.
 - Saving unvalidated AI output; multi-question interview turns; guilt copy.
 - String-concatenated SQL; business logic in React or route handlers.
 - Magic game numbers (use `config/game.ts`); server-time `Date` for streaks/"today".
+- Flat `client/src/Foo.tsx` without CSS Modules when building UI from mockups.
 - New deps without PR mention; multi-Issue mega-PRs.
 
 ### 4.3 Dependencies
@@ -205,4 +218,11 @@ WCAG 2.1 AA. Keyboard-reachable controls with visible focus. Chat `aria-live="po
 
 ## 5. Definition of Done
 
-AC met (or split out); tests pass in CI; lint + types clean; UI matches mockup + §4.5; reviewed, squash-merged with `Closes #N`; README/`docs/` updated when setup, env, or data model changes.
+AC met (or split out); tests pass in CI (including RTL when UI AC exist); lint + types clean; UI matches mockup tokens + §4.5; reviewed, squash-merged with `Closes #N`; README/`docs/` updated when setup, env, or data model changes.
+
+### Sprint 2 watch-outs (additions from #9 A/B)
+
+- Wire check-off to XP / streak / stamps (#11–#13) in one transaction; undo must reverse rewards.
+- Reschedule + week plan (#14–#15): preview → confirm only; never auto-write.
+- Multi-goal selector (#18): still one **active** goal for Today/Map.
+- Prefer Playwright for flows B/C once Map + Talk exist; keep Claude mocked.
