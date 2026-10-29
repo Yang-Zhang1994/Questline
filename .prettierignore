@@ -1,0 +1,12 @@
+node_modules
+dist
+build
+coverage
+*.sqlite
+package-lock.json
+.git
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
