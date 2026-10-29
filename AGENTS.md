@@ -112,6 +112,8 @@ Test behavior (role/label/text/`data-*` state), not CSS class names. **Never cal
 
 ### 2.2 Mockup / prototype (read before any UI)
 
+**Look:** cozy sky-and-meadow diary — light sky page, soft clouds/sparkles, rounded window cards (e.g. “✉ A note from Mochi”), glossy gel pills, Mochi avatar, bottom dock Today / Map / Talk. Tokens and walkthrough: `docs/design/README.md`; screenshots `today.png`, `map.png`, `talk.png`.
+
 1. Open **`docs/design/README.md`** and the matching screenshot (`today.png` / `map.png` / `talk.png`).
 2. Copy color/font tokens into `client/src/styles/tokens.css` — do **not** invent an alternate “cozy” palette (green/cream paper, purple gradients, etc.).
 3. Rebuild as React + CSS Modules; do not copy the prototype’s single-file HTML, browser storage, or in-browser Claude calls.
