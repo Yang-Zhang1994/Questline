@@ -7,11 +7,15 @@
 #   Cursor Cloud Agents authenticate to GitHub as the GitHub App identity
 #   `cursor[bot]` with an installation token (`ghs_…`). That is NOT Yang's
 #   personal login. Installation tokens have no classic OAuth scopes
-#   (`X-OAuth-Scopes` is empty) and this install lacks issues/projects write,
-#   so project create / milestone PATCH / assignee edit all return 403
-#   ("Resource not accessible by integration" / "does not have permission to
-#   create projects"). Interactive `gh auth login` is not available on the
-#   agent VM and must not be used to paste a PAT into chat.
+#   (`X-OAuth-Scopes` is empty). Retried after a claimed Issues+Projects
+#   permission bump: milestone PATCH + assignee edit still 403
+#   ("Resource not accessible by integration") — the live install still
+#   lacks issues:write (or the run's token was minted before the grant).
+#   Separately, GitHub Apps CANNOT create/manage user-owned Projects v2 at
+#   all (no account-level Projects permission exists for Apps); createProjectV2
+#   on Yang's user id stays FORBIDDEN even with org-style Projects write.
+#   Interactive `gh auth login` is not available on the agent VM — do not
+#   paste a PAT into chat. Run this script locally as Yang instead.
 #
 # RUN LOCALLY (as Yang-Zhang1994 or a repo admin) — never paste a PAT here:
 #   gh auth login          # HTTPS, login as Yang-Zhang1994
