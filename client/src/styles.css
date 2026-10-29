@@ -1,0 +1,168 @@
+:root {
+  --ink: #1c2a24;
+  --ink-soft: #4a5c53;
+  --paper: #f3efe6;
+  --paper-deep: #e7e0d2;
+  --leaf: #2f6b4f;
+  --leaf-deep: #1f4a37;
+  --fade: 0.45;
+  --line: rgba(28, 42, 36, 0.12);
+  --shadow: 0 18px 40px rgba(28, 42, 36, 0.12);
+  font-family: 'Segoe UI', 'Avenir Next', 'Trebuchet MS', sans-serif;
+  color: var(--ink);
+  background: var(--paper);
+  line-height: 1.45;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+.app-shell {
+  position: relative;
+  min-height: 100vh;
+  padding: 1.25rem 1.25rem 3rem;
+}
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse at 20% 0%, #d9eadf 0%, transparent 55%),
+    radial-gradient(ellipse at 90% 20%, #f0e2c8 0%, transparent 45%),
+    linear-gradient(180deg, #efe9dc 0%, #e4ddd0 100%);
+}
+
+.topbar {
+  max-width: 40rem;
+  margin: 0 auto 1.5rem;
+}
+
+.brand {
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--leaf-deep);
+}
+
+.daily-note {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 1.75rem 1.5rem 1.5rem;
+  background: color-mix(in srgb, white 72%, var(--paper));
+  border: 1px solid var(--line);
+  border-radius: 1.1rem;
+  box-shadow: var(--shadow);
+}
+
+.daily-header h1 {
+  margin: 0.15rem 0 0.5rem;
+  font-size: clamp(1.6rem, 4vw, 2.1rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--leaf);
+}
+
+.lede {
+  margin: 0;
+  color: var(--ink-soft);
+  max-width: 34rem;
+}
+
+.quest-list {
+  list-style: none;
+  margin: 1.5rem 0 1rem;
+  padding: 0;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.quest-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  background: color-mix(in srgb, white 55%, var(--paper-deep));
+  transition:
+    opacity 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease;
+}
+
+.quest-item.is-done {
+  opacity: var(--fade);
+  background: color-mix(in srgb, white 35%, var(--paper-deep));
+  border-color: transparent;
+}
+
+.quest-label {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.quest-label input {
+  width: 1.15rem;
+  height: 1.15rem;
+  accent-color: var(--leaf);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.quest-title {
+  font-size: 1.02rem;
+}
+
+.quest-item.is-done .quest-title {
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+}
+
+.quest-time {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+
+.progress {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.muted {
+  color: var(--ink-soft);
+}
+
+.error {
+  margin: 1rem 0 0;
+  padding: 0.65rem 0.8rem;
+  border-radius: 0.6rem;
+  background: #f8e4e0;
+  color: #7a2e22;
+}
+
+@media (max-width: 520px) {
+  .quest-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
