@@ -13,6 +13,12 @@
     "shared"
   ],
   "scripts": {
+    "dev": "npm run dev -w @questline/server & npm run dev -w @questline/client",
+    "dev:client": "npm run dev -w @questline/client",
+    "dev:server": "npm run dev -w @questline/server",
+    "start": "npm run start -w @questline/server",
+    "test": "npm run test -w @questline/server && npm run test -w @questline/client",
+    "typecheck": "npm run typecheck -w @questline/server && npm run typecheck -w @questline/client",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

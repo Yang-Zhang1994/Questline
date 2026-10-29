@@ -1,0 +1,130 @@
+.window {
+  width: min(640px, 100%);
+  border-radius: var(--radius-window);
+  overflow: hidden;
+  box-shadow: var(--shadow-window);
+  border: 3px solid var(--pink);
+  background: var(--pink-pale);
+  animation: rise-in 420ms ease both;
+}
+
+.titleBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem 1rem;
+  background: linear-gradient(180deg, #ff8fc4 0%, var(--pink) 100%);
+  color: white;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  letter-spacing: 0.01em;
+}
+
+.titleBarText {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.hearts {
+  display: inline-flex;
+  gap: 0.25rem;
+  opacity: 0.9;
+  font-size: 0.85rem;
+}
+
+.body {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1rem;
+  padding: 1.1rem 1.15rem 1.25rem;
+  background-image: repeating-linear-gradient(
+    transparent,
+    transparent 27px,
+    rgba(255, 111, 177, 0.18) 28px
+  );
+}
+
+.polaroid {
+  width: 96px;
+  padding: 0.45rem 0.45rem 1.1rem;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 0 rgba(61, 53, 112, 0.08);
+  transform: rotate(-3deg);
+  align-self: start;
+}
+
+.polaroid svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.content {
+  min-width: 0;
+}
+
+.greeting {
+  margin: 0 0 0.75rem;
+  color: var(--blue-ink);
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.stage {
+  margin: 0 0 0.85rem;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+}
+
+.progress {
+  margin: 0 0 0.75rem;
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+  color: var(--pink-ink);
+  font-weight: 700;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.empty {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.error {
+  margin: 0.5rem 0 0;
+  color: #b00040;
+  font-size: 0.9rem;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 560px) {
+  .body {
+    grid-template-columns: 1fr;
+  }
+
+  .polaroid {
+    justify-self: center;
+    transform: rotate(-1deg);
+  }
+}

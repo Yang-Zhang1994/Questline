@@ -1,2 +1,2 @@
-/** Server scaffold placeholder until Express app lands (Issue #1). */
-export const SERVER_READY = false;
+/** Retained so older imports do not break; server entry is `index.ts`. */
+export const SERVER_READY = true;

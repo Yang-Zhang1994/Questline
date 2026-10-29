@@ -1,0 +1,50 @@
+.item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(255, 111, 177, 0.28);
+  transition:
+    opacity 160ms ease,
+    background-color 160ms ease;
+}
+
+.itemDone {
+  opacity: 0.55;
+  background: rgba(255, 240, 247, 0.55);
+}
+
+.checkbox {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 0.15rem;
+  accent-color: var(--pink-ink);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  cursor: pointer;
+  color: var(--ink);
+  line-height: 1.35;
+}
+
+.title {
+  font-weight: 700;
+}
+
+.titleDone {
+  text-decoration: line-through;
+  color: var(--ink-soft);
+}
+
+.meta {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  font-family: var(--font-ui);
+}
