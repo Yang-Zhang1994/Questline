@@ -23,6 +23,7 @@ import { createMilestonePlanService } from './services/milestonePlanService.js';
 import { createQuestPlanService } from './services/questPlanService.js';
 import { createQuestService } from './services/questService.js';
 import { createRescheduleService } from './services/rescheduleService.js';
+import { createWeekPlanService } from './services/weekPlanService.js';
 
 export type CreateAppOptions = {
   db: Db;
@@ -80,12 +81,21 @@ export function createApp(options: CreateAppOptions) {
           cached ??= createClaudeClient();
           return cached.reviseReschedule(input);
         },
+        async proposeWeekPlan(input) {
+          cached ??= createClaudeClient();
+          return cached.proposeWeekPlan(input);
+        },
+        async reviseWeekPlan(input) {
+          cached ??= createClaudeClient();
+          return cached.reviseWeekPlan(input);
+        },
       };
     })();
   const chatService = createChatService({ chat, interviews, ai, clock });
   const milestonePlanService = createMilestonePlanService({ milestones, ai, clock });
   const questPlanService = createQuestPlanService({ quests, ai, clock });
   const rescheduleService = createRescheduleService({ quests, ai, clock });
+  const weekPlanService = createWeekPlanService({ quests, ai, clock });
 
   const app = express();
   // express-rate-limit needs a stable IP behind proxies / Vitest.
@@ -99,7 +109,10 @@ export function createApp(options: CreateAppOptions) {
   });
 
   app.use('/api/auth', createAuthRouter(authService));
-  app.use('/api/quests', createQuestsRouter(questService, questPlanService, rescheduleService));
+  app.use(
+    '/api/quests',
+    createQuestsRouter(questService, questPlanService, rescheduleService, weekPlanService),
+  );
   app.use('/api/chat', createChatRouter(chatService));
   app.use('/api/milestones', createMilestonesRouter(milestonePlanService));
 

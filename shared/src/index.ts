@@ -69,6 +69,19 @@ export {
 } from './schemas/reschedule.js';
 
 export {
+  ConfirmWeekPlanBodySchema,
+  ConfirmWeekPlanResponseSchema,
+  ReviseWeekPlanBodySchema,
+  WeekPlanDraftSchema,
+  WeekPlanResponseSchema,
+  type ConfirmWeekPlanBody,
+  type ConfirmWeekPlanResponse,
+  type ReviseWeekPlanBody,
+  type WeekPlanDraft,
+  type WeekPlanResponse,
+} from './schemas/weekPlan.js';
+
+export {
   ChatHistoryResponseSchema,
   ChatMessageSchema,
   ChatRoleSchema,

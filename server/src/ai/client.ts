@@ -4,6 +4,7 @@ import type {
   MilestonePlanDraft,
   QuestPlanDraft,
   RescheduleDraft,
+  WeekPlanDraft,
 } from '@questline/shared';
 import {
   INTERVIEW_COMPLETE_STUB,
@@ -30,6 +31,11 @@ import {
   normalizeRescheduleDraft,
 } from './prompts/mochiReschedule.js';
 import {
+  MOCHI_WEEK_PLAN_SYSTEM_PROMPT,
+  buildEchoWeekPlan,
+  normalizeWeekPlan,
+} from './prompts/mochiWeekPlan.js';
+import {
   type InterviewAiRequest,
   type InterviewAiResponse,
   InterviewAiResponseSchema,
@@ -49,6 +55,11 @@ import {
   type ProposeRescheduleRequest,
   type ReviseRescheduleRequest,
 } from './rescheduleTypes.js';
+import {
+  WeekPlanDraftSchema,
+  type ProposeWeekPlanRequest,
+  type ReviseWeekPlanRequest,
+} from './weekPlanTypes.js';
 import { ensureNoQuestion, ensureOneQuestion, parseModelJson } from './parse.js';
 
 /** Roles Anthropic Messages API understands for conversation turns. */
@@ -72,6 +83,8 @@ export type ChatAiClient = {
   reviseQuestPlan(input: ReviseQuestPlanRequest): Promise<QuestPlanDraft>;
   proposeReschedule(input: ProposeRescheduleRequest): Promise<RescheduleDraft>;
   reviseReschedule(input: ReviseRescheduleRequest): Promise<RescheduleDraft>;
+  proposeWeekPlan(input: ProposeWeekPlanRequest): Promise<WeekPlanDraft>;
+  reviseWeekPlan(input: ReviseWeekPlanRequest): Promise<WeekPlanDraft>;
 };
 
 export type CreateClaudeClientOptions = {
@@ -228,6 +241,25 @@ export function createEchoChatClient(): ChatAiClient {
         input.feedback,
       );
     },
+
+    async proposeWeekPlan(input: ProposeWeekPlanRequest): Promise<WeekPlanDraft> {
+      return buildEchoWeekPlan(
+        input.goal,
+        input.milestone,
+        input.existingQuests,
+        input.today,
+      );
+    },
+
+    async reviseWeekPlan(input: ReviseWeekPlanRequest): Promise<WeekPlanDraft> {
+      return buildEchoWeekPlan(
+        input.goal,
+        input.milestone,
+        input.existingQuests,
+        input.today,
+        input.feedback,
+      );
+    },
   };
 }
 
@@ -332,6 +364,31 @@ export function createClaudeClient(options: CreateClaudeClientOptions = {}): Cha
         },
       ]);
       parsed = parseModelJson(retry, RescheduleDraftSchema);
+    }
+    return parsed;
+  }
+
+  async function weekPlanOnce(
+    userContent: string,
+    history: ClaudeChatTurn[] = [],
+  ): Promise<WeekPlanDraft | null> {
+    const messages: ClaudeChatTurn[] = [
+      ...history,
+      { role: 'user', content: userContent },
+    ];
+    const first = await completeOnce(MOCHI_WEEK_PLAN_SYSTEM_PROMPT, messages);
+    let parsed = parseModelJson(first, WeekPlanDraftSchema);
+    if (!parsed) {
+      const retry = await completeOnce(MOCHI_WEEK_PLAN_SYSTEM_PROMPT, [
+        ...messages,
+        { role: 'assistant', content: first },
+        {
+          role: 'user',
+          content:
+            'Your previous reply was not valid JSON matching the schema. Reply again with ONLY the JSON object.',
+        },
+      ]);
+      parsed = parseModelJson(retry, WeekPlanDraftSchema);
     }
     return parsed;
   }
@@ -514,6 +571,68 @@ export function createClaudeClient(options: CreateClaudeClientOptions = {}): Cha
         input.today,
       );
     },
+
+    async proposeWeekPlan(input: ProposeWeekPlanRequest): Promise<WeekPlanDraft> {
+      const payload = JSON.stringify(
+        {
+          goal: input.goal,
+          milestone: input.milestone,
+          existing_quests: input.existingQuests,
+          daily_time_budget_minutes: input.goal.time_budget_minutes_per_day,
+          today: input.today,
+          week_start: input.weekStart,
+          week_end: input.weekEnd,
+        },
+        null,
+        2,
+      );
+      const parsed = await weekPlanOnce(
+        `Propose NEW quests for the next 7 days of this current milestone. Avoid duplicates and stay in budget. Reply with JSON only.\n${payload}`,
+        input.history,
+      );
+      if (!parsed) {
+        throw new Error('Claude week plan failed schema validation');
+      }
+      return normalizeWeekPlan(
+        parsed,
+        input.goal,
+        input.milestone,
+        input.existingQuests,
+        input.today,
+      );
+    },
+
+    async reviseWeekPlan(input: ReviseWeekPlanRequest): Promise<WeekPlanDraft> {
+      const payload = JSON.stringify(
+        {
+          goal: input.goal,
+          milestone: input.milestone,
+          existing_quests: input.existingQuests,
+          previous_draft: input.previous,
+          feedback: input.feedback ?? null,
+          daily_time_budget_minutes: input.goal.time_budget_minutes_per_day,
+          today: input.today,
+          week_start: input.weekStart,
+          week_end: input.weekEnd,
+        },
+        null,
+        2,
+      );
+      const parsed = await weekPlanOnce(
+        `Revise this week plan draft using the feedback. Reply with JSON only.\n${payload}`,
+        input.history,
+      );
+      if (!parsed) {
+        throw new Error('Claude week plan revise failed schema validation');
+      }
+      return normalizeWeekPlan(
+        parsed,
+        input.goal,
+        input.milestone,
+        input.existingQuests,
+        input.today,
+      );
+    },
   };
 }
 
@@ -531,6 +650,8 @@ export function createTemplateInterviewClient(
     reviseQuestPlan: echo.reviseQuestPlan,
     proposeReschedule: echo.proposeReschedule,
     reviseReschedule: echo.reviseReschedule,
+    proposeWeekPlan: echo.proposeWeekPlan,
+    reviseWeekPlan: echo.reviseWeekPlan,
     async evaluateInterviewAnswer(input) {
       const forced = decisions[i++];
       if (forced === 'vague') {

@@ -6,10 +6,12 @@ import { QuestPlanEditor } from '../components/QuestPlanEditor/QuestPlanEditor';
 import { ReschedulePreview } from '../components/ReschedulePreview/ReschedulePreview';
 import { StampCard } from '../components/StampCard/StampCard';
 import { StreakCounter } from '../components/StreakCounter/StreakCounter';
+import { WeekPlanPreview } from '../components/WeekPlanPreview/WeekPlanPreview';
 import { XpBar } from '../components/XpBar/XpBar';
 import { useDailyQuests } from '../hooks/useDailyQuests';
 import { useQuestPlan } from '../hooks/useQuestPlan';
 import { useReschedule } from '../hooks/useReschedule';
+import { useWeekPlan } from '../hooks/useWeekPlan';
 
 export type TodayPageProps = {
   userEmail?: string | null;
@@ -31,6 +33,7 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
   } = useDailyQuests();
   const [planning, setPlanning] = useState(false);
   const [rescheduling, setRescheduling] = useState(false);
+  const [weekPlanning, setWeekPlanning] = useState(false);
 
   // Probe whether the current milestone already has saved quests (without auto-propose).
   const {
@@ -68,6 +71,22 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
     localDate: data?.local_date,
   });
 
+  const {
+    draft: weekPlanDraft,
+    goal: weekPlanGoal,
+    milestone: weekPlanMilestone,
+    loading: weekPlanLoading,
+    busy: weekPlanBusy,
+    error: weekPlanError,
+    propose: proposeWeekPlan,
+    revise: reviseWeekPlan,
+    confirm: confirmWeekPlan,
+    reload: reloadWeekPlan,
+  } = useWeekPlan({
+    enabled: Boolean(data?.milestone_title) || weekPlanning,
+    localDate: data?.local_date,
+  });
+
   // Once the user asks to plan, load/propose a draft.
   useEffect(() => {
     if (!planning) return;
@@ -93,6 +112,14 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
     proposeReschedule,
   ]);
 
+  // Once the user asks for a week plan, propose a preview (never auto-write quests).
+  useEffect(() => {
+    if (!weekPlanning) return;
+    if (weekPlanDraft) return;
+    if (weekPlanLoading || weekPlanBusy) return;
+    void proposeWeekPlan();
+  }, [weekPlanning, weekPlanDraft, weekPlanLoading, weekPlanBusy, proposeWeekPlan]);
+
   const milestoneHasNoQuests =
     Boolean(questMilestone) && !questsConfirmed && savedQuests.length === 0 && !questLoading;
 
@@ -105,6 +132,14 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
   const showRescheduleCta =
     Boolean(data?.overdue_quests?.length) && !rescheduling && !rescheduleDraft;
   const showReschedulePreview = rescheduling || Boolean(rescheduleDraft);
+  // Week plan once the stage already has quests (initial plan is Issue #7).
+  const showWeekPlanCta =
+    Boolean(data?.milestone_title) &&
+    (questsConfirmed || savedQuests.length > 0) &&
+    !weekPlanning &&
+    !weekPlanDraft &&
+    !showEditor;
+  const showWeekPlanPreview = weekPlanning || Boolean(weekPlanDraft);
 
   return (
     <div className="flex min-h-screen flex-col items-center px-4 pb-24 pt-6">
@@ -157,6 +192,10 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
         onReschedule={() => {
           setRescheduling(true);
         }}
+        canWeekPlan={showWeekPlanCta}
+        onWeekPlan={() => {
+          setWeekPlanning(true);
+        }}
         onToggleQuest={(questId, completed) => {
           void toggleQuest(questId, completed);
         }}
@@ -205,6 +244,30 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
           }}
           onRevise={(feedback) => {
             void reviseReschedule(feedback);
+          }}
+        />
+      ) : null}
+
+      {showWeekPlanPreview ? (
+        <WeekPlanPreview
+          draft={weekPlanDraft}
+          goal={weekPlanGoal}
+          milestone={weekPlanMilestone}
+          loading={weekPlanLoading || (weekPlanning && !weekPlanDraft)}
+          busy={weekPlanBusy}
+          error={weekPlanError}
+          onDismiss={() => {
+            setWeekPlanning(false);
+          }}
+          onConfirm={async () => {
+            await confirmWeekPlan();
+            setWeekPlanning(false);
+            await reload();
+            await reloadWeekPlan();
+            await reloadQuestPlan();
+          }}
+          onRevise={(feedback) => {
+            void reviseWeekPlan(feedback);
           }}
         />
       ) : null}

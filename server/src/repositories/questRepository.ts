@@ -7,6 +7,7 @@ import type {
   RescheduleDraft,
   StampCard,
   UserProgress,
+  WeekPlanDraft,
 } from '@questline/shared';
 import { toIsoDateTime } from '../clock.js';
 import {
@@ -36,6 +37,7 @@ type GoalRow = {
   time_budget_minutes_per_day: number | null;
   deadline: string | null;
   reschedule_draft?: RescheduleDraft | string | null;
+  week_plan_draft?: WeekPlanDraft | string | null;
 };
 
 type MilestoneRow = {
@@ -106,6 +108,20 @@ function parseRescheduleDraft(
   return raw;
 }
 
+function parseWeekPlanDraft(
+  raw: GoalRow['week_plan_draft'],
+): WeekPlanDraft | null {
+  if (raw == null) return null;
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw) as WeekPlanDraft;
+    } catch {
+      return null;
+    }
+  }
+  return raw;
+}
+
 export type RescheduleContext = {
   goal: MilestoneGoalSummary;
   milestone: Milestone;
@@ -113,6 +129,14 @@ export type RescheduleContext = {
   overdue: Quest[];
   /** All quests on the active goal (for day-load + confirm). */
   allQuests: Quest[];
+};
+
+export type WeekPlanContext = {
+  goal: MilestoneGoalSummary;
+  milestone: Milestone;
+  draft: WeekPlanDraft | null;
+  /** Quests on the current milestone (scheduled + completed). */
+  existingQuests: Quest[];
 };
 
 function mapMilestone(row: MilestoneRow): Milestone {
@@ -321,6 +345,119 @@ export function createQuestRepository(db: Db) {
         ]);
         await client.query('COMMIT');
         return updated;
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+    },
+
+    /** Active goal + current milestone + existing quests + week plan draft (#15). */
+    async findWeekPlanContext(
+      userId: number,
+      _localDate: string,
+    ): Promise<WeekPlanContext | null> {
+      const goalResult = await db.query<GoalRow>(
+        `SELECT id, title, done_definition, starting_point,
+                time_budget_minutes_per_day, deadline, week_plan_draft
+         FROM goals
+         WHERE user_id = $1 AND status = 'active'
+         LIMIT 1`,
+        [userId],
+      );
+      const goalRow = goalResult.rows[0];
+      if (!goalRow) return null;
+
+      const milestoneResult = await db.query<MilestoneRow>(
+        `SELECT id, goal_id, position, title, description, target_date, status, quest_draft
+         FROM milestones
+         WHERE goal_id = $1 AND status = 'current'
+         ORDER BY position ASC
+         LIMIT 1`,
+        [goalRow.id],
+      );
+      const milestoneRow = milestoneResult.rows[0];
+      if (!milestoneRow) return null;
+
+      const questResult = await db.query<QuestRow>(
+        `SELECT id, milestone_id, title, due_date, estimated_minutes, completed_at
+         FROM quests
+         WHERE milestone_id = $1
+         ORDER BY due_date ASC, id ASC`,
+        [milestoneRow.id],
+      );
+
+      return {
+        goal: mapGoalSummary(goalRow),
+        milestone: mapMilestone(milestoneRow),
+        draft: parseWeekPlanDraft(goalRow.week_plan_draft),
+        existingQuests: questResult.rows.map(mapQuest),
+      };
+    },
+
+    async saveWeekPlanDraft(
+      goalId: number,
+      userId: number,
+      draft: WeekPlanDraft | null,
+    ): Promise<void> {
+      const result = await db.query(
+        `UPDATE goals
+         SET week_plan_draft = $1::jsonb
+         WHERE id = $2 AND user_id = $3 AND status = 'active'`,
+        [draft ? JSON.stringify(draft) : null, goalId, userId],
+      );
+      if (result.rowCount !== 1) {
+        throw new Error('Active goal not found while saving week plan draft');
+      }
+    },
+
+    /**
+     * Confirm-before-save: INSERT new quests for the current milestone only.
+     * Never deletes/replaces existing rows (no duplicates of existing titles).
+     * Clears the draft.
+     */
+    async applyWeekPlanDraft(
+      goalId: number,
+      milestoneId: number,
+      userId: number,
+      draft: WeekPlanDraft,
+    ): Promise<Quest[]> {
+      const client = await db.connect();
+      try {
+        await client.query('BEGIN');
+        const owned = await client.query<{ id: number }>(
+          `SELECT m.id
+           FROM milestones m
+           INNER JOIN goals g ON g.id = m.goal_id
+           WHERE m.id = $1
+             AND g.id = $2
+             AND g.user_id = $3
+             AND g.status = 'active'
+             AND m.status = 'current'
+           FOR UPDATE OF m`,
+          [milestoneId, goalId, userId],
+        );
+        if (!owned.rows[0]) {
+          throw new Error('Current milestone not found while confirming week plan');
+        }
+
+        const saved: Quest[] = [];
+        for (const item of draft.quests) {
+          const inserted = await client.query<QuestRow>(
+            `INSERT INTO quests (milestone_id, title, due_date, estimated_minutes, completed_at)
+             VALUES ($1, $2, $3, $4, NULL)
+             RETURNING id, milestone_id, title, due_date, estimated_minutes, completed_at`,
+            [milestoneId, item.title, item.due_date, item.estimated_minutes],
+          );
+          saved.push(mapQuest(inserted.rows[0]));
+        }
+
+        await client.query(`UPDATE goals SET week_plan_draft = NULL WHERE id = $1`, [
+          goalId,
+        ]);
+        await client.query('COMMIT');
+        return saved;
       } catch (err) {
         await client.query('ROLLBACK');
         throw err;

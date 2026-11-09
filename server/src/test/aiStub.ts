@@ -15,5 +15,7 @@ export function stubAi(overrides: Partial<ChatAiClient> = {}): ChatAiClient {
     reviseQuestPlan: overrides.reviseQuestPlan ?? vi.fn(echo.reviseQuestPlan),
     proposeReschedule: overrides.proposeReschedule ?? vi.fn(echo.proposeReschedule),
     reviseReschedule: overrides.reviseReschedule ?? vi.fn(echo.reviseReschedule),
+    proposeWeekPlan: overrides.proposeWeekPlan ?? vi.fn(echo.proposeWeekPlan),
+    reviseWeekPlan: overrides.reviseWeekPlan ?? vi.fn(echo.reviseWeekPlan),
   };
 }

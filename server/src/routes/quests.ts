@@ -1,9 +1,11 @@
 import {
   ConfirmQuestPlanBodySchema,
   ConfirmRescheduleBodySchema,
+  ConfirmWeekPlanBodySchema,
   IsoDateSchema,
   ReviseQuestPlanBodySchema,
   ReviseRescheduleBodySchema,
+  ReviseWeekPlanBodySchema,
   ToggleQuestCompletionBodySchema,
 } from '@questline/shared';
 import { Router } from 'express';
@@ -13,6 +15,7 @@ import { requireAuth } from '../middleware/requireAuth.js';
 import type { QuestPlanService } from '../services/questPlanService.js';
 import type { QuestService } from '../services/questService.js';
 import type { RescheduleService } from '../services/rescheduleService.js';
+import type { WeekPlanService } from '../services/weekPlanService.js';
 import { unauthorized, validationError } from '../services/errors.js';
 
 const questWriteLimiter = rateLimit({
@@ -41,6 +44,7 @@ export function createQuestsRouter(
   questService: QuestService,
   questPlanService?: QuestPlanService,
   rescheduleService?: RescheduleService,
+  weekPlanService?: WeekPlanService,
 ): Router {
   const router = Router();
 
@@ -175,6 +179,78 @@ export function createQuestsRouter(
           (req.body as { local_date?: unknown } | undefined)?.local_date,
         );
         const payload = await rescheduleService.confirmPlan(
+          user.id,
+          body.draft,
+          localDate,
+        );
+        res.status(201).json(payload);
+      } catch (err) {
+        next(err);
+      }
+    });
+  }
+
+  if (weekPlanService) {
+    /** Load cached week plan draft + existing milestone quests (Issue #15). */
+    router.get('/week-plan', async (req, res, next) => {
+      try {
+        const user = getRequestUser(req);
+        if (!user) throw unauthorized();
+        const localDate = parseOptionalLocalDate(req.query.local_date);
+        const payload = await weekPlanService.getPlan(user.id, localDate);
+        res.json(payload);
+      } catch (err) {
+        next(err);
+      }
+    });
+
+    /** Propose a week plan draft — does NOT INSERT quest rows. */
+    router.post('/week-plan', questWriteLimiter, async (req, res, next) => {
+      try {
+        const user = getRequestUser(req);
+        if (!user) throw unauthorized();
+        const localDate = parseOptionalLocalDate(
+          (req.body as { local_date?: unknown } | undefined)?.local_date ??
+            req.query.local_date,
+        );
+        const payload = await weekPlanService.proposePlan(user.id, localDate);
+        const status = payload.draft ? 201 : 200;
+        res.status(status).json(payload);
+      } catch (err) {
+        next(err);
+      }
+    });
+
+    /** Ask Mochi to tweak the preview — still a draft until confirm. */
+    router.post('/week-plan/revise', questWriteLimiter, async (req, res, next) => {
+      try {
+        const user = getRequestUser(req);
+        if (!user) throw unauthorized();
+        const body = ReviseWeekPlanBodySchema.parse(req.body ?? {});
+        const localDate = parseOptionalLocalDate(
+          (req.body as { local_date?: unknown } | undefined)?.local_date,
+        );
+        const payload = await weekPlanService.revisePlan(
+          user.id,
+          body.feedback,
+          localDate,
+        );
+        res.json(payload);
+      } catch (err) {
+        next(err);
+      }
+    });
+
+    /** Accept — only path that INSERTs new week-plan quest rows. */
+    router.post('/week-plan/confirm', questWriteLimiter, async (req, res, next) => {
+      try {
+        const user = getRequestUser(req);
+        if (!user) throw unauthorized();
+        const body = ConfirmWeekPlanBodySchema.parse(req.body);
+        const localDate = parseOptionalLocalDate(
+          (req.body as { local_date?: unknown } | undefined)?.local_date,
+        );
+        const payload = await weekPlanService.confirmPlan(
           user.id,
           body.draft,
           localDate,

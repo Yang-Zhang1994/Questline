@@ -13,6 +13,9 @@ export type DailyNoteProps = {
   /** When true, offer reshuffling overdue quests (Issue #14). */
   canReschedule?: boolean;
   onReschedule?: () => void;
+  /** When true, offer a 7-day week plan preview (Issue #15). */
+  canWeekPlan?: boolean;
+  onWeekPlan?: () => void;
   onToggleQuest: (questId: number, completed: boolean) => void;
 };
 
@@ -25,6 +28,8 @@ export function DailyNote({
   onPlanQuests,
   canReschedule = false,
   onReschedule,
+  canWeekPlan = false,
+  onWeekPlan,
   onToggleQuest,
 }: DailyNoteProps) {
   const emptyToday = Boolean(data && data.quests.length === 0);
@@ -134,6 +139,17 @@ export function DailyNote({
                   ))}
                 </ul>
               )}
+
+              {canWeekPlan && onWeekPlan ? (
+                <button
+                  type="button"
+                  onClick={onWeekPlan}
+                  className="mt-3 inline-flex items-center justify-center rounded-pill bg-gel-pink px-4 py-2 text-[0.88rem] font-bold text-white shadow-[inset_0_2px_0_rgba(255,255,255,0.45)] hover:brightness-105"
+                  data-testid="week-plan-cta"
+                >
+                  ♡ Plan my next week
+                </button>
+              ) : null}
             </>
           ) : null}
 

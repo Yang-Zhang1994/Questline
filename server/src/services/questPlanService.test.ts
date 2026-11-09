@@ -78,6 +78,15 @@ describe('questPlanService (Issue #7)', () => {
       async applyRescheduleDraft() {
         return [];
       },
+      async findWeekPlanContext() {
+        return null;
+      },
+      async saveWeekPlanDraft() {
+        /* unused in quest-plan unit tests */
+      },
+      async applyWeekPlanDraft() {
+        return [];
+      },
       async setCompletedAtForUser() {
         return null;
       },
