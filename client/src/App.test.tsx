@@ -33,6 +33,8 @@ afterEach(() => {
 beforeEach(() => {
   sessionStorage.clear();
   clearAuthToken();
+  // BrowserRouter keeps window history across tests — reset to Today.
+  window.history.pushState({}, '', '/');
 });
 
 describe('App auth gate (Issue #8)', () => {
@@ -180,5 +182,77 @@ describe('App auth gate (Issue #8)', () => {
 
     expect(await screen.findByRole('region', { name: /mochi messenger/i })).toBeInTheDocument();
     expect(screen.getByText(/hi, i'm mochi/i)).toBeInTheDocument();
+  });
+
+  // AC: Map dock opens the roadmap view (Issue #6)
+  it('navigates to Map and loads confirmed milestones with Bearer auth', async () => {
+    const user = userEvent.setup();
+    sessionStorage.setItem('questline.authToken', 'demo-jwt-token');
+    sessionStorage.setItem(
+      'questline.authUser',
+      JSON.stringify({ id: 1, email: 'demo@questline.local' }),
+    );
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/quests/today')) {
+        return {
+          ok: true,
+          text: async () => JSON.stringify(todayPayload),
+        };
+      }
+      if (url.includes('/api/milestones/draft')) {
+        const headers = new Headers(init?.headers);
+        expect(headers.get('Authorization')).toBe('Bearer demo-jwt-token');
+        return {
+          ok: true,
+          text: async () =>
+            JSON.stringify({
+              draft: null,
+              confirmed: true,
+              goal: {
+                id: 1,
+                title: 'Read a Japanese novel on my own',
+                done_definition: null,
+                starting_point: null,
+                time_budget_minutes_per_day: 20,
+                deadline: '2027-11-09',
+              },
+              milestones: [
+                {
+                  id: 10,
+                  goal_id: 1,
+                  position: 1,
+                  title: 'Build a tiny daily reading habit',
+                  description: 'Start soft',
+                  target_date: '2026-12-01',
+                  status: 'current',
+                },
+                {
+                  id: 11,
+                  goal_id: 1,
+                  position: 2,
+                  title: 'Finish a graded reader',
+                  description: 'Level up',
+                  target_date: '2027-03-01',
+                  status: 'upcoming',
+                },
+              ],
+            }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByRole('region', { name: /a note from mochi/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: /map/i }));
+
+    expect(await screen.findByRole('region', { name: /roadmap map/i })).toBeInTheDocument();
+    expect(screen.getByTestId('milestone-node-start')).toBeInTheDocument();
+    expect(screen.getByTestId('milestone-node-1')).toHaveAttribute('data-state', 'current');
+    expect(screen.getByText(/finish a graded reader/i)).toBeInTheDocument();
   });
 });
