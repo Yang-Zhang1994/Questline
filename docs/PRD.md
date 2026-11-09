@@ -3,16 +3,16 @@
 | | |
 |---|---|
 | **Product** | Questline (Mochi's Quest Diary) |
-| **Status** | v1.1 — stack & vocabulary locked (2026-10-29) |
+| **Status** | v1.2 — P2 stack & vocabulary locked (2026-11-09) |
 | **Related** | `AGENTS.md` · `docs/data-model.md` · `docs/design/` · [Sprint Board](https://github.com/users/Yang-Zhang1994/projects/1) |
 
 ### Decisions (locked)
 
 | Date | Decision |
 |---|---|
-| 2026-10-29 | **Stack:** Vite + React client, Express server, SQLite (`better-sqlite3`), shared zod, npm workspaces. Claude only on the server. |
 | 2026-10-29 | **Vocabulary:** **Goal** → **Milestone** (UI: “stage”) → **Quest** (daily item). Do not use teammate-draft “Quest = whole project / Task = daily item” in Issues or code. |
-| 2026-10-29 | Auth, Supabase, and Next.js App Router are **out of scope** for this course prototype (may revisit after Nov 10). |
+| 2026-11-09 | **Stack (P2):** React + Vite client, Express server, PostgreSQL, TailwindCSS, JWT auth, shared zod, npm workspaces. Claude only on the server. Keep Vite (do **not** migrate to Next.js). |
+| 2026-11-09 | **Auth:** JWT baseline; OAuth optional later. SQLite/`better-sqlite3` is legacy — new work uses PostgreSQL only. |
 
 ---
 
@@ -90,9 +90,9 @@ As a user who falls behind, I want Mochi to reschedule overdue Quests or plan th
 
 ## 6. Scope and sprint MVPs
 
-**In scope:** onboarding chat; Goal + Milestones; roadmap; daily Quests (generate, list, check/undo); XP/streak/stamps; reschedule + week plan; listed extras; local SQLite; server-only Claude.
+**In scope:** onboarding chat; Goal + Milestones; roadmap; daily Quests (generate, list, check/undo); XP/streak/stamps; reschedule + week plan; listed extras; PostgreSQL; JWT auth; Tailwind UI; server-only Claude.
 
-**Out of scope:** multi-user auth / SMS / Supabase; cloud sync; native apps; push/email; calendar integrations; premium; hosting our own LLM; Next.js App Router rewrite for this course window.
+**Out of scope:** SMS / Supabase-as-backend rewrite; native apps; push/email; calendar integrations; premium; hosting our own LLM; Next.js App Router rewrite (Vite stays).
 
 | Sprint | Window | Workable MVP |
 |---|---|---|
