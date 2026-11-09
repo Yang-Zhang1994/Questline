@@ -1,4 +1,9 @@
-export type ErrorCode = 'VALIDATION_ERROR' | 'NOT_FOUND' | 'INTERNAL_ERROR';
+export type ErrorCode =
+  | 'VALIDATION_ERROR'
+  | 'NOT_FOUND'
+  | 'UNAUTHORIZED'
+  | 'CONFLICT'
+  | 'INTERNAL_ERROR';
 
 export class AppError extends Error {
   readonly code: ErrorCode;
@@ -18,4 +23,12 @@ export function notFound(message: string): AppError {
 
 export function validationError(message: string): AppError {
   return new AppError('VALIDATION_ERROR', message, 400);
+}
+
+export function unauthorized(message = 'Authentication required'): AppError {
+  return new AppError('UNAUTHORIZED', message, 401);
+}
+
+export function conflict(message: string): AppError {
+  return new AppError('CONFLICT', message, 409);
 }

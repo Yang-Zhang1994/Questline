@@ -25,9 +25,9 @@ function greetingFor(hour: number, doneCount: number, totalCount: number): strin
 
 export function createQuestService(deps: QuestServiceDeps) {
   return {
-    async getToday(localDate?: string): Promise<TodayQuestsResponse> {
+    async getToday(userId: number, localDate?: string): Promise<TodayQuestsResponse> {
       const date = localDate ?? formatLocalDate(deps.clock.now());
-      const ctx = await deps.quests.listDueOnDateForActiveGoal(date);
+      const ctx = await deps.quests.listDueOnDateForActiveGoal(userId, date);
       const doneCount = ctx.quests.filter((q) => q.completed_at !== null).length;
 
       return {
@@ -41,8 +41,8 @@ export function createQuestService(deps: QuestServiceDeps) {
       };
     },
 
-    async setCompletion(questId: number, completed: boolean): Promise<Quest> {
-      const existing = await deps.quests.findById(questId);
+    async setCompletion(userId: number, questId: number, completed: boolean): Promise<Quest> {
+      const existing = await deps.quests.findByIdForUser(userId, questId);
       if (!existing) {
         throw notFound(`Quest ${questId} was not found`);
       }
@@ -51,13 +51,25 @@ export function createQuestService(deps: QuestServiceDeps) {
         if (existing.completed_at !== null) {
           return existing;
         }
-        return deps.quests.setCompletedAt(questId, toIsoDateTime(deps.clock.now()));
+        const updated = await deps.quests.setCompletedAtForUser(
+          userId,
+          questId,
+          toIsoDateTime(deps.clock.now()),
+        );
+        if (!updated) {
+          throw notFound(`Quest ${questId} was not found`);
+        }
+        return updated;
       }
 
       if (existing.completed_at === null) {
         return existing;
       }
-      return deps.quests.setCompletedAt(questId, null);
+      const cleared = await deps.quests.setCompletedAtForUser(userId, questId, null);
+      if (!cleared) {
+        throw notFound(`Quest ${questId} was not found`);
+      }
+      return cleared;
     },
   };
 }

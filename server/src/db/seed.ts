@@ -1,15 +1,18 @@
 import type { Clock } from '../clock.js';
 import { formatLocalDate, systemClock, toIsoDateTime } from '../clock.js';
+import { hashPassword } from '../auth/password.js';
 import type { Db } from './connection.js';
 
-const DEMO_EMAIL = 'demo@questline.local';
-const DEMO_PASSWORD_HASH = 'dev-placeholder-not-a-real-hash';
+/** Demo login for local/dev after JWT (#31). */
+export const DEMO_EMAIL = 'demo@questline.local';
+export const DEMO_PASSWORD = 'demo-password-123';
+
 const DEMO_GOAL_TITLE = 'Read a Japanese novel on my own';
 const DEMO_MILESTONE_TITLE = 'Build a tiny daily reading habit';
 
 /**
  * Seeds one demo user, active goal, current milestone, and today's quests when
- * the DB has no users yet — enough to demo Today / check-off before JWT (#auth).
+ * the DB has no users yet — enough to demo Today / check-off with JWT.
  */
 export async function seedDemoDataIfEmpty(db: Db, clock: Clock = systemClock): Promise<void> {
   const count = await db.query<{ c: string }>('SELECT COUNT(*)::text AS c FROM users');
@@ -18,6 +21,7 @@ export async function seedDemoDataIfEmpty(db: Db, clock: Clock = systemClock): P
   const now = clock.now();
   const today = formatLocalDate(now);
   const createdAt = toIsoDateTime(now);
+  const passwordHash = await hashPassword(DEMO_PASSWORD);
 
   const client = await db.connect();
   try {
@@ -27,7 +31,7 @@ export async function seedDemoDataIfEmpty(db: Db, clock: Clock = systemClock): P
       `INSERT INTO users (email, password_hash, created_at)
        VALUES ($1, $2, $3)
        RETURNING id`,
-      [DEMO_EMAIL, DEMO_PASSWORD_HASH, createdAt],
+      [DEMO_EMAIL, passwordHash, createdAt],
     );
     const userId = user.rows[0].id;
 
@@ -97,4 +101,5 @@ export const DEMO_TITLES = {
 
 export const DEMO_USER = {
   email: DEMO_EMAIL,
+  password: DEMO_PASSWORD,
 } as const;
