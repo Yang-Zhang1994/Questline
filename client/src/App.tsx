@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 import { useAuth } from './hooks/useAuth';
 import { LoginPage } from './pages/LoginPage';
+import { TalkPage } from './pages/TalkPage';
 import { TodayPage } from './pages/TodayPage';
 
 export function App() {
@@ -16,6 +17,16 @@ export function App() {
               <TodayPage userEmail={auth.user?.email ?? null} onLogout={auth.logout} />
             ) : (
               <LoginPage onLogin={auth.login} onRegister={auth.register} />
+            )
+          }
+        />
+        <Route
+          path="/talk"
+          element={
+            auth.isAuthenticated ? (
+              <TalkPage userEmail={auth.user?.email ?? null} onLogout={auth.logout} />
+            ) : (
+              <Navigate to="/" replace />
             )
           }
         />

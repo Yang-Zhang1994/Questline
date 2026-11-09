@@ -120,4 +120,54 @@ describe('App auth gate (Issue #8)', () => {
       expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/completion'))).toBe(true);
     });
   });
+
+  // AC: Talk dock route loads Mochi Messenger
+  it('navigates to Talk and loads chat history with Bearer auth', async () => {
+    const user = userEvent.setup();
+    sessionStorage.setItem('questline.authToken', 'demo-jwt-token');
+    sessionStorage.setItem(
+      'questline.authUser',
+      JSON.stringify({ id: 1, email: 'demo@questline.local' }),
+    );
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/quests/today')) {
+        return {
+          ok: true,
+          text: async () => JSON.stringify(todayPayload),
+        };
+      }
+      if (url.includes('/api/chat/messages') && (!init?.method || init.method === 'GET')) {
+        const headers = new Headers(init?.headers);
+        expect(headers.get('Authorization')).toBe('Bearer demo-jwt-token');
+        return {
+          ok: true,
+          text: async () =>
+            JSON.stringify({
+              messages: [
+                {
+                  id: 1,
+                  user_id: 1,
+                  goal_id: null,
+                  role: 'mochi',
+                  content: "Hi, I'm Mochi! Let's chat.",
+                  created_at: '2026-11-09T15:00:00Z',
+                },
+              ],
+            }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByRole('region', { name: /a note from mochi/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: /talk/i }));
+
+    expect(await screen.findByRole('region', { name: /mochi messenger/i })).toBeInTheDocument();
+    expect(screen.getByText(/hi, i'm mochi/i)).toBeInTheDocument();
+  });
 });
