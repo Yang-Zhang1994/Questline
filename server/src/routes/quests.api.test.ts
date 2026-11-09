@@ -1,25 +1,33 @@
 import request from 'supertest';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Clock } from '../clock.js';
 import { createApp } from '../app.js';
-import { openDatabase, type Db } from '../db/connection.js';
+import { openDatabase, resetDatabase, type Db } from '../db/connection.js';
 import { seedDemoDataIfEmpty } from '../db/seed.js';
 
 function fixedClock(iso: string): Clock {
   return { now: () => new Date(iso) };
 }
 
-describe('GET/PATCH /api/quests (Issue #9)', () => {
+describe('GET/PATCH /api/quests (Issue #9 / #17 Postgres)', () => {
   let db: Db;
+  const iso = '2026-10-28T15:30:00.000Z';
+  const clock = fixedClock(iso);
 
-  afterEach(() => {
-    db?.close();
+  beforeAll(async () => {
+    db = await openDatabase();
   });
 
-  function buildApp(iso = '2026-10-28T15:30:00.000Z') {
-    const clock = fixedClock(iso);
-    db = openDatabase({ filename: ':memory:' });
-    seedDemoDataIfEmpty(db, clock);
+  beforeEach(async () => {
+    await resetDatabase(db);
+    await seedDemoDataIfEmpty(db, clock);
+  });
+
+  afterAll(async () => {
+    await db?.end();
+  });
+
+  function buildApp() {
     return createApp({ db, clock });
   }
 

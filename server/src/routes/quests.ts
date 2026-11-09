@@ -6,7 +6,7 @@ import { validationError } from '../services/errors.js';
 export function createQuestsRouter(questService: QuestService): Router {
   const router = Router();
 
-  router.get('/today', (req, res, next) => {
+  router.get('/today', async (req, res, next) => {
     try {
       const raw = req.query.local_date;
       let localDate: string | undefined;
@@ -17,21 +17,21 @@ export function createQuestsRouter(questService: QuestService): Router {
         }
         localDate = parsed.data;
       }
-      const payload = questService.getToday(localDate);
+      const payload = await questService.getToday(localDate);
       res.json(payload);
     } catch (err) {
       next(err);
     }
   });
 
-  router.patch('/:questId/completion', (req, res, next) => {
+  router.patch('/:questId/completion', async (req, res, next) => {
     try {
       const questId = Number(req.params.questId);
       if (!Number.isInteger(questId) || questId < 1) {
         throw validationError('questId must be a positive integer');
       }
       const body = ToggleQuestCompletionBodySchema.parse(req.body);
-      const quest = questService.setCompletion(questId, body.completed);
+      const quest = await questService.setCompletion(questId, body.completed);
       res.json({ quest });
     } catch (err) {
       next(err);
