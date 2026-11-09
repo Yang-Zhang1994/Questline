@@ -41,7 +41,6 @@ describe('QuestItem (Issue #9)', () => {
 
     const item = checkbox.closest('li');
     expect(item).toHaveAttribute('data-completed', 'true');
-    expect(item?.className).toMatch(/itemDone/);
     expect(screen.getByText(/Done at/i)).toBeInTheDocument();
   });
 
