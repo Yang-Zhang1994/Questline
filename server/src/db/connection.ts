@@ -1,39 +1,33 @@
-import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import pg from 'pg';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-export type Db = Database.Database;
+export type Db = pg.Pool;
 
 export type OpenDbOptions = {
-  /** Use `:memory:` for tests; otherwise a file path. */
-  filename?: string;
+  /** Override process.env.DATABASE_URL (tests). */
+  connectionString?: string;
 };
 
-export function openDatabase(options: OpenDbOptions = {}): Db {
-  const filename =
-    options.filename ??
-    process.env.QUESTLINE_DB_PATH ??
-    path.join(process.cwd(), 'data', 'questline.sqlite');
-
-  if (filename !== ':memory:') {
-    fs.mkdirSync(path.dirname(filename), { recursive: true });
+export async function openDatabase(options: OpenDbOptions = {}): Promise<Db> {
+  const connectionString = options.connectionString ?? process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error('DATABASE_URL is required (PostgreSQL connection string)');
   }
 
-  const db = new Database(filename);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  runMigrations(db);
-  return db;
+  const pool = new pg.Pool({ connectionString });
+  await runMigrations(pool);
+  return pool;
 }
 
-export function runMigrations(db: Db): void {
-  db.exec(`
+export async function runMigrations(db: Db): Promise<void> {
+  await db.query(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       id TEXT PRIMARY KEY,
-      applied_at TEXT NOT NULL
+      applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
 
@@ -43,21 +37,41 @@ export function runMigrations(db: Db): void {
     .filter((name) => name.endsWith('.sql'))
     .sort();
 
-  const alreadyApplied = new Set(
-    (db.prepare('SELECT id FROM schema_migrations').all() as Array<{ id: string }>).map(
-      (row) => row.id,
-    ),
-  );
-
-  const insert = db.prepare('INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)');
+  const applied = await db.query<{ id: string }>('SELECT id FROM schema_migrations');
+  const alreadyApplied = new Set(applied.rows.map((row) => row.id));
 
   for (const file of files) {
     if (alreadyApplied.has(file)) continue;
     const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
-    const apply = db.transaction(() => {
-      db.exec(sql);
-      insert.run(file, new Date().toISOString());
-    });
-    apply();
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(sql);
+      await client.query('INSERT INTO schema_migrations (id, applied_at) VALUES ($1, NOW())', [
+        file,
+      ]);
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
+}
+
+/** Truncate domain tables between tests (keeps schema_migrations). */
+export async function resetDatabase(db: Db): Promise<void> {
+  await db.query(`
+    TRUNCATE TABLE
+      diary_notes,
+      chat_messages,
+      stamps,
+      user_progress,
+      quests,
+      milestones,
+      goals,
+      users
+    RESTART IDENTITY CASCADE
+  `);
 }

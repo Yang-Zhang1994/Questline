@@ -25,9 +25,9 @@ function greetingFor(hour: number, doneCount: number, totalCount: number): strin
 
 export function createQuestService(deps: QuestServiceDeps) {
   return {
-    getToday(localDate?: string): TodayQuestsResponse {
+    async getToday(localDate?: string): Promise<TodayQuestsResponse> {
       const date = localDate ?? formatLocalDate(deps.clock.now());
-      const ctx = deps.quests.listDueOnDateForActiveGoal(date);
+      const ctx = await deps.quests.listDueOnDateForActiveGoal(date);
       const doneCount = ctx.quests.filter((q) => q.completed_at !== null).length;
 
       return {
@@ -41,8 +41,8 @@ export function createQuestService(deps: QuestServiceDeps) {
       };
     },
 
-    setCompletion(questId: number, completed: boolean): Quest {
-      const existing = deps.quests.findById(questId);
+    async setCompletion(questId: number, completed: boolean): Promise<Quest> {
+      const existing = await deps.quests.findById(questId);
       if (!existing) {
         throw notFound(`Quest ${questId} was not found`);
       }

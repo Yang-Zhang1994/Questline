@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Clock } from '../clock.js';
-import { openDatabase } from '../db/connection.js';
+import { openDatabase, resetDatabase, type Db } from '../db/connection.js';
 import { seedDemoDataIfEmpty } from '../db/seed.js';
 import { createQuestRepository } from '../repositories/questRepository.js';
 import { createQuestService } from './questService.js';
@@ -10,60 +10,73 @@ function fixedClock(iso: string): Clock {
   return { now: () => new Date(iso) };
 }
 
-function setup(iso = '2026-10-28T15:30:00.000Z') {
+describe('questService (Issue #9 / #17 Postgres)', () => {
+  let db: Db;
+  const iso = '2026-10-28T15:30:00.000Z';
   const clock = fixedClock(iso);
-  const db = openDatabase({ filename: ':memory:' });
-  seedDemoDataIfEmpty(db, clock);
-  const quests = createQuestRepository(db);
-  const service = createQuestService({ quests, clock });
-  return { db, clock, quests, service };
-}
 
-describe('questService (Issue #9)', () => {
+  beforeAll(async () => {
+    db = await openDatabase();
+  });
+
+  beforeEach(async () => {
+    await resetDatabase(db);
+    await seedDemoDataIfEmpty(db, clock);
+  });
+
+  afterAll(async () => {
+    await db?.end();
+  });
+
+  function service() {
+    const quests = createQuestRepository(db);
+    return { quests, service: createQuestService({ quests, clock }) };
+  }
+
   // AC: User can mark a quest as done from the daily note
-  it('marks a quest completed and returns completed_at', () => {
-    const { service } = setup();
-    const today = service.getToday();
+  it('marks a quest completed and returns completed_at', async () => {
+    const { service: questService } = service();
+    const today = await questService.getToday();
     const quest = today.quests[0];
     expect(quest).toBeDefined();
     expect(quest.completed_at).toBeNull();
 
-    const updated = service.setCompletion(quest.id, true);
+    const updated = await questService.setCompletion(quest.id, true);
     expect(updated.completed_at).toBe('2026-10-28T15:30:00Z');
   });
 
   // AC: User can undo an accidental check-off
-  it('clears completed_at when undoing a check-off', () => {
-    const { service } = setup();
-    const quest = service.getToday().quests[0];
-    service.setCompletion(quest.id, true);
-    const undone = service.setCompletion(quest.id, false);
+  it('clears completed_at when undoing a check-off', async () => {
+    const { service: questService } = service();
+    const quest = (await questService.getToday()).quests[0];
+    await questService.setCompletion(quest.id, true);
+    const undone = await questService.setCompletion(quest.id, false);
     expect(undone.completed_at).toBeNull();
   });
 
   // AC: Completion status and completion time are saved
-  it('persists completion status and timestamp via the repository', () => {
-    const { service, quests } = setup();
-    const quest = service.getToday().quests[1];
-    service.setCompletion(quest.id, true);
-    const stored = quests.findById(quest.id);
+  it('persists completion status and timestamp via the repository', async () => {
+    const { service: questService, quests } = service();
+    const quest = (await questService.getToday()).quests[1];
+    await questService.setCompletion(quest.id, true);
+    const stored = await quests.findById(quest.id);
     expect(stored?.completed_at).toBe('2026-10-28T15:30:00Z');
   });
 
   // AC: Completed quests stay completed after a page reload
-  it('keeps completed quests completed when today is fetched again', () => {
-    const { service } = setup();
-    const quest = service.getToday().quests[0];
-    service.setCompletion(quest.id, true);
+  it('keeps completed quests completed when today is fetched again', async () => {
+    const { service: questService } = service();
+    const quest = (await questService.getToday()).quests[0];
+    await questService.setCompletion(quest.id, true);
 
-    const reloaded = service.getToday();
+    const reloaded = await questService.getToday();
     const found = reloaded.quests.find((q) => q.id === quest.id);
     expect(found?.completed_at).toBe('2026-10-28T15:30:00Z');
     expect(reloaded.done_count).toBe(1);
   });
 
-  it('throws NOT_FOUND for unknown quest ids', () => {
-    const { service } = setup();
-    expect(() => service.setCompletion(9999, true)).toThrow(AppError);
+  it('throws NOT_FOUND for unknown quest ids', async () => {
+    const { service: questService } = service();
+    await expect(questService.setCompletion(9999, true)).rejects.toThrow(AppError);
   });
 });
