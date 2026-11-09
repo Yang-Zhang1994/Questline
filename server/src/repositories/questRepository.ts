@@ -39,19 +39,25 @@ export type TodayQuestContext = {
 
 export function createQuestRepository(db: Db) {
   return {
-    async findById(id: number): Promise<Quest | null> {
+    async findByIdForUser(userId: number, id: number): Promise<Quest | null> {
       const result = await db.query<QuestRow>(
-        `SELECT id, milestone_id, title, due_date, estimated_minutes, completed_at
-         FROM quests WHERE id = $1`,
-        [id],
+        `SELECT q.id, q.milestone_id, q.title, q.due_date, q.estimated_minutes, q.completed_at
+         FROM quests q
+         INNER JOIN milestones m ON m.id = q.milestone_id
+         INNER JOIN goals g ON g.id = m.goal_id
+         WHERE q.id = $1 AND g.user_id = $2`,
+        [id, userId],
       );
       const row = result.rows[0];
       return row ? mapQuest(row) : null;
     },
 
-    async listDueOnDateForActiveGoal(localDate: string): Promise<TodayQuestContext> {
+    async listDueOnDateForActiveGoal(userId: number, localDate: string): Promise<TodayQuestContext> {
       const goalResult = await db.query<{ id: number; title: string }>(
-        `SELECT id, title FROM goals WHERE status = 'active' ORDER BY id LIMIT 1`,
+        `SELECT id, title FROM goals
+         WHERE user_id = $1 AND status = 'active'
+         ORDER BY id LIMIT 1`,
+        [userId],
       );
       const goal = goalResult.rows[0];
 
@@ -83,13 +89,24 @@ export function createQuestRepository(db: Db) {
       };
     },
 
-    async setCompletedAt(id: number, completedAt: string | null): Promise<Quest> {
-      await db.query(`UPDATE quests SET completed_at = $1 WHERE id = $2`, [completedAt, id]);
-      const updated = await this.findById(id);
-      if (!updated) {
-        throw new Error(`Quest ${id} missing after update`);
-      }
-      return updated;
+    async setCompletedAtForUser(
+      userId: number,
+      id: number,
+      completedAt: string | null,
+    ): Promise<Quest | null> {
+      const result = await db.query<QuestRow>(
+        `UPDATE quests q
+         SET completed_at = $1
+         FROM milestones m
+         INNER JOIN goals g ON g.id = m.goal_id
+         WHERE q.id = $2
+           AND q.milestone_id = m.id
+           AND g.user_id = $3
+         RETURNING q.id, q.milestone_id, q.title, q.due_date, q.estimated_minutes, q.completed_at`,
+        [completedAt, id, userId],
+      );
+      const row = result.rows[0];
+      return row ? mapQuest(row) : null;
     },
   };
 }

@@ -4,6 +4,7 @@ import {
   type TodayQuestsResponse,
   type Quest,
 } from '@questline/shared';
+import { authHeaders } from './authToken';
 
 async function parseJson(res: Response): Promise<unknown> {
   const text = await res.text();
@@ -15,7 +16,9 @@ export async function fetchTodayQuests(localDate?: string): Promise<TodayQuestsR
   const params = new URLSearchParams();
   if (localDate) params.set('local_date', localDate);
   const qs = params.toString();
-  const res = await fetch(`/api/quests/today${qs ? `?${qs}` : ''}`);
+  const res = await fetch(`/api/quests/today${qs ? `?${qs}` : ''}`, {
+    headers: authHeaders(),
+  });
   const body = await parseJson(res);
   if (!res.ok) {
     const message =
@@ -33,7 +36,7 @@ export async function fetchTodayQuests(localDate?: string): Promise<TodayQuestsR
 export async function setQuestCompletion(questId: number, completed: boolean): Promise<Quest> {
   const res = await fetch(`/api/quests/${questId}/completion`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ completed }),
   });
   const body = await parseJson(res);

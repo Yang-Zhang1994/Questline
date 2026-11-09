@@ -11,7 +11,7 @@ Cozy life-sim goal tracker: chat with **Mochi**, confirm a measurable goal, walk
 
 ## Stack
 
-React + Vite (client), Express (API), **PostgreSQL** (`DATABASE_URL`), shared zod schemas. Tailwind + JWT land in separate Issues.
+React + Vite (client), Express (API), **PostgreSQL** (`DATABASE_URL`), **JWT** auth, shared zod schemas. Tailwind lands in a separate Issue.
 
 ## Setup
 
@@ -25,7 +25,7 @@ sudo -u postgres psql -c "CREATE DATABASE questline_test OWNER questline;"
 
 # 2. Configure env
 cp .env.example .env
-# edit DATABASE_URL if needed
+# edit DATABASE_URL / JWT_SECRET if needed
 
 # 3. Install & check
 npm install
@@ -38,7 +38,29 @@ npm run dev:server   # http://localhost:3001
 npm run dev:client   # Vite default port
 ```
 
-Migrations live in `server/src/db/migrations/` and apply automatically when the server (or tests) open the pool. Demo seed creates `demo@questline.local` with an active Goal → Milestone → today's Quests when the `users` table is empty.
+Migrations live in `server/src/db/migrations/` and apply automatically when the server (or tests) open the pool. Demo seed creates `demo@questline.local` / `demo-password-123` with an active Goal → Milestone → today's Quests when the `users` table is empty.
+
+## Auth (JWT — Issue #31)
+
+**Choice:** API returns a JWT in the JSON body; clients send it as `Authorization: Bearer <token>` (not an httpOnly cookie). This keeps curl / Supertest / a future SPA login simple for the course app.
+
+```bash
+# Register
+curl -s http://localhost:3001/api/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"your-password"}'
+
+# Login (demo user after seed)
+curl -s http://localhost:3001/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"demo@questline.local","password":"demo-password-123"}'
+
+# Call a protected route
+curl -s http://localhost:3001/api/quests/today \
+  -H "Authorization: Bearer <token-from-login>"
+```
+
+Missing/invalid tokens receive `{ "error": { "code": "UNAUTHORIZED", "message": "..." } }`. Goal/quest/progress queries are scoped to the authenticated user id.
 
 ## Mockup
 
