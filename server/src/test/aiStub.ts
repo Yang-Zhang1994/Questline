@@ -11,5 +11,7 @@ export function stubAi(overrides: Partial<ChatAiClient> = {}): ChatAiClient {
       overrides.evaluateInterviewAnswer ?? vi.fn(echo.evaluateInterviewAnswer),
     proposeMilestonePlan: overrides.proposeMilestonePlan ?? vi.fn(echo.proposeMilestonePlan),
     reviseMilestonePlan: overrides.reviseMilestonePlan ?? vi.fn(echo.reviseMilestonePlan),
+    proposeQuestPlan: overrides.proposeQuestPlan ?? vi.fn(echo.proposeQuestPlan),
+    reviseQuestPlan: overrides.reviseQuestPlan ?? vi.fn(echo.reviseQuestPlan),
   };
 }

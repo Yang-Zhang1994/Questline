@@ -38,3 +38,21 @@ export const ToggleQuestCompletionResponseSchema = z.object({
 });
 
 export type ToggleQuestCompletionResponse = z.infer<typeof ToggleQuestCompletionResponseSchema>;
+
+/** One proposed daily quest in a draft plan (Issue #7). */
+export const QuestDraftItemSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  due_date: IsoDateSchema,
+  /** Positive minutes — doable in one sitting. */
+  estimated_minutes: z.number().int().positive().max(120),
+});
+
+export type QuestDraftItem = z.infer<typeof QuestDraftItemSchema>;
+
+/** Full draft quest plan for the current milestone + Mochi blurb. */
+export const QuestPlanDraftSchema = z.object({
+  quests: z.array(QuestDraftItemSchema).min(1).max(21),
+  mochi_message: z.string().trim().min(1).max(1000),
+});
+
+export type QuestPlanDraft = z.infer<typeof QuestPlanDraftSchema>;

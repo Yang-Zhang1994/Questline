@@ -28,7 +28,7 @@ Companion to `AGENTS.md` §1.4–1.5. Vocabulary: **Goal → Milestone → Quest
 | --------------- | ------------------------------------------------------------------------------------------------------------- |
 | `users`         | id, email (unique), password_hash, created_at (JWT auth; OAuth optional later)                                |
 | `goals`         | id, user_id → users, title, done_definition, starting_point, time_budget_minutes_per_day, deadline, status, created_at |
-| `milestones`    | id, goal_id → goals, position, title, description, target_date, status (`upcoming` / `current` / `completed`) |
+| `milestones`    | id, goal_id → goals, position, title, description, target_date, status (`upcoming` / `current` / `completed`), quest_draft (JSONB, #7 confirm-before-save) |
 | `quests`        | id, milestone_id → milestones, title, due_date, estimated_minutes, completed_at (nullable)                    |
 | `user_progress` | id, user_id → users, xp, level, current_streak, best_streak, last_active_date                                 |
 | `stamps`        | id, user_id → users, card_number, stamp_date                                                                  |

@@ -1,6 +1,9 @@
+import { useEffect, useState } from 'react';
 import { DailyNote } from '../components/DailyNote/DailyNote';
 import { BottomDock } from '../components/BottomDock/BottomDock';
+import { QuestPlanEditor } from '../components/QuestPlanEditor/QuestPlanEditor';
 import { useDailyQuests } from '../hooks/useDailyQuests';
+import { useQuestPlan } from '../hooks/useQuestPlan';
 
 export type TodayPageProps = {
   userEmail?: string | null;
@@ -8,7 +11,45 @@ export type TodayPageProps = {
 };
 
 export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
-  const { data, loading, error, busyQuestId, toggleQuest } = useDailyQuests();
+  const { data, loading, error, busyQuestId, toggleQuest, reload } = useDailyQuests();
+  const [planning, setPlanning] = useState(false);
+
+  // Probe whether the current milestone already has saved quests (without auto-propose).
+  const {
+    draft: questDraft,
+    goal: questGoal,
+    milestone: questMilestone,
+    savedQuests,
+    confirmed: questsConfirmed,
+    loading: questLoading,
+    busy: questBusy,
+    error: questError,
+    confirm: confirmQuests,
+    revise: reviseQuests,
+    propose: proposeQuests,
+    reload: reloadQuestPlan,
+  } = useQuestPlan({
+    enabled: Boolean(data?.milestone_title) || planning,
+    autoPropose: false,
+  });
+
+  // Once the user asks to plan, load/propose a draft.
+  useEffect(() => {
+    if (!planning) return;
+    if (questDraft || questsConfirmed) return;
+    if (questLoading || questBusy) return;
+    void proposeQuests();
+  }, [planning, questDraft, questsConfirmed, questLoading, questBusy, proposeQuests]);
+
+  const milestoneHasNoQuests =
+    Boolean(questMilestone) && !questsConfirmed && savedQuests.length === 0 && !questLoading;
+
+  const showPlanCta =
+    Boolean(data && data.quests.length === 0 && data.milestone_title) &&
+    milestoneHasNoQuests &&
+    !planning;
+
+  const showEditor = planning || Boolean(questDraft);
 
   return (
     <div className="flex min-h-screen flex-col items-center px-4 pb-24 pt-6">
@@ -45,10 +86,35 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
         loading={loading}
         error={error}
         busyQuestId={busyQuestId}
+        canPlanQuests={showPlanCta}
+        onPlanQuests={() => {
+          setPlanning(true);
+        }}
         onToggleQuest={(questId, completed) => {
           void toggleQuest(questId, completed);
         }}
       />
+
+      {showEditor ? (
+        <QuestPlanEditor
+          draft={questDraft}
+          goal={questGoal}
+          milestone={questMilestone}
+          confirmedQuests={questsConfirmed ? savedQuests : []}
+          loading={questLoading || (planning && !questDraft && !questsConfirmed)}
+          busy={questBusy}
+          error={questError}
+          onConfirm={async () => {
+            await confirmQuests();
+            setPlanning(false);
+            await reload();
+            await reloadQuestPlan();
+          }}
+          onRevise={(feedback) => {
+            void reviseQuests(feedback);
+          }}
+        />
+      ) : null}
 
       <BottomDock />
     </div>

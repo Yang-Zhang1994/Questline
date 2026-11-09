@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { InterviewTopic, MilestonePlanDraft } from '@questline/shared';
+import type { InterviewTopic, MilestonePlanDraft, QuestPlanDraft } from '@questline/shared';
 import {
   INTERVIEW_COMPLETE_STUB,
   MOCHI_INTERVIEW_SYSTEM_PROMPT,
@@ -15,6 +15,11 @@ import {
   normalizeMilestonePlan,
 } from './prompts/mochiMilestonePlan.js';
 import {
+  MOCHI_QUEST_PLAN_SYSTEM_PROMPT,
+  buildEchoQuestPlan,
+  normalizeQuestPlan,
+} from './prompts/mochiQuestPlan.js';
+import {
   type InterviewAiRequest,
   type InterviewAiResponse,
   InterviewAiResponseSchema,
@@ -24,6 +29,11 @@ import {
   type ProposeMilestonePlanRequest,
   type ReviseMilestonePlanRequest,
 } from './milestonePlanTypes.js';
+import {
+  QuestPlanDraftSchema,
+  type ProposeQuestPlanRequest,
+  type ReviseQuestPlanRequest,
+} from './questPlanTypes.js';
 import { ensureNoQuestion, ensureOneQuestion, parseModelJson } from './parse.js';
 
 /** Roles Anthropic Messages API understands for conversation turns. */
@@ -43,6 +53,8 @@ export type ChatAiClient = {
   evaluateInterviewAnswer(input: InterviewAiRequest): Promise<InterviewAiResponse>;
   proposeMilestonePlan(input: ProposeMilestonePlanRequest): Promise<MilestonePlanDraft>;
   reviseMilestonePlan(input: ReviseMilestonePlanRequest): Promise<MilestonePlanDraft>;
+  proposeQuestPlan(input: ProposeQuestPlanRequest): Promise<QuestPlanDraft>;
+  reviseQuestPlan(input: ReviseQuestPlanRequest): Promise<QuestPlanDraft>;
 };
 
 export type CreateClaudeClientOptions = {
@@ -170,6 +182,14 @@ export function createEchoChatClient(): ChatAiClient {
     async reviseMilestonePlan(input: ReviseMilestonePlanRequest): Promise<MilestonePlanDraft> {
       return buildEchoMilestonePlan(input.goal, input.today, input.feedback);
     },
+
+    async proposeQuestPlan(input: ProposeQuestPlanRequest): Promise<QuestPlanDraft> {
+      return buildEchoQuestPlan(input.goal, input.milestone, input.today);
+    },
+
+    async reviseQuestPlan(input: ReviseQuestPlanRequest): Promise<QuestPlanDraft> {
+      return buildEchoQuestPlan(input.goal, input.milestone, input.today, input.feedback);
+    },
   };
 }
 
@@ -224,6 +244,31 @@ export function createClaudeClient(options: CreateClaudeClientOptions = {}): Cha
         },
       ]);
       parsed = parseModelJson(retry, MilestonePlanDraftSchema);
+    }
+    return parsed;
+  }
+
+  async function questPlanOnce(
+    userContent: string,
+    history: ClaudeChatTurn[] = [],
+  ): Promise<QuestPlanDraft | null> {
+    const messages: ClaudeChatTurn[] = [
+      ...history,
+      { role: 'user', content: userContent },
+    ];
+    const first = await completeOnce(MOCHI_QUEST_PLAN_SYSTEM_PROMPT, messages);
+    let parsed = parseModelJson(first, QuestPlanDraftSchema);
+    if (!parsed) {
+      const retry = await completeOnce(MOCHI_QUEST_PLAN_SYSTEM_PROMPT, [
+        ...messages,
+        { role: 'assistant', content: first },
+        {
+          role: 'user',
+          content:
+            'Your previous reply was not valid JSON matching the schema. Reply again with ONLY the JSON object.',
+        },
+      ]);
+      parsed = parseModelJson(retry, QuestPlanDraftSchema);
     }
     return parsed;
   }
@@ -299,6 +344,50 @@ export function createClaudeClient(options: CreateClaudeClientOptions = {}): Cha
       }
       return normalizeMilestonePlan(parsed, input.goal, input.today);
     },
+
+    async proposeQuestPlan(input: ProposeQuestPlanRequest): Promise<QuestPlanDraft> {
+      const payload = JSON.stringify(
+        {
+          goal: input.goal,
+          milestone: input.milestone,
+          daily_time_budget_minutes: input.goal.time_budget_minutes_per_day,
+          today: input.today,
+        },
+        null,
+        2,
+      );
+      const parsed = await questPlanOnce(
+        `Propose small daily quests for this current milestone only. Fit each day within the time budget. Reply with JSON only.\n${payload}`,
+        input.history,
+      );
+      if (!parsed) {
+        throw new Error('Claude quest plan failed schema validation');
+      }
+      return normalizeQuestPlan(parsed, input.goal, input.milestone, input.today);
+    },
+
+    async reviseQuestPlan(input: ReviseQuestPlanRequest): Promise<QuestPlanDraft> {
+      const payload = JSON.stringify(
+        {
+          goal: input.goal,
+          milestone: input.milestone,
+          previous_draft: input.previous,
+          feedback: input.feedback ?? null,
+          daily_time_budget_minutes: input.goal.time_budget_minutes_per_day,
+          today: input.today,
+        },
+        null,
+        2,
+      );
+      const parsed = await questPlanOnce(
+        `Revise this quest plan using the milestone and feedback. Keep each day within the time budget. Reply with JSON only.\n${payload}`,
+        input.history,
+      );
+      if (!parsed) {
+        throw new Error('Claude quest revise failed schema validation');
+      }
+      return normalizeQuestPlan(parsed, input.goal, input.milestone, input.today);
+    },
   };
 }
 
@@ -312,6 +401,8 @@ export function createTemplateInterviewClient(
     completeChat: echo.completeChat,
     proposeMilestonePlan: echo.proposeMilestonePlan,
     reviseMilestonePlan: echo.reviseMilestonePlan,
+    proposeQuestPlan: echo.proposeQuestPlan,
+    reviseQuestPlan: echo.reviseQuestPlan,
     async evaluateInterviewAnswer(input) {
       const forced = decisions[i++];
       if (forced === 'vague') {

@@ -1,8 +1,10 @@
 import { ChatWindow } from '../components/ChatWindow/ChatWindow';
 import { BottomDock } from '../components/BottomDock/BottomDock';
 import { MilestonePlanEditor } from '../components/MilestonePlanEditor/MilestonePlanEditor';
+import { QuestPlanEditor } from '../components/QuestPlanEditor/QuestPlanEditor';
 import { useChat } from '../hooks/useChat';
 import { useMilestonePlan } from '../hooks/useMilestonePlan';
+import { useQuestPlan } from '../hooks/useQuestPlan';
 
 export type TalkPageProps = {
   userEmail?: string | null;
@@ -23,11 +25,34 @@ export function TalkPage({ userEmail = null, onLogout }: TalkPageProps) {
     revise: reviseMilestones,
   } = useMilestonePlan();
 
+  const {
+    draft: questDraft,
+    goal: questGoal,
+    milestone: questMilestone,
+    savedQuests,
+    confirmed: questsConfirmed,
+    loading: questLoading,
+    busy: questBusy,
+    error: questError,
+    confirm: confirmQuests,
+    revise: reviseQuests,
+  } = useQuestPlan({
+    enabled: milestonesConfirmed && savedMilestones.length > 0,
+    autoPropose: true,
+  });
+
   // Only surface the editor once we know there is an active goal (or a draft/saved plan).
   const showMilestoneEditor =
     milestoneDraft !== null ||
     (milestonesConfirmed && savedMilestones.length > 0) ||
     (milestoneLoading && milestoneGoal !== null);
+
+  const showQuestEditor =
+    milestonesConfirmed &&
+    savedMilestones.length > 0 &&
+    (questDraft !== null ||
+      (questsConfirmed && savedQuests.length > 0) ||
+      questLoading);
 
   return (
     <div className="flex min-h-screen flex-col items-center px-4 pb-24 pt-6">
@@ -87,6 +112,24 @@ export function TalkPage({ userEmail = null, onLogout }: TalkPageProps) {
           }}
           onRevise={(feedback) => {
             void reviseMilestones(feedback);
+          }}
+        />
+      ) : null}
+
+      {showQuestEditor ? (
+        <QuestPlanEditor
+          draft={questDraft}
+          goal={questGoal}
+          milestone={questMilestone}
+          confirmedQuests={questsConfirmed ? savedQuests : []}
+          loading={questLoading}
+          busy={questBusy}
+          error={questError}
+          onConfirm={() => {
+            void confirmQuests();
+          }}
+          onRevise={(feedback) => {
+            void reviseQuests(feedback);
           }}
         />
       ) : null}

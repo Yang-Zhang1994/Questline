@@ -7,6 +7,9 @@ export type DailyNoteProps = {
   loading?: boolean;
   error?: string | null;
   busyQuestId?: number | null;
+  /** When true, offer planning quests for the current milestone (Issue #7). */
+  canPlanQuests?: boolean;
+  onPlanQuests?: () => void;
   onToggleQuest: (questId: number, completed: boolean) => void;
 };
 
@@ -15,8 +18,12 @@ export function DailyNote({
   loading = false,
   error = null,
   busyQuestId = null,
+  canPlanQuests = false,
+  onPlanQuests,
   onToggleQuest,
 }: DailyNoteProps) {
+  const emptyToday = Boolean(data && data.quests.length === 0);
+
   return (
     <section
       className="w-full max-w-[640px] overflow-hidden rounded-window border-[3px] border-pink bg-pink-pale shadow-window animate-rise-in"
@@ -61,8 +68,24 @@ export function DailyNote({
                 </p>
               ) : null}
 
-              {data.quests.length === 0 ? (
-                <p className="m-0 text-ink-soft">No quests for today — enjoy a soft rest day.</p>
+              {emptyToday ? (
+                <div>
+                  <p className="m-0 text-ink-soft">
+                    {canPlanQuests
+                      ? 'No quests lined up yet for this stage — want me to sketch a few tiny ones?'
+                      : 'No quests for today — enjoy a soft rest day.'}
+                  </p>
+                  {canPlanQuests && onPlanQuests ? (
+                    <button
+                      type="button"
+                      onClick={onPlanQuests}
+                      className="mt-3 inline-flex items-center justify-center rounded-pill bg-gel-pink px-4 py-2 text-[0.88rem] font-bold text-white shadow-[inset_0_2px_0_rgba(255,255,255,0.45)] hover:brightness-105"
+                      data-testid="plan-quests-cta"
+                    >
+                      ♡ Plan my next days
+                    </button>
+                  ) : null}
+                </div>
               ) : (
                 <ul className="m-0 flex list-none flex-col gap-[0.55rem] p-0">
                   {data.quests.map((quest: Quest) => (
