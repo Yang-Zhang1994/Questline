@@ -1,11 +1,25 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { ChatMessage } from '@questline/shared';
-import { fetchChatMessages, sendChatMessage } from '../api/chat';
+import type { ChatMessage, InterviewState } from '@questline/shared';
+import { fetchChatMessages, restartInterview, sendChatMessage } from '../api/chat';
+
+const EMPTY_INTERVIEW: InterviewState = {
+  status: 'in_progress',
+  current_topic: 'done_definition',
+  answered_topics: [],
+  answers: {
+    done_definition: null,
+    starting_point: null,
+    time_budget: null,
+    deadline: null,
+  },
+};
 
 export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [interview, setInterview] = useState<InterviewState>(EMPTY_INTERVIEW);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [restarting, setRestarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
@@ -14,6 +28,7 @@ export function useChat() {
     try {
       const payload = await fetchChatMessages();
       setMessages(payload.messages);
+      setInterview(payload.interview);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
@@ -34,6 +49,7 @@ export function useChat() {
     try {
       const payload = await sendChatMessage(trimmed);
       setMessages((prev) => [...prev, payload.user_message, payload.mochi_message]);
+      setInterview(payload.interview);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not send message');
     } finally {
@@ -41,12 +57,29 @@ export function useChat() {
     }
   }, []);
 
+  const restart = useCallback(async () => {
+    setRestarting(true);
+    setError(null);
+    try {
+      const payload = await restartInterview();
+      setMessages(payload.messages);
+      setInterview(payload.interview);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not restart the interview');
+    } finally {
+      setRestarting(false);
+    }
+  }, []);
+
   return {
     messages,
+    interview,
     loading,
     sending,
+    restarting,
     error,
     send,
+    restart,
     reload,
   };
 }

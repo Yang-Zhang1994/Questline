@@ -155,6 +155,17 @@ describe('App auth gate (Issue #8)', () => {
                   created_at: '2026-11-09T15:00:00Z',
                 },
               ],
+              interview: {
+                status: 'in_progress',
+                current_topic: 'done_definition',
+                answered_topics: [],
+                answers: {
+                  done_definition: null,
+                  starting_point: null,
+                  time_budget: null,
+                  deadline: null,
+                },
+              },
             }),
         };
       }

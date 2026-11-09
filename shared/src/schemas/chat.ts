@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { InterviewStateSchema } from './interview.js';
 import { IsoDateTimeSchema } from './quest.js';
 
 export const ChatRoleSchema = z.enum(['user', 'mochi']);
@@ -18,6 +19,7 @@ export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 
 export const ChatHistoryResponseSchema = z.object({
   messages: z.array(ChatMessageSchema),
+  interview: InterviewStateSchema,
 });
 
 export type ChatHistoryResponse = z.infer<typeof ChatHistoryResponseSchema>;
@@ -36,6 +38,12 @@ export type SendChatMessageBody = z.infer<typeof SendChatMessageBodySchema>;
 export const SendChatMessageResponseSchema = z.object({
   user_message: ChatMessageSchema,
   mochi_message: ChatMessageSchema,
+  interview: InterviewStateSchema,
 });
 
 export type SendChatMessageResponse = z.infer<typeof SendChatMessageResponseSchema>;
+
+/** Restart clears chat + interview and re-seeds the welcome turn. */
+export const RestartInterviewResponseSchema = ChatHistoryResponseSchema;
+
+export type RestartInterviewResponse = z.infer<typeof RestartInterviewResponseSchema>;

@@ -7,6 +7,7 @@ import { systemClock } from './clock.js';
 import type { Db } from './db/connection.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { createChatRepository } from './repositories/chatRepository.js';
+import { createInterviewRepository } from './repositories/interviewRepository.js';
 import { createQuestRepository } from './repositories/questRepository.js';
 import { createUserRepository } from './repositories/userRepository.js';
 import { createAuthRouter } from './routes/auth.js';
@@ -28,6 +29,7 @@ export function createApp(options: CreateAppOptions) {
   const users = createUserRepository(options.db);
   const quests = createQuestRepository(options.db);
   const chat = createChatRepository(options.db);
+  const interviews = createInterviewRepository(options.db);
   const authService = createAuthService({ users });
   const questService = createQuestService({ quests, clock });
   // Lazy default so quest/auth tests can createApp without ANTHROPIC_* env.
@@ -40,9 +42,13 @@ export function createApp(options: CreateAppOptions) {
           cached ??= createClaudeClient();
           return cached.completeChat(messages);
         },
+        async evaluateInterviewAnswer(input) {
+          cached ??= createClaudeClient();
+          return cached.evaluateInterviewAnswer(input);
+        },
       };
     })();
-  const chatService = createChatService({ chat, ai, clock });
+  const chatService = createChatService({ chat, interviews, ai, clock });
 
   const app = express();
   // express-rate-limit needs a stable IP behind proxies / Vitest.
