@@ -26,6 +26,9 @@ const todayPayload = {
     level: 1,
     xp_into_level: 0,
     xp_for_next_level: 50,
+    current_streak: 0,
+    best_streak: 0,
+    last_active_date: null,
   },
 };
 
@@ -117,6 +120,9 @@ describe('App auth gate (Issue #8)', () => {
                 level: 1,
                 xp_into_level: 10,
                 xp_for_next_level: 50,
+                current_streak: 1,
+                best_streak: 1,
+                last_active_date: '2026-11-09',
               },
               leveled_up: false,
               level_up_message: null,
@@ -128,6 +134,8 @@ describe('App auth gate (Issue #8)', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     render(<App />);
+
+    expect(await screen.findByTestId('streak-counter')).toBeInTheDocument();
 
     const checkbox = await screen.findByRole('checkbox', { name: todayPayload.quests[0].title });
     await user.click(checkbox);

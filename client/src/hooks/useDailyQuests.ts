@@ -38,7 +38,7 @@ export function useDailyQuests() {
     setBusyQuestId(questId);
     setError(null);
     try {
-      const result = await setQuestCompletion(questId, completed);
+      const result = await setQuestCompletion(questId, completed, todayLocalDate());
       setData((prev) => {
         if (!prev) return prev;
         const quests = prev.quests.map((q) => (q.id === result.quest.id ? result.quest : q));

@@ -38,6 +38,9 @@ const sample: TodayQuestsResponse = {
     level: 1,
     xp_into_level: 10,
     xp_for_next_level: 50,
+    current_streak: 1,
+    best_streak: 1,
+    last_active_date: '2026-10-28',
   },
 };
 

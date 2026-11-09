@@ -17,7 +17,7 @@ async function loginAsDemo(app: ReturnType<typeof createApp>): Promise<string> {
   return res.body.token as string;
 }
 
-describe('GET/PATCH /api/quests (Issue #9 / #11 / #17 / #31)', () => {
+describe('GET/PATCH /api/quests (Issue #9 / #11 / #12 / #17 / #31)', () => {
   let db: Db;
   const iso = '2026-10-28T15:30:00.000Z';
   const clock = fixedClock(iso);
@@ -76,7 +76,36 @@ describe('GET/PATCH /api/quests (Issue #9 / #11 / #17 / #31)', () => {
 
     expect(res.body.quest.completed_at).toBe('2026-10-28T15:30:00Z');
     expect(res.body.progress.xp).toBe(10);
+    expect(res.body.progress.current_streak).toBe(1);
+    expect(res.body.progress.best_streak).toBe(1);
     expect(res.body.leveled_up).toBe(false);
+  });
+
+  // AC: The current streak and best streak are displayed (via Today + completion)
+  it('PATCH completion with local_date bumps streak once per day', async () => {
+    const app = buildApp();
+    const token = await loginAsDemo(app);
+    const today = await request(app)
+      .get('/api/quests/today?local_date=2026-10-28')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const firstId = today.body.quests[0].id as number;
+    const secondId = today.body.quests[1].id as number;
+
+    const first = await request(app)
+      .patch(`/api/quests/${firstId}/completion`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ completed: true, local_date: '2026-10-28' })
+      .expect(200);
+    expect(first.body.progress.current_streak).toBe(1);
+
+    const second = await request(app)
+      .patch(`/api/quests/${secondId}/completion`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ completed: true, local_date: '2026-10-28' })
+      .expect(200);
+    expect(second.body.progress.current_streak).toBe(1);
+    expect(second.body.progress.best_streak).toBe(1);
   });
 
   // AC: User can undo an accidental check-off

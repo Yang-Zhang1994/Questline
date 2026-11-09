@@ -7,7 +7,13 @@ import type {
   UserProgress,
 } from '@questline/shared';
 import { toIsoDateTime } from '../clock.js';
-import { levelFromTotalXp, progressSnapshotFromXp } from '../config/game.js';
+import {
+  applyActiveDay,
+  levelFromTotalXp,
+  progressSnapshotFromXp,
+  revertActiveDay,
+  type StreakState,
+} from '../config/game.js';
 import type { Db } from '../db/connection.js';
 
 type QuestRow = {
@@ -180,14 +186,16 @@ export function createQuestRepository(db: Db) {
     },
 
     /**
-     * Complete or undo a quest and adjust XP in one transaction (Issue #11).
+     * Complete or undo a quest and adjust XP + streak in one transaction (#11 / #12).
      * Caller must only invoke when the completion state actually changes.
+     * `localDate` is the user's local YYYY-MM-DD (never server "today").
      */
     async setCompletionWithXp(
       userId: number,
       id: number,
       completedAt: string | null,
       xpDelta: number,
+      localDate: string,
     ): Promise<{ quest: Quest; progress: UserProgress; previousLevel: number } | null> {
       const client = await db.connect();
       try {
@@ -215,11 +223,20 @@ export function createQuestRepository(db: Db) {
           [completedAt, id],
         );
 
-        const progressRow = await client.query<{ xp: number; level: number }>(
-          `INSERT INTO user_progress (user_id, xp, level, current_streak, best_streak)
-           VALUES ($1, 0, 1, 0, 0)
+        const progressRow = await client.query<{
+          xp: number;
+          level: number;
+          current_streak: number;
+          best_streak: number;
+          last_active_date: string | null;
+          active_day_completions: number;
+        }>(
+          `INSERT INTO user_progress (
+             user_id, xp, level, current_streak, best_streak, last_active_date, active_day_completions
+           )
+           VALUES ($1, 0, 1, 0, 0, NULL, 0)
            ON CONFLICT (user_id) DO UPDATE SET user_id = EXCLUDED.user_id
-           RETURNING xp, level`,
+           RETURNING xp, level, current_streak, best_streak, last_active_date, active_day_completions`,
           [userId],
         );
         const previousLevel = progressRow.rows[0].level;
@@ -227,17 +244,50 @@ export function createQuestRepository(db: Db) {
         const nextXp = Math.max(0, previousXp + xpDelta);
         const nextLevel = levelFromTotalXp(nextXp);
 
+        let streak: StreakState = {
+          current_streak: progressRow.rows[0].current_streak,
+          best_streak: progressRow.rows[0].best_streak,
+          last_active_date: progressRow.rows[0].last_active_date,
+        };
+        let activeDayCompletions = progressRow.rows[0].active_day_completions;
+
+        if (xpDelta > 0) {
+          // Completing — first active quest of the local day bumps streak.
+          if (streak.last_active_date === localDate) {
+            activeDayCompletions += 1;
+          } else {
+            streak = applyActiveDay(streak, localDate);
+            activeDayCompletions = 1;
+          }
+        } else if (streak.last_active_date === localDate) {
+          // Undo — reverse streak only when this was the last completion that day.
+          activeDayCompletions = Math.max(0, activeDayCompletions - 1);
+          if (activeDayCompletions === 0) {
+            streak = revertActiveDay(streak, localDate);
+          }
+        }
+
         await client.query(
           `UPDATE user_progress
-           SET xp = $1, level = $2
-           WHERE user_id = $3`,
-          [nextXp, nextLevel, userId],
+           SET xp = $1, level = $2,
+               current_streak = $3, best_streak = $4, last_active_date = $5,
+               active_day_completions = $6
+           WHERE user_id = $7`,
+          [
+            nextXp,
+            nextLevel,
+            streak.current_streak,
+            streak.best_streak,
+            streak.last_active_date,
+            activeDayCompletions,
+            userId,
+          ],
         );
 
         await client.query('COMMIT');
         return {
           quest: mapQuest(updated.rows[0]),
-          progress: progressSnapshotFromXp(nextXp),
+          progress: progressSnapshotFromXp(nextXp, streak),
           previousLevel,
         };
       } catch (err) {

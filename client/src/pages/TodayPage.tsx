@@ -3,6 +3,7 @@ import { DailyNote } from '../components/DailyNote/DailyNote';
 import { BottomDock } from '../components/BottomDock/BottomDock';
 import { LevelUpToast } from '../components/LevelUpToast/LevelUpToast';
 import { QuestPlanEditor } from '../components/QuestPlanEditor/QuestPlanEditor';
+import { StreakCounter } from '../components/StreakCounter/StreakCounter';
 import { XpBar } from '../components/XpBar/XpBar';
 import { useDailyQuests } from '../hooks/useDailyQuests';
 import { useQuestPlan } from '../hooks/useQuestPlan';
@@ -93,8 +94,9 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
       </header>
 
       {data?.progress ? (
-        <div className="relative z-[1] mb-4 w-full max-w-[640px]">
+        <div className="relative z-[1] mb-4 flex w-full max-w-[640px] flex-col gap-2">
           <XpBar progress={data.progress} />
+          <StreakCounter progress={data.progress} />
         </div>
       ) : null}
 

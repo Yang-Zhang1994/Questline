@@ -41,11 +41,15 @@ export async function fetchTodayQuests(localDate?: string): Promise<TodayQuestsR
 export async function setQuestCompletion(
   questId: number,
   completed: boolean,
+  localDate?: string,
 ): Promise<ToggleQuestCompletionResponse> {
   const res = await fetch(`/api/quests/${questId}/completion`, {
     method: 'PATCH',
     headers: authHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ completed }),
+    body: JSON.stringify({
+      completed,
+      ...(localDate ? { local_date: localDate } : {}),
+    }),
   });
   const body = await parseJson(res);
   if (!res.ok) {

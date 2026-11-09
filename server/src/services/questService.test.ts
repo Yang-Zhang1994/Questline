@@ -12,7 +12,7 @@ function fixedClock(iso: string): Clock {
   return { now: () => new Date(iso) };
 }
 
-describe('questService (Issue #9 / #11 / #17 / #31 Postgres)', () => {
+describe('questService (Issue #9 / #11 / #12 / #17 / #31 Postgres)', () => {
   let db: Db;
   let demoUserId: number;
   const iso = '2026-10-28T15:30:00.000Z';
@@ -143,5 +143,73 @@ describe('questService (Issue #9 / #11 / #17 / #31 Postgres)', () => {
     expect(empty.quests).toEqual([]);
     expect(empty.total_count).toBe(0);
     expect(empty.progress.level).toBe(1);
+  });
+
+  // AC: The streak increases by 1 on each day the user completes at least one quest
+  // AC: Completing several quests on the same day counts as one streak day
+  it('bumps current streak once per local active day', async () => {
+    const { service: questService } = service();
+    const today = await questService.getToday(demoUserId, '2026-10-28');
+    const [first, second] = today.quests;
+    expect(today.progress.current_streak).toBe(0);
+
+    const one = await questService.setCompletion(demoUserId, first.id, true, '2026-10-28');
+    expect(one.progress.current_streak).toBe(1);
+    expect(one.progress.best_streak).toBe(1);
+    expect(one.progress.last_active_date).toBe('2026-10-28');
+
+    const two = await questService.setCompletion(demoUserId, second.id, true, '2026-10-28');
+    expect(two.progress.current_streak).toBe(1);
+    expect(two.progress.best_streak).toBe(1);
+
+    // Undo one of two same-day completions — streak day still stands.
+    const partialUndo = await questService.setCompletion(
+      demoUserId,
+      second.id,
+      false,
+      '2026-10-28',
+    );
+    expect(partialUndo.progress.current_streak).toBe(1);
+    expect(partialUndo.progress.last_active_date).toBe('2026-10-28');
+  });
+
+  // AC: Undoing reverses streak side effects when it was the only completion that day
+  it('reverses streak when undoing the only completion of the local day', async () => {
+    const { service: questService } = service();
+    const quest = (await questService.getToday(demoUserId, '2026-10-28')).quests[0];
+    await questService.setCompletion(demoUserId, quest.id, true, '2026-10-28');
+    const undone = await questService.setCompletion(demoUserId, quest.id, false, '2026-10-28');
+    expect(undone.progress.current_streak).toBe(0);
+    expect(undone.progress.best_streak).toBe(0);
+    expect(undone.progress.last_active_date).toBeNull();
+  });
+
+  // AC: The streak resets to 0 after a full day with no completed quest
+  // AC: Streak logic uses the user's local date
+  it('resets current streak after a missed local day and continues from yesterday', async () => {
+    const { service: questService } = service();
+    const quest = (await questService.getToday(demoUserId, '2026-10-28')).quests[0];
+    await questService.setCompletion(demoUserId, quest.id, true, '2026-10-26');
+
+    const afterMiss = await questService.getToday(demoUserId, '2026-10-28');
+    expect(afterMiss.progress.current_streak).toBe(0);
+    expect(afterMiss.progress.best_streak).toBe(1);
+
+    await db.query(
+      `UPDATE user_progress
+       SET current_streak = 2, best_streak = 4, last_active_date = '2026-10-27',
+           active_day_completions = 1
+       WHERE user_id = $1`,
+      [demoUserId],
+    );
+    const next = await questService.setCompletion(
+      demoUserId,
+      (await questService.getToday(demoUserId, '2026-10-28')).quests[1].id,
+      true,
+      '2026-10-28',
+    );
+    expect(next.progress.current_streak).toBe(3);
+    expect(next.progress.best_streak).toBe(4);
+    expect(next.progress.last_active_date).toBe('2026-10-28');
   });
 });

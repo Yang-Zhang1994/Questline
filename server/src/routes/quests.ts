@@ -121,7 +121,12 @@ export function createQuestsRouter(
         throw validationError('questId must be a positive integer');
       }
       const body = ToggleQuestCompletionBodySchema.parse(req.body);
-      const payload = await questService.setCompletion(user.id, questId, body.completed);
+      const payload = await questService.setCompletion(
+        user.id,
+        questId,
+        body.completed,
+        body.local_date,
+      );
       res.json(payload);
     } catch (err) {
       next(err);

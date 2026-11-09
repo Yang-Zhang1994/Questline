@@ -24,6 +24,9 @@ const todayPayload = {
     level: 1,
     xp_into_level: 0,
     xp_for_next_level: 50,
+    current_streak: 0,
+    best_streak: 0,
+    last_active_date: null,
   },
 };
 
@@ -68,6 +71,9 @@ describe('quests API client (Issue #8 / #9)', () => {
             level: 1,
             xp_into_level: 10,
             xp_for_next_level: 50,
+            current_streak: 1,
+            best_streak: 1,
+            last_active_date: '2026-11-09',
           },
           leveled_up: false,
           level_up_message: null,
@@ -75,13 +81,18 @@ describe('quests API client (Issue #8 / #9)', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    const result = await setQuestCompletion(1, true);
+    const result = await setQuestCompletion(1, true, '2026-11-09');
 
     expect(result.progress.xp).toBe(10);
+    expect(result.progress.current_streak).toBe(1);
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('/api/quests/1/completion');
     expect(init.method).toBe('PATCH');
+    expect(JSON.parse(String(init.body))).toEqual({
+      completed: true,
+      local_date: '2026-11-09',
+    });
     const headers = new Headers(init.headers);
     expect(headers.get('Authorization')).toBe('Bearer demo-jwt');
     expect(headers.get('Content-Type')).toBe('application/json');

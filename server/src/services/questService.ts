@@ -50,7 +50,7 @@ export function createQuestService(deps: QuestServiceDeps) {
       const date = localDate ?? formatLocalDate(deps.clock.now());
       const ctx = await deps.quests.listDueOnDateForActiveGoal(userId, date);
       const doneCount = ctx.quests.filter((q) => q.completed_at !== null).length;
-      const progress = await deps.progress.getOrCreate(userId);
+      const progress = await deps.progress.getOrCreate(userId, date);
 
       return {
         local_date: date,
@@ -68,19 +68,22 @@ export function createQuestService(deps: QuestServiceDeps) {
       userId: number,
       questId: number,
       completed: boolean,
+      localDate?: string,
     ): Promise<ToggleQuestCompletionResponse> {
       const existing = await deps.quests.findByIdForUser(userId, questId);
       if (!existing) {
         throw notFound(`Quest ${questId} was not found`);
       }
 
+      const date = localDate ?? formatLocalDate(deps.clock.now());
+
       // Idempotent no-ops: still return current progress for the HUD.
       if (completed && existing.completed_at !== null) {
-        const progress = await deps.progress.getOrCreate(userId);
+        const progress = await deps.progress.getOrCreate(userId, date);
         return completionPayload(existing, progress, false);
       }
       if (!completed && existing.completed_at === null) {
-        const progress = await deps.progress.getOrCreate(userId);
+        const progress = await deps.progress.getOrCreate(userId, date);
         return completionPayload(existing, progress, false);
       }
 
@@ -89,6 +92,7 @@ export function createQuestService(deps: QuestServiceDeps) {
         questId,
         completed ? toIsoDateTime(deps.clock.now()) : null,
         completed ? XP_PER_QUEST : -XP_PER_QUEST,
+        date,
       );
       if (!result) {
         throw notFound(`Quest ${questId} was not found`);
