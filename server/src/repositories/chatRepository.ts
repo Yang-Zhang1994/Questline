@@ -93,6 +93,10 @@ export function createChatRepository(db: Db) {
         client.release();
       }
     },
+
+    async deleteAllForUser(userId: number): Promise<void> {
+      await db.query(`DELETE FROM chat_messages WHERE user_id = $1`, [userId]);
+    },
   };
 }
 

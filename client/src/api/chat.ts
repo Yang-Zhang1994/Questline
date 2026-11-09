@@ -1,8 +1,11 @@
 import {
   ChatHistoryResponseSchema,
+  RestartInterviewResponseSchema,
   SendChatMessageResponseSchema,
   type ChatHistoryResponse,
   type ChatMessage,
+  type InterviewState,
+  type RestartInterviewResponse,
   type SendChatMessageResponse,
 } from '@questline/shared';
 import { authHeaders } from './authToken';
@@ -49,4 +52,16 @@ export async function sendChatMessage(content: string): Promise<SendChatMessageR
   return SendChatMessageResponseSchema.parse(body);
 }
 
-export type { ChatMessage };
+export async function restartInterview(): Promise<RestartInterviewResponse> {
+  const res = await fetch('/api/chat/interview/restart', {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  const body = await parseJson(res);
+  if (!res.ok) {
+    throw new Error(errorMessage(body, 'Could not restart the interview'));
+  }
+  return RestartInterviewResponseSchema.parse(body);
+}
+
+export type { ChatMessage, InterviewState };

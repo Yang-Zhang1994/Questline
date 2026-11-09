@@ -51,5 +51,19 @@ export function createChatRouter(chatService: ChatService): Router {
     }
   });
 
+  /** Restart the goal interview from the beginning (Issue #3). */
+  router.post('/interview/restart', chatWriteLimiter, async (req, res, next) => {
+    try {
+      const user = getRequestUser(req);
+      if (!user) {
+        throw unauthorized();
+      }
+      const payload = await chatService.restartInterview(user.id);
+      res.json(payload);
+    } catch (err) {
+      next(err);
+    }
+  });
+
   return router;
 }

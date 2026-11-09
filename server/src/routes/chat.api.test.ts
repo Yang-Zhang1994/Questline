@@ -1,7 +1,9 @@
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatAiClient } from '../ai/client.js';
+import { countQuestions } from '../ai/parse.js';
 import { MOCHI_WELCOME_MESSAGE } from '../ai/prompts/mochiChat.js';
+import { TOPIC_QUESTIONS } from '../ai/prompts/mochiInterview.js';
 import type { Clock } from '../clock.js';
 import { createApp } from '../app.js';
 import { openDatabase, resetDatabase, type Db } from '../db/connection.js';
@@ -19,10 +21,11 @@ async function loginAsDemo(app: ReturnType<typeof createApp>): Promise<string> {
   return res.body.token as string;
 }
 
-describe('GET/POST /api/chat (Issue #2)', () => {
+describe('GET/POST /api/chat interview (Issue #3)', () => {
   let db: Db;
   const iso = '2026-11-09T15:00:00.000Z';
   const clock = fixedClock(iso);
+  let evaluateInterviewAnswer: ReturnType<typeof vi.fn>;
   let completeChat: ReturnType<typeof vi.fn>;
 
   beforeAll(async () => {
@@ -32,7 +35,14 @@ describe('GET/POST /api/chat (Issue #2)', () => {
   beforeEach(async () => {
     await resetDatabase(db);
     await seedDemoDataIfEmpty(db, clock);
-    completeChat = vi.fn(async () => 'That sounds lovely. What would "done" look like for you?');
+    evaluateInterviewAnswer = vi.fn(async (input: { user_answer: string; next_topic: string | null }) => ({
+      evaluation: 'accepted' as const,
+      extracted_answer: input.user_answer,
+      mochi_message: input.next_topic
+        ? `Got it. ${TOPIC_QUESTIONS[input.next_topic as keyof typeof TOPIC_QUESTIONS]}`
+        : 'Lovely — next comes a goal draft to confirm ♡',
+    }));
+    completeChat = vi.fn(async () => 'Soft chat after interview ♡');
   });
 
   afterAll(async () => {
@@ -43,19 +53,17 @@ describe('GET/POST /api/chat (Issue #2)', () => {
     return createApp({
       db,
       clock,
-      ai: ai ?? { completeChat },
+      ai: ai ?? { completeChat, evaluateInterviewAnswer },
     });
   }
 
-  // AC: JWT-protected chat API
   it('rejects missing Bearer token with UNAUTHORIZED', async () => {
     const app = buildApp();
     const res = await request(app).get('/api/chat/messages').expect(401);
     expect(res.body.error.code).toBe('UNAUTHORIZED');
   });
 
-  // AC: persist welcome + history in Postgres chat_messages
-  it('GET /api/chat/messages seeds a welcome Mochi message', async () => {
+  it('GET seeds welcome + in-progress interview state in Postgres', async () => {
     const app = buildApp();
     const token = await loginAsDemo(app);
 
@@ -65,19 +73,20 @@ describe('GET/POST /api/chat (Issue #2)', () => {
       .expect(200);
 
     expect(res.body.messages).toHaveLength(1);
-    expect(res.body.messages[0]).toMatchObject({
-      role: 'mochi',
-      content: MOCHI_WELCOME_MESSAGE,
+    expect(res.body.messages[0].content).toBe(MOCHI_WELCOME_MESSAGE);
+    expect(res.body.interview).toMatchObject({
+      status: 'in_progress',
+      current_topic: 'done_definition',
+      answered_topics: [],
     });
 
-    const stored = await db.query<{ role: string; content: string }>(
-      `SELECT role, content FROM chat_messages ORDER BY id`,
+    const stored = await db.query<{ status: string; current_topic: string }>(
+      `SELECT status, current_topic FROM goal_interviews`,
     );
-    expect(stored.rows).toEqual([{ role: 'mochi', content: MOCHI_WELCOME_MESSAGE }]);
+    expect(stored.rows).toEqual([{ status: 'in_progress', current_topic: 'done_definition' }]);
   });
 
-  // AC: full history sent with each AI request; mock Claude; persist both sides
-  it('POST /api/chat/messages persists user + Mochi turns and calls mocked Claude with full history', async () => {
+  it('POST advances a topic with exactly one question and tracks answered topics', async () => {
     const app = buildApp();
     const token = await loginAsDemo(app);
 
@@ -89,65 +98,95 @@ describe('GET/POST /api/chat (Issue #2)', () => {
     const res = await request(app)
       .post('/api/chat/messages')
       .set('Authorization', `Bearer ${token}`)
-      .send({ content: 'I want to learn Japanese' })
+      .send({ content: 'Read a Japanese novel without a dictionary' })
       .expect(201);
 
-    expect(res.body.user_message).toMatchObject({
-      role: 'user',
-      content: 'I want to learn Japanese',
-    });
-    expect(res.body.mochi_message).toMatchObject({
-      role: 'mochi',
-      content: 'That sounds lovely. What would "done" look like for you?',
-    });
-
-    expect(completeChat).toHaveBeenCalledTimes(1);
-    expect(completeChat.mock.calls[0][0]).toEqual([
-      { role: 'assistant', content: MOCHI_WELCOME_MESSAGE },
-      { role: 'user', content: 'I want to learn Japanese' },
-    ]);
-
-    const stored = await db.query<{ role: string; content: string }>(
-      `SELECT role, content FROM chat_messages ORDER BY id`,
-    );
-    expect(stored.rows).toEqual([
-      { role: 'mochi', content: MOCHI_WELCOME_MESSAGE },
-      { role: 'user', content: 'I want to learn Japanese' },
-      {
-        role: 'mochi',
-        content: 'That sounds lovely. What would "done" look like for you?',
-      },
-    ]);
+    expect(countQuestions(res.body.mochi_message.content)).toBe(1);
+    expect(res.body.interview.answered_topics).toEqual(['done_definition']);
+    expect(res.body.interview.current_topic).toBe('starting_point');
+    expect(evaluateInterviewAnswer).toHaveBeenCalledTimes(1);
   });
 
-  it('POST sends accumulated history on a second turn', async () => {
-    completeChat
-      .mockResolvedValueOnce('Nice! How much time can you spare each day?')
-      .mockResolvedValueOnce('Perfect — we can keep steps tiny.');
+  it('keeps the same topic on a vague answer', async () => {
+    evaluateInterviewAnswer = vi.fn(async () => ({
+      evaluation: 'vague' as const,
+      extracted_answer: null,
+      mochi_message: 'Could you paint a clearer picture of "done"?',
+    }));
 
+    const app = buildApp();
+    const token = await loginAsDemo(app);
+
+    const res = await request(app)
+      .post('/api/chat/messages')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ content: 'stuff' })
+      .expect(201);
+
+    expect(res.body.interview.current_topic).toBe('done_definition');
+    expect(res.body.interview.answered_topics).toEqual([]);
+    expect(countQuestions(res.body.mochi_message.content)).toBe(1);
+  });
+
+  it('covers all four topics then marks the interview complete', async () => {
+    const app = buildApp();
+    const token = await loginAsDemo(app);
+
+    const answers = [
+      'Finish one Japanese novel alone',
+      'I know hiragana',
+      '20 minutes a day',
+      'One year from now',
+    ];
+
+    for (const content of answers) {
+      await request(app)
+        .post('/api/chat/messages')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ content })
+        .expect(201);
+    }
+
+    const res = await request(app)
+      .get('/api/chat/messages')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(res.body.interview.status).toBe('complete');
+    expect(res.body.interview.answered_topics).toEqual([
+      'done_definition',
+      'starting_point',
+      'time_budget',
+      'deadline',
+    ]);
+    expect(res.body.interview.answers.time_budget).toBe('20 minutes a day');
+  });
+
+  it('POST /api/chat/interview/restart clears history and resets topics', async () => {
     const app = buildApp();
     const token = await loginAsDemo(app);
 
     await request(app)
       .post('/api/chat/messages')
       .set('Authorization', `Bearer ${token}`)
-      .send({ content: 'learn guitar' })
+      .send({ content: 'Finish one Japanese novel alone' })
       .expect(201);
 
-    await request(app)
-      .post('/api/chat/messages')
+    const res = await request(app)
+      .post('/api/chat/interview/restart')
       .set('Authorization', `Bearer ${token}`)
-      .send({ content: 'about 20 minutes' })
-      .expect(201);
+      .expect(200);
 
-    expect(completeChat).toHaveBeenCalledTimes(2);
-    const secondCall = completeChat.mock.calls[1][0] as Array<{ role: string; content: string }>;
-    expect(secondCall).toEqual([
-      { role: 'assistant', content: MOCHI_WELCOME_MESSAGE },
-      { role: 'user', content: 'learn guitar' },
-      { role: 'assistant', content: 'Nice! How much time can you spare each day?' },
-      { role: 'user', content: 'about 20 minutes' },
-    ]);
+    expect(res.body.messages).toHaveLength(1);
+    expect(res.body.messages[0].content).toBe(MOCHI_WELCOME_MESSAGE);
+    expect(res.body.interview).toMatchObject({
+      status: 'in_progress',
+      current_topic: 'done_definition',
+      answered_topics: [],
+    });
+
+    const messages = await db.query(`SELECT count(*)::int AS n FROM chat_messages`);
+    expect(messages.rows[0].n).toBe(1);
   });
 
   it('rejects empty messages with VALIDATION_ERROR', async () => {
@@ -159,12 +198,13 @@ describe('GET/POST /api/chat (Issue #2)', () => {
       .send({ content: '   ' })
       .expect(400);
     expect(res.body.error.code).toBe('VALIDATION_ERROR');
-    expect(completeChat).not.toHaveBeenCalled();
+    expect(evaluateInterviewAnswer).not.toHaveBeenCalled();
   });
 
-  it('returns friendly AI_UNAVAILABLE when the Claude mock throws', async () => {
+  it('returns friendly AI_UNAVAILABLE when the interview mock throws', async () => {
     const app = buildApp({
-      completeChat: vi.fn(async () => {
+      completeChat: vi.fn(),
+      evaluateInterviewAnswer: vi.fn(async () => {
         throw new Error('network');
       }),
     });

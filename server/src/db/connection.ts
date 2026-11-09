@@ -66,6 +66,7 @@ export async function resetDatabase(db: Db): Promise<void> {
     TRUNCATE TABLE
       diary_notes,
       chat_messages,
+      goal_interviews,
       stamps,
       user_progress,
       quests,

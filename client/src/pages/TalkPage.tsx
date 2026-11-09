@@ -8,7 +8,7 @@ export type TalkPageProps = {
 };
 
 export function TalkPage({ userEmail = null, onLogout }: TalkPageProps) {
-  const { messages, loading, sending, error, send } = useChat();
+  const { messages, interview, loading, sending, restarting, error, send, restart } = useChat();
 
   return (
     <div className="flex min-h-screen flex-col items-center px-4 pb-24 pt-6">
@@ -42,11 +42,16 @@ export function TalkPage({ userEmail = null, onLogout }: TalkPageProps) {
 
       <ChatWindow
         messages={messages}
+        interview={interview}
         loading={loading}
         sending={sending}
+        restarting={restarting}
         error={error}
         onSend={(content) => {
           void send(content);
+        }}
+        onRestart={() => {
+          void restart();
         }}
       />
 

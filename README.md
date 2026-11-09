@@ -61,14 +61,19 @@ curl -s http://localhost:3001/api/auth/login \
 curl -s http://localhost:3001/api/quests/today \
   -H "Authorization: Bearer <token-from-login>"
 
-# Chat history + send (Issue #2; needs ANTHROPIC_* for a real Mochi reply)
+# Chat history + send (Issues #2 / #3 — goal interview; needs ANTHROPIC_* for real Claude)
 curl -s http://localhost:3001/api/chat/messages \
   -H "Authorization: Bearer <token-from-login>"
 curl -s http://localhost:3001/api/chat/messages \
   -H "Authorization: Bearer <token-from-login>" \
   -H 'Content-Type: application/json' \
   -d '{"content":"I want to learn Japanese"}'
+# Restart the interview from the beginning
+curl -s -X POST http://localhost:3001/api/chat/interview/restart \
+  -H "Authorization: Bearer <token-from-login>"
 ```
+
+Talk runs a **one-question-at-a-time goal interview** (#3): done definition → starting point → time budget → deadline, with follow-ups for vague answers and a **Start over** control. Goal confirm/save is Issue #4.
 
 Missing/invalid tokens receive `{ "error": { "code": "UNAUTHORIZED", "message": "..." } }`. Goal/quest/chat queries are scoped to the authenticated user id. Vitest always mocks Claude — never calls the live API.
 

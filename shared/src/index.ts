@@ -31,11 +31,25 @@ export {
   ChatHistoryResponseSchema,
   ChatMessageSchema,
   ChatRoleSchema,
+  RestartInterviewResponseSchema,
   SendChatMessageBodySchema,
   SendChatMessageResponseSchema,
   type ChatHistoryResponse,
   type ChatMessage,
   type ChatRole,
+  type RestartInterviewResponse,
   type SendChatMessageBody,
   type SendChatMessageResponse,
 } from './schemas/chat.js';
+
+export {
+  INTERVIEW_TOPICS,
+  InterviewAnswersSchema,
+  InterviewStateSchema,
+  InterviewStatusSchema,
+  InterviewTopicSchema,
+  type InterviewAnswers,
+  type InterviewState,
+  type InterviewStatus,
+  type InterviewTopic,
+} from './schemas/interview.js';
