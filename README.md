@@ -11,7 +11,7 @@ Cozy life-sim goal tracker: chat with **Mochi**, confirm a measurable goal, walk
 
 ## Stack
 
-React + Vite (client), Express (API), **PostgreSQL** (`DATABASE_URL`), **JWT** auth, shared zod schemas. Tailwind lands in a separate Issue.
+React + Vite (client), Express (API), **PostgreSQL** (`DATABASE_URL`), **JWT** auth, TailwindCSS, shared zod schemas. Claude chat is server-side only (`ANTHROPIC_*`).
 
 ## Setup
 
@@ -44,7 +44,7 @@ Migrations live in `server/src/db/migrations/` and apply automatically when the 
 
 **Choice:** API returns a JWT in the JSON body; the SPA and curl clients send it as `Authorization: Bearer <token>` (not an httpOnly cookie). The client keeps the token in memory and mirrors it to `sessionStorage` for tab reloads.
 
-**UI demo:** open the Vite client → log in with `demo@questline.local` / `demo-password-123` → Today loads Mochi's note + Postgres quests → check/undo.
+**UI demo:** open the Vite client → log in with `demo@questline.local` / `demo-password-123` → Today loads Mochi's note + Postgres quests → check/undo → dock **💌 Talk** for Mochi Messenger.
 
 ```bash
 # Register
@@ -60,9 +60,17 @@ curl -s http://localhost:3001/api/auth/login \
 # Call a protected route
 curl -s http://localhost:3001/api/quests/today \
   -H "Authorization: Bearer <token-from-login>"
+
+# Chat history + send (Issue #2; needs ANTHROPIC_* for a real Mochi reply)
+curl -s http://localhost:3001/api/chat/messages \
+  -H "Authorization: Bearer <token-from-login>"
+curl -s http://localhost:3001/api/chat/messages \
+  -H "Authorization: Bearer <token-from-login>" \
+  -H 'Content-Type: application/json' \
+  -d '{"content":"I want to learn Japanese"}'
 ```
 
-Missing/invalid tokens receive `{ "error": { "code": "UNAUTHORIZED", "message": "..." } }`. Goal/quest/progress queries are scoped to the authenticated user id.
+Missing/invalid tokens receive `{ "error": { "code": "UNAUTHORIZED", "message": "..." } }`. Goal/quest/chat queries are scoped to the authenticated user id. Vitest always mocks Claude — never calls the live API.
 
 ## Mockup
 

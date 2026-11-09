@@ -26,3 +26,16 @@ export {
   type ToggleQuestCompletionBody,
   type ToggleQuestCompletionResponse,
 } from './schemas/quest.js';
+
+export {
+  ChatHistoryResponseSchema,
+  ChatMessageSchema,
+  ChatRoleSchema,
+  SendChatMessageBodySchema,
+  SendChatMessageResponseSchema,
+  type ChatHistoryResponse,
+  type ChatMessage,
+  type ChatRole,
+  type SendChatMessageBody,
+  type SendChatMessageResponse,
+} from './schemas/chat.js';

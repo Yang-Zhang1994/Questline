@@ -1,4 +1,5 @@
 import { DailyNote } from '../components/DailyNote/DailyNote';
+import { BottomDock } from '../components/BottomDock/BottomDock';
 import { useDailyQuests } from '../hooks/useDailyQuests';
 
 export type TodayPageProps = {
@@ -49,31 +50,7 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
         }}
       />
 
-      <nav
-        className="fixed bottom-4 left-1/2 flex -translate-x-1/2 gap-2 rounded-pill bg-white/92 p-[0.45rem] shadow-dock"
-        aria-label="Main"
-      >
-        <button
-          type="button"
-          className="cursor-default rounded-pill bg-gel-pink px-[1.1rem] py-[0.65rem] font-bold text-white shadow-[inset_0_2px_0_rgba(255,255,255,0.45)]"
-        >
-          ☀️ Today
-        </button>
-        <button
-          type="button"
-          className="cursor-default rounded-pill bg-transparent px-[1.1rem] py-[0.65rem] font-bold text-blue-ink"
-          disabled
-        >
-          🗺️ Map
-        </button>
-        <button
-          type="button"
-          className="cursor-default rounded-pill bg-transparent px-[1.1rem] py-[0.65rem] font-bold text-blue-ink"
-          disabled
-        >
-          💌 Talk
-        </button>
-      </nav>
+      <BottomDock />
     </div>
   );
 }
