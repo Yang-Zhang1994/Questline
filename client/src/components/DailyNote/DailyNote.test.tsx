@@ -31,6 +31,7 @@ const sample: TodayQuestsResponse = {
       completed_at: '2026-10-28T15:30:00Z',
     },
   ],
+  overdue_quests: [],
   done_count: 1,
   total_count: 2,
   progress: {
@@ -75,4 +76,38 @@ describe('DailyNote (Issue #9)', () => {
     expect(doneBox).toBeChecked();
     expect(doneBox.closest('li')).toHaveAttribute('data-completed', 'true');
   });
+
+  // AC: Overdue quests are flagged; user can ask Mochi to reschedule (#14)
+  it('flags overdue quests and offers a reschedule CTA', async () => {
+    const user = userEvent.setup();
+    const onReschedule = vi.fn();
+    const withOverdue: TodayQuestsResponse = {
+      ...sample,
+      overdue_quests: [
+        {
+          id: 9,
+          milestone_id: 2,
+          title: 'Catch up on yesterday leftover',
+          due_date: '2026-10-27',
+          estimated_minutes: 10,
+          completed_at: null,
+        },
+      ],
+    };
+    render(
+      <DailyNote
+        data={withOverdue}
+        canReschedule
+        onReschedule={onReschedule}
+        onToggleQuest={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId('overdue-quests')).toBeInTheDocument();
+    expect(screen.getByTestId('quest-overdue-tag-9')).toHaveTextContent(/soft leftover/i);
+    await user.click(screen.getByTestId('reschedule-cta'));
+    expect(onReschedule).toHaveBeenCalledTimes(1);
+  });
 });
+
+

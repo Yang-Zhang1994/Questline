@@ -66,6 +66,18 @@ describe('questPlanService (Issue #7)', () => {
       async listDueOnDateForActiveGoal() {
         return { goalTitle: null, milestoneTitle: null, quests: [] };
       },
+      async listOverdueForActiveGoal() {
+        return [];
+      },
+      async findRescheduleContext() {
+        return null;
+      },
+      async saveRescheduleDraft() {
+        /* unused in quest-plan unit tests */
+      },
+      async applyRescheduleDraft() {
+        return [];
+      },
       async setCompletedAtForUser() {
         return null;
       },

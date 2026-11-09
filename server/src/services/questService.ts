@@ -61,6 +61,7 @@ export function createQuestService(deps: QuestServiceDeps) {
     async getToday(userId: number, localDate?: string): Promise<TodayQuestsResponse> {
       const date = localDate ?? formatLocalDate(deps.clock.now());
       const ctx = await deps.quests.listDueOnDateForActiveGoal(userId, date);
+      const overdue_quests = await deps.quests.listOverdueForActiveGoal(userId, date);
       const doneCount = ctx.quests.filter((q) => q.completed_at !== null).length;
       const progress = await deps.progress.getOrCreate(userId, date);
       const stamp_card = await deps.stamps.getCardState(userId);
@@ -71,6 +72,7 @@ export function createQuestService(deps: QuestServiceDeps) {
         milestone_title: ctx.milestoneTitle,
         greeting: greetingFor(deps.clock.now().getHours(), doneCount, ctx.quests.length),
         quests: ctx.quests,
+        overdue_quests,
         done_count: doneCount,
         total_count: ctx.quests.length,
         progress,

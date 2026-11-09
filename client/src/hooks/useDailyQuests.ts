@@ -42,11 +42,18 @@ export function useDailyQuests() {
       const result = await setQuestCompletion(questId, completed, todayLocalDate());
       setData((prev) => {
         if (!prev) return prev;
-        const quests = prev.quests.map((q) => (q.id === result.quest.id ? result.quest : q));
+        const inToday = prev.quests.some((q) => q.id === result.quest.id);
+        const quests = inToday
+          ? prev.quests.map((q) => (q.id === result.quest.id ? result.quest : q))
+          : prev.quests;
+        const overdue_quests = prev.overdue_quests
+          .map((q) => (q.id === result.quest.id ? result.quest : q))
+          .filter((q) => q.completed_at === null);
         const doneCount = quests.filter((q) => q.completed_at !== null).length;
         return {
           ...prev,
           quests,
+          overdue_quests,
           done_count: doneCount,
           progress: result.progress,
           stamp_card: result.stamp_card,

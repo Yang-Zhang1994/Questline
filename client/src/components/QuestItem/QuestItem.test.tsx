@@ -57,4 +57,12 @@ describe('QuestItem (Issue #9)', () => {
     await user.click(screen.getByRole('checkbox', { name: done.title }));
     expect(onToggle).toHaveBeenCalledWith(1, false);
   });
+
+  // AC: Overdue quests are flagged in the UI (#14)
+  it('shows an overdue tag when the quest is past due and incomplete', () => {
+    render(<QuestItem quest={baseQuest} overdue onToggle={vi.fn()} />);
+    expect(screen.getByTestId('quest-overdue-tag-1')).toHaveTextContent(/soft leftover/i);
+    expect(screen.getByRole('checkbox').closest('li')).toHaveAttribute('data-overdue', 'true');
+  });
 });
+

@@ -17,6 +17,7 @@ const todayPayload = {
       completed_at: null,
     },
   ],
+  overdue_quests: [],
   done_count: 0,
   total_count: 1,
   progress: {

@@ -1,7 +1,9 @@
 import {
   ConfirmQuestPlanBodySchema,
+  ConfirmRescheduleBodySchema,
   IsoDateSchema,
   ReviseQuestPlanBodySchema,
+  ReviseRescheduleBodySchema,
   ToggleQuestCompletionBodySchema,
 } from '@questline/shared';
 import { Router } from 'express';
@@ -10,6 +12,7 @@ import { getRequestUser } from '../auth/requestUser.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import type { QuestPlanService } from '../services/questPlanService.js';
 import type { QuestService } from '../services/questService.js';
+import type { RescheduleService } from '../services/rescheduleService.js';
 import { unauthorized, validationError } from '../services/errors.js';
 
 const questWriteLimiter = rateLimit({
@@ -25,9 +28,19 @@ const questWriteLimiter = rateLimit({
   },
 });
 
+function parseOptionalLocalDate(raw: unknown): string | undefined {
+  if (typeof raw !== 'string' || raw.length === 0) return undefined;
+  const parsed = IsoDateSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw validationError('local_date must be YYYY-MM-DD');
+  }
+  return parsed.data;
+}
+
 export function createQuestsRouter(
   questService: QuestService,
   questPlanService?: QuestPlanService,
+  rescheduleService?: RescheduleService,
 ): Router {
   const router = Router();
 
@@ -40,15 +53,7 @@ export function createQuestsRouter(
         throw unauthorized();
       }
 
-      const raw = req.query.local_date;
-      let localDate: string | undefined;
-      if (typeof raw === 'string' && raw.length > 0) {
-        const parsed = IsoDateSchema.safeParse(raw);
-        if (!parsed.success) {
-          throw validationError('local_date must be YYYY-MM-DD');
-        }
-        localDate = parsed.data;
-      }
+      const localDate = parseOptionalLocalDate(req.query.local_date);
       const payload = await questService.getToday(user.id, localDate);
       res.json(payload);
     } catch (err) {
@@ -102,6 +107,78 @@ export function createQuestsRouter(
         if (!user) throw unauthorized();
         const body = ConfirmQuestPlanBodySchema.parse(req.body);
         const payload = await questPlanService.confirmPlan(user.id, body.draft);
+        res.status(201).json(payload);
+      } catch (err) {
+        next(err);
+      }
+    });
+  }
+
+  if (rescheduleService) {
+    /** Load cached reschedule draft + overdue list (Issue #14). */
+    router.get('/reschedule', async (req, res, next) => {
+      try {
+        const user = getRequestUser(req);
+        if (!user) throw unauthorized();
+        const localDate = parseOptionalLocalDate(req.query.local_date);
+        const payload = await rescheduleService.getPlan(user.id, localDate);
+        res.json(payload);
+      } catch (err) {
+        next(err);
+      }
+    });
+
+    /** Propose a reschedule draft — does NOT rewrite quest due_dates. */
+    router.post('/reschedule', questWriteLimiter, async (req, res, next) => {
+      try {
+        const user = getRequestUser(req);
+        if (!user) throw unauthorized();
+        const localDate = parseOptionalLocalDate(
+          (req.body as { local_date?: unknown } | undefined)?.local_date ??
+            req.query.local_date,
+        );
+        const payload = await rescheduleService.proposePlan(user.id, localDate);
+        const status = payload.draft ? 201 : 200;
+        res.status(status).json(payload);
+      } catch (err) {
+        next(err);
+      }
+    });
+
+    /** Ask Mochi to tweak the preview — still a draft until confirm. */
+    router.post('/reschedule/revise', questWriteLimiter, async (req, res, next) => {
+      try {
+        const user = getRequestUser(req);
+        if (!user) throw unauthorized();
+        const body = ReviseRescheduleBodySchema.parse(req.body ?? {});
+        const localDate = parseOptionalLocalDate(
+          (req.body as { local_date?: unknown } | undefined)?.local_date,
+        );
+        const payload = await rescheduleService.revisePlan(
+          user.id,
+          body.feedback,
+          localDate,
+        );
+        res.json(payload);
+      } catch (err) {
+        next(err);
+      }
+    });
+
+    /** Accept — only path that UPDATEs existing quest due_dates. */
+    router.post('/reschedule/confirm', questWriteLimiter, async (req, res, next) => {
+      try {
+        const user = getRequestUser(req);
+        if (!user) throw unauthorized();
+        const body = ConfirmRescheduleBodySchema.parse(req.body);
+        const localDate = parseOptionalLocalDate(
+          (req.body as { local_date?: unknown } | undefined)?.local_date,
+        );
+        const payload = await rescheduleService.confirmPlan(
+          user.id,
+          body.draft,
+          localDate,
+        );
         res.status(201).json(payload);
       } catch (err) {
         next(err);

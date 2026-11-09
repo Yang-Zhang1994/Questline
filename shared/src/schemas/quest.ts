@@ -23,6 +23,8 @@ export const TodayQuestsResponseSchema = z.object({
   milestone_title: z.string().nullable(),
   greeting: z.string(),
   quests: z.array(QuestSchema),
+  /** Past-due incomplete quests for the active goal (Issue #14). */
+  overdue_quests: z.array(QuestSchema).default([]),
   done_count: z.number().int().nonnegative(),
   total_count: z.number().int().nonnegative(),
   progress: UserProgressSchema,

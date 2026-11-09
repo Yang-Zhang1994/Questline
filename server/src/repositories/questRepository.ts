@@ -4,6 +4,7 @@ import type {
   MilestoneStatus,
   Quest,
   QuestPlanDraft,
+  RescheduleDraft,
   StampCard,
   UserProgress,
 } from '@questline/shared';
@@ -34,6 +35,7 @@ type GoalRow = {
   starting_point: string | null;
   time_budget_minutes_per_day: number | null;
   deadline: string | null;
+  reschedule_draft?: RescheduleDraft | string | null;
 };
 
 type MilestoneRow = {
@@ -89,6 +91,29 @@ function parseQuestDraft(raw: MilestoneRow['quest_draft']): QuestPlanDraft | nul
   }
   return raw;
 }
+
+function parseRescheduleDraft(
+  raw: GoalRow['reschedule_draft'],
+): RescheduleDraft | null {
+  if (raw == null) return null;
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw) as RescheduleDraft;
+    } catch {
+      return null;
+    }
+  }
+  return raw;
+}
+
+export type RescheduleContext = {
+  goal: MilestoneGoalSummary;
+  milestone: Milestone;
+  draft: RescheduleDraft | null;
+  overdue: Quest[];
+  /** All quests on the active goal (for day-load + confirm). */
+  allQuests: Quest[];
+};
 
 function mapMilestone(row: MilestoneRow): Milestone {
   return {
@@ -165,6 +190,143 @@ export function createQuestRepository(db: Db) {
         milestoneTitle: milestone?.title ?? null,
         quests: questResult.rows.map(mapQuest),
       };
+    },
+
+    /** Incomplete quests with due_date before localDate on the active goal (#14). */
+    async listOverdueForActiveGoal(userId: number, localDate: string): Promise<Quest[]> {
+      const result = await db.query<QuestRow>(
+        `SELECT q.id, q.milestone_id, q.title, q.due_date, q.estimated_minutes, q.completed_at
+         FROM quests q
+         INNER JOIN milestones m ON m.id = q.milestone_id
+         INNER JOIN goals g ON g.id = m.goal_id
+         WHERE g.user_id = $1
+           AND g.status = 'active'
+           AND q.completed_at IS NULL
+           AND q.due_date < $2
+         ORDER BY q.due_date ASC, q.id ASC`,
+        [userId, localDate],
+      );
+      return result.rows.map(mapQuest);
+    },
+
+    /** Active goal + current milestone + overdue + reschedule draft (#14). */
+    async findRescheduleContext(
+      userId: number,
+      localDate: string,
+    ): Promise<RescheduleContext | null> {
+      const goalResult = await db.query<GoalRow>(
+        `SELECT id, title, done_definition, starting_point,
+                time_budget_minutes_per_day, deadline, reschedule_draft
+         FROM goals
+         WHERE user_id = $1 AND status = 'active'
+         LIMIT 1`,
+        [userId],
+      );
+      const goalRow = goalResult.rows[0];
+      if (!goalRow) return null;
+
+      const milestoneResult = await db.query<MilestoneRow>(
+        `SELECT id, goal_id, position, title, description, target_date, status, quest_draft
+         FROM milestones
+         WHERE goal_id = $1 AND status = 'current'
+         ORDER BY position ASC
+         LIMIT 1`,
+        [goalRow.id],
+      );
+      const milestoneRow = milestoneResult.rows[0];
+      if (!milestoneRow) return null;
+
+      const questResult = await db.query<QuestRow>(
+        `SELECT q.id, q.milestone_id, q.title, q.due_date, q.estimated_minutes, q.completed_at
+         FROM quests q
+         INNER JOIN milestones m ON m.id = q.milestone_id
+         WHERE m.goal_id = $1
+         ORDER BY q.due_date ASC, q.id ASC`,
+        [goalRow.id],
+      );
+      const allQuests = questResult.rows.map(mapQuest);
+      const overdue = allQuests.filter(
+        (q) => q.completed_at === null && q.due_date < localDate,
+      );
+
+      return {
+        goal: mapGoalSummary(goalRow),
+        milestone: mapMilestone(milestoneRow),
+        draft: parseRescheduleDraft(goalRow.reschedule_draft),
+        overdue,
+        allQuests,
+      };
+    },
+
+    async saveRescheduleDraft(
+      goalId: number,
+      userId: number,
+      draft: RescheduleDraft | null,
+    ): Promise<void> {
+      const result = await db.query(
+        `UPDATE goals
+         SET reschedule_draft = $1::jsonb
+         WHERE id = $2 AND user_id = $3 AND status = 'active'`,
+        [draft ? JSON.stringify(draft) : null, goalId, userId],
+      );
+      if (result.rowCount !== 1) {
+        throw new Error('Active goal not found while saving reschedule draft');
+      }
+    },
+
+    /**
+     * Confirm-before-save: UPDATE due_date for existing overdue quests only.
+     * Never INSERTs quests (no duplicates). Clears the draft.
+     */
+    async applyRescheduleDraft(
+      goalId: number,
+      userId: number,
+      draft: RescheduleDraft,
+    ): Promise<Quest[]> {
+      const client = await db.connect();
+      try {
+        await client.query('BEGIN');
+        const owned = await client.query<{ id: number }>(
+          `SELECT id FROM goals
+           WHERE id = $1 AND user_id = $2 AND status = 'active'
+           FOR UPDATE`,
+          [goalId, userId],
+        );
+        if (!owned.rows[0]) {
+          throw new Error('Active goal not found while confirming reschedule');
+        }
+
+        const updated: Quest[] = [];
+        for (const move of draft.moves) {
+          const result = await client.query<QuestRow>(
+            `UPDATE quests q
+             SET due_date = $1
+             FROM milestones m
+             INNER JOIN goals g ON g.id = m.goal_id
+             WHERE q.id = $2
+               AND q.milestone_id = m.id
+               AND g.id = $3
+               AND g.user_id = $4
+               AND q.completed_at IS NULL
+             RETURNING q.id, q.milestone_id, q.title, q.due_date, q.estimated_minutes, q.completed_at`,
+            [move.to_date, move.quest_id, goalId, userId],
+          );
+          if (result.rows[0]) {
+            updated.push(mapQuest(result.rows[0]));
+          }
+        }
+
+        await client.query(`UPDATE goals SET reschedule_draft = NULL WHERE id = $1`, [
+          goalId,
+        ]);
+        await client.query('COMMIT');
+        return updated;
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
     },
 
     async setCompletedAtForUser(

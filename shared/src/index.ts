@@ -54,6 +54,21 @@ export {
 } from './schemas/questPlan.js';
 
 export {
+  ConfirmRescheduleBodySchema,
+  ConfirmRescheduleResponseSchema,
+  RescheduleDraftSchema,
+  RescheduleMoveSchema,
+  RescheduleResponseSchema,
+  ReviseRescheduleBodySchema,
+  type ConfirmRescheduleBody,
+  type ConfirmRescheduleResponse,
+  type RescheduleDraft,
+  type RescheduleMove,
+  type RescheduleResponse,
+  type ReviseRescheduleBody,
+} from './schemas/reschedule.js';
+
+export {
   ChatHistoryResponseSchema,
   ChatMessageSchema,
   ChatRoleSchema,

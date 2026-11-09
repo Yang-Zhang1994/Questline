@@ -3,11 +3,13 @@ import { DailyNote } from '../components/DailyNote/DailyNote';
 import { BottomDock } from '../components/BottomDock/BottomDock';
 import { LevelUpToast } from '../components/LevelUpToast/LevelUpToast';
 import { QuestPlanEditor } from '../components/QuestPlanEditor/QuestPlanEditor';
+import { ReschedulePreview } from '../components/ReschedulePreview/ReschedulePreview';
 import { StampCard } from '../components/StampCard/StampCard';
 import { StreakCounter } from '../components/StreakCounter/StreakCounter';
 import { XpBar } from '../components/XpBar/XpBar';
 import { useDailyQuests } from '../hooks/useDailyQuests';
 import { useQuestPlan } from '../hooks/useQuestPlan';
+import { useReschedule } from '../hooks/useReschedule';
 
 export type TodayPageProps = {
   userEmail?: string | null;
@@ -28,6 +30,7 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
     reload,
   } = useDailyQuests();
   const [planning, setPlanning] = useState(false);
+  const [rescheduling, setRescheduling] = useState(false);
 
   // Probe whether the current milestone already has saved quests (without auto-propose).
   const {
@@ -48,6 +51,23 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
     autoPropose: false,
   });
 
+  const {
+    draft: rescheduleDraft,
+    overdue,
+    goal: rescheduleGoal,
+    milestone: rescheduleMilestone,
+    loading: rescheduleLoading,
+    busy: rescheduleBusy,
+    error: rescheduleError,
+    propose: proposeReschedule,
+    revise: reviseReschedule,
+    confirm: confirmReschedule,
+    reload: reloadReschedule,
+  } = useReschedule({
+    enabled: Boolean(data?.overdue_quests?.length) || rescheduling,
+    localDate: data?.local_date,
+  });
+
   // Once the user asks to plan, load/propose a draft.
   useEffect(() => {
     if (!planning) return;
@@ -55,6 +75,23 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
     if (questLoading || questBusy) return;
     void proposeQuests();
   }, [planning, questDraft, questsConfirmed, questLoading, questBusy, proposeQuests]);
+
+  // Once the user asks to reschedule, propose a preview (never auto-write dates).
+  useEffect(() => {
+    if (!rescheduling) return;
+    if (rescheduleDraft) return;
+    if (rescheduleLoading || rescheduleBusy) return;
+    if ((data?.overdue_quests?.length ?? 0) === 0 && overdue.length === 0) return;
+    void proposeReschedule();
+  }, [
+    rescheduling,
+    rescheduleDraft,
+    rescheduleLoading,
+    rescheduleBusy,
+    data?.overdue_quests?.length,
+    overdue.length,
+    proposeReschedule,
+  ]);
 
   const milestoneHasNoQuests =
     Boolean(questMilestone) && !questsConfirmed && savedQuests.length === 0 && !questLoading;
@@ -65,6 +102,9 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
     !planning;
 
   const showEditor = planning || Boolean(questDraft);
+  const showRescheduleCta =
+    Boolean(data?.overdue_quests?.length) && !rescheduling && !rescheduleDraft;
+  const showReschedulePreview = rescheduling || Boolean(rescheduleDraft);
 
   return (
     <div className="flex min-h-screen flex-col items-center px-4 pb-24 pt-6">
@@ -113,6 +153,10 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
         onPlanQuests={() => {
           setPlanning(true);
         }}
+        canReschedule={showRescheduleCta}
+        onReschedule={() => {
+          setRescheduling(true);
+        }}
         onToggleQuest={(questId, completed) => {
           void toggleQuest(questId, completed);
         }}
@@ -138,6 +182,29 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
           }}
           onRevise={(feedback) => {
             void reviseQuests(feedback);
+          }}
+        />
+      ) : null}
+
+      {showReschedulePreview ? (
+        <ReschedulePreview
+          draft={rescheduleDraft}
+          goal={rescheduleGoal}
+          milestone={rescheduleMilestone}
+          loading={rescheduleLoading || (rescheduling && !rescheduleDraft)}
+          busy={rescheduleBusy}
+          error={rescheduleError}
+          onDismiss={() => {
+            setRescheduling(false);
+          }}
+          onConfirm={async () => {
+            await confirmReschedule();
+            setRescheduling(false);
+            await reload();
+            await reloadReschedule();
+          }}
+          onRevise={(feedback) => {
+            void reviseReschedule(feedback);
           }}
         />
       ) : null}

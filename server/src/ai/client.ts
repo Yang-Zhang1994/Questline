@@ -1,5 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { InterviewTopic, MilestonePlanDraft, QuestPlanDraft } from '@questline/shared';
+import type {
+  InterviewTopic,
+  MilestonePlanDraft,
+  QuestPlanDraft,
+  RescheduleDraft,
+} from '@questline/shared';
 import {
   INTERVIEW_COMPLETE_STUB,
   MOCHI_INTERVIEW_SYSTEM_PROMPT,
@@ -20,6 +25,11 @@ import {
   normalizeQuestPlan,
 } from './prompts/mochiQuestPlan.js';
 import {
+  MOCHI_RESCHEDULE_SYSTEM_PROMPT,
+  buildEchoReschedule,
+  normalizeRescheduleDraft,
+} from './prompts/mochiReschedule.js';
+import {
   type InterviewAiRequest,
   type InterviewAiResponse,
   InterviewAiResponseSchema,
@@ -34,6 +44,11 @@ import {
   type ProposeQuestPlanRequest,
   type ReviseQuestPlanRequest,
 } from './questPlanTypes.js';
+import {
+  RescheduleDraftSchema,
+  type ProposeRescheduleRequest,
+  type ReviseRescheduleRequest,
+} from './rescheduleTypes.js';
 import { ensureNoQuestion, ensureOneQuestion, parseModelJson } from './parse.js';
 
 /** Roles Anthropic Messages API understands for conversation turns. */
@@ -55,6 +70,8 @@ export type ChatAiClient = {
   reviseMilestonePlan(input: ReviseMilestonePlanRequest): Promise<MilestonePlanDraft>;
   proposeQuestPlan(input: ProposeQuestPlanRequest): Promise<QuestPlanDraft>;
   reviseQuestPlan(input: ReviseQuestPlanRequest): Promise<QuestPlanDraft>;
+  proposeReschedule(input: ProposeRescheduleRequest): Promise<RescheduleDraft>;
+  reviseReschedule(input: ReviseRescheduleRequest): Promise<RescheduleDraft>;
 };
 
 export type CreateClaudeClientOptions = {
@@ -190,6 +207,27 @@ export function createEchoChatClient(): ChatAiClient {
     async reviseQuestPlan(input: ReviseQuestPlanRequest): Promise<QuestPlanDraft> {
       return buildEchoQuestPlan(input.goal, input.milestone, input.today, input.feedback);
     },
+
+    async proposeReschedule(input: ProposeRescheduleRequest): Promise<RescheduleDraft> {
+      return buildEchoReschedule(
+        input.goal,
+        input.milestone,
+        input.overdue,
+        input.allQuests,
+        input.today,
+      );
+    },
+
+    async reviseReschedule(input: ReviseRescheduleRequest): Promise<RescheduleDraft> {
+      return buildEchoReschedule(
+        input.goal,
+        input.milestone,
+        input.overdue,
+        input.allQuests,
+        input.today,
+        input.feedback,
+      );
+    },
   };
 }
 
@@ -269,6 +307,31 @@ export function createClaudeClient(options: CreateClaudeClientOptions = {}): Cha
         },
       ]);
       parsed = parseModelJson(retry, QuestPlanDraftSchema);
+    }
+    return parsed;
+  }
+
+  async function rescheduleOnce(
+    userContent: string,
+    history: ClaudeChatTurn[] = [],
+  ): Promise<RescheduleDraft | null> {
+    const messages: ClaudeChatTurn[] = [
+      ...history,
+      { role: 'user', content: userContent },
+    ];
+    const first = await completeOnce(MOCHI_RESCHEDULE_SYSTEM_PROMPT, messages);
+    let parsed = parseModelJson(first, RescheduleDraftSchema);
+    if (!parsed) {
+      const retry = await completeOnce(MOCHI_RESCHEDULE_SYSTEM_PROMPT, [
+        ...messages,
+        { role: 'assistant', content: first },
+        {
+          role: 'user',
+          content:
+            'Your previous reply was not valid JSON matching the schema. Reply again with ONLY the JSON object.',
+        },
+      ]);
+      parsed = parseModelJson(retry, RescheduleDraftSchema);
     }
     return parsed;
   }
@@ -388,6 +451,69 @@ export function createClaudeClient(options: CreateClaudeClientOptions = {}): Cha
       }
       return normalizeQuestPlan(parsed, input.goal, input.milestone, input.today);
     },
+
+    async proposeReschedule(input: ProposeRescheduleRequest): Promise<RescheduleDraft> {
+      const payload = JSON.stringify(
+        {
+          goal: input.goal,
+          milestone: input.milestone,
+          overdue_quests: input.overdue,
+          other_quests: input.allQuests.filter(
+            (q) => !input.overdue.some((o) => o.id === q.id),
+          ),
+          daily_time_budget_minutes: input.goal.time_budget_minutes_per_day,
+          today: input.today,
+        },
+        null,
+        2,
+      );
+      const parsed = await rescheduleOnce(
+        `Propose new due dates for these overdue quests only. Reply with JSON only.\n${payload}`,
+        input.history,
+      );
+      if (!parsed) {
+        throw new Error('Claude reschedule failed schema validation');
+      }
+      return normalizeRescheduleDraft(
+        parsed,
+        input.overdue,
+        input.allQuests,
+        input.goal,
+        input.milestone,
+        input.today,
+      );
+    },
+
+    async reviseReschedule(input: ReviseRescheduleRequest): Promise<RescheduleDraft> {
+      const payload = JSON.stringify(
+        {
+          goal: input.goal,
+          milestone: input.milestone,
+          overdue_quests: input.overdue,
+          previous_draft: input.previous,
+          feedback: input.feedback ?? null,
+          daily_time_budget_minutes: input.goal.time_budget_minutes_per_day,
+          today: input.today,
+        },
+        null,
+        2,
+      );
+      const parsed = await rescheduleOnce(
+        `Revise this reschedule draft using the feedback. Reply with JSON only.\n${payload}`,
+        input.history,
+      );
+      if (!parsed) {
+        throw new Error('Claude reschedule revise failed schema validation');
+      }
+      return normalizeRescheduleDraft(
+        parsed,
+        input.overdue,
+        input.allQuests,
+        input.goal,
+        input.milestone,
+        input.today,
+      );
+    },
   };
 }
 
@@ -403,6 +529,8 @@ export function createTemplateInterviewClient(
     reviseMilestonePlan: echo.reviseMilestonePlan,
     proposeQuestPlan: echo.proposeQuestPlan,
     reviseQuestPlan: echo.reviseQuestPlan,
+    proposeReschedule: echo.proposeReschedule,
+    reviseReschedule: echo.reviseReschedule,
     async evaluateInterviewAnswer(input) {
       const forced = decisions[i++];
       if (forced === 'vague') {
