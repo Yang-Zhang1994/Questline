@@ -53,3 +53,24 @@ export {
   type InterviewStatus,
   type InterviewTopic,
 } from './schemas/interview.js';
+
+export {
+  ConfirmMilestonePlanBodySchema,
+  ConfirmMilestonePlanResponseSchema,
+  MilestoneDraftItemSchema,
+  MilestoneGoalSummarySchema,
+  MilestonePlanDraftSchema,
+  MilestonePlanResponseSchema,
+  MilestoneSchema,
+  MilestoneStatusSchema,
+  ReviseMilestonePlanBodySchema,
+  type ConfirmMilestonePlanBody,
+  type ConfirmMilestonePlanResponse,
+  type Milestone,
+  type MilestoneDraftItem,
+  type MilestoneGoalSummary,
+  type MilestonePlanDraft,
+  type MilestonePlanResponse,
+  type MilestoneStatus,
+  type ReviseMilestonePlanBody,
+} from './schemas/milestone.js';

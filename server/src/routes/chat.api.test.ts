@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatAiClient } from '../ai/client.js';
+import { stubAi } from '../test/aiStub.js';
 import { countQuestions } from '../ai/parse.js';
 import { MOCHI_WELCOME_MESSAGE } from '../ai/prompts/mochiChat.js';
 import { TOPIC_QUESTIONS } from '../ai/prompts/mochiInterview.js';
@@ -53,7 +54,7 @@ describe('GET/POST /api/chat interview (Issue #3)', () => {
     return createApp({
       db,
       clock,
-      ai: ai ?? { completeChat, evaluateInterviewAnswer },
+      ai: ai ?? stubAi({ completeChat, evaluateInterviewAnswer }),
     });
   }
 
@@ -202,12 +203,14 @@ describe('GET/POST /api/chat interview (Issue #3)', () => {
   });
 
   it('returns friendly AI_UNAVAILABLE when the interview mock throws', async () => {
-    const app = buildApp({
-      completeChat: vi.fn(),
-      evaluateInterviewAnswer: vi.fn(async () => {
-        throw new Error('network');
+    const app = buildApp(
+      stubAi({
+        completeChat: vi.fn(),
+        evaluateInterviewAnswer: vi.fn(async () => {
+          throw new Error('network');
+        }),
       }),
-    });
+    );
     const token = await loginAsDemo(app);
     const res = await request(app)
       .post('/api/chat/messages')

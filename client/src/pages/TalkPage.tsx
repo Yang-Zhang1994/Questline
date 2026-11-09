@@ -1,6 +1,8 @@
 import { ChatWindow } from '../components/ChatWindow/ChatWindow';
 import { BottomDock } from '../components/BottomDock/BottomDock';
+import { MilestonePlanEditor } from '../components/MilestonePlanEditor/MilestonePlanEditor';
 import { useChat } from '../hooks/useChat';
+import { useMilestonePlan } from '../hooks/useMilestonePlan';
 
 export type TalkPageProps = {
   userEmail?: string | null;
@@ -9,6 +11,23 @@ export type TalkPageProps = {
 
 export function TalkPage({ userEmail = null, onLogout }: TalkPageProps) {
   const { messages, interview, loading, sending, restarting, error, send, restart } = useChat();
+  const {
+    draft: milestoneDraft,
+    goal: milestoneGoal,
+    savedMilestones,
+    confirmed: milestonesConfirmed,
+    loading: milestoneLoading,
+    busy: milestoneBusy,
+    error: milestoneError,
+    confirm: confirmMilestones,
+    revise: reviseMilestones,
+  } = useMilestonePlan();
+
+  // Only surface the editor once we know there is an active goal (or a draft/saved plan).
+  const showMilestoneEditor =
+    milestoneDraft !== null ||
+    (milestonesConfirmed && savedMilestones.length > 0) ||
+    (milestoneLoading && milestoneGoal !== null);
 
   return (
     <div className="flex min-h-screen flex-col items-center px-4 pb-24 pt-6">
@@ -54,6 +73,23 @@ export function TalkPage({ userEmail = null, onLogout }: TalkPageProps) {
           void restart();
         }}
       />
+
+      {showMilestoneEditor ? (
+        <MilestonePlanEditor
+          draft={milestoneDraft}
+          goal={milestoneGoal}
+          confirmedMilestones={milestonesConfirmed ? savedMilestones : []}
+          loading={milestoneLoading}
+          busy={milestoneBusy}
+          error={milestoneError}
+          onConfirm={() => {
+            void confirmMilestones();
+          }}
+          onRevise={(feedback) => {
+            void reviseMilestones(feedback);
+          }}
+        />
+      ) : null}
 
       <BottomDock />
     </div>

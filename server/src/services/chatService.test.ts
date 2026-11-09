@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { ChatAiClient } from '../ai/client.js';
+import { stubAi } from '../test/aiStub.js';
 import { countQuestions } from '../ai/parse.js';
 import { MOCHI_WELCOME_MESSAGE } from '../ai/prompts/mochiChat.js';
 import { TOPIC_QUESTIONS } from '../ai/prompts/mochiInterview.js';
@@ -142,10 +142,10 @@ describe('chatService interview (Issue #3)', () => {
   it('seeds welcome + interview state when history is empty', async () => {
     const chat = buildChatRepo();
     const interviews = buildInterviewRepo();
-    const ai: ChatAiClient = {
+    const ai = stubAi({
       completeChat: vi.fn(),
       evaluateInterviewAnswer: vi.fn(),
-    };
+    });
     const service = createChatService({ chat, interviews, ai, clock });
 
     const result = await service.listMessages(1);
@@ -169,7 +169,7 @@ describe('chatService interview (Issue #3)', () => {
       extracted_answer: 'Read one Japanese novel without a dictionary',
       mochi_message: `Nice! ${TOPIC_QUESTIONS.starting_point}`,
     }));
-    const ai: ChatAiClient = { completeChat: vi.fn(), evaluateInterviewAnswer };
+    const ai = stubAi({ completeChat: vi.fn(), evaluateInterviewAnswer });
     const service = createChatService({ chat, interviews, ai, clock });
 
     await service.listMessages(1);
@@ -192,7 +192,7 @@ describe('chatService interview (Issue #3)', () => {
       extracted_answer: null,
       mochi_message: 'Could you paint a clearer picture of "done"?',
     }));
-    const ai: ChatAiClient = { completeChat: vi.fn(), evaluateInterviewAnswer };
+    const ai = stubAi({ completeChat: vi.fn(), evaluateInterviewAnswer });
     const service = createChatService({ chat, interviews, ai, clock });
 
     await service.listMessages(1);
@@ -228,7 +228,7 @@ describe('chatService interview (Issue #3)', () => {
           : 'All set — confirm card comes next ♡',
       }),
     );
-    const ai: ChatAiClient = { completeChat: vi.fn(), evaluateInterviewAnswer };
+    const ai = stubAi({ completeChat: vi.fn(), evaluateInterviewAnswer });
     const service = createChatService({ chat, interviews, ai, clock });
 
     await service.listMessages(1);
@@ -263,14 +263,14 @@ describe('chatService interview (Issue #3)', () => {
   it('restarts the interview and clears prior messages', async () => {
     const chat = buildChatRepo();
     const interviews = buildInterviewRepo();
-    const ai: ChatAiClient = {
+    const ai = stubAi({
       completeChat: vi.fn(),
       evaluateInterviewAnswer: vi.fn(async () => ({
         evaluation: 'accepted' as const,
         extracted_answer: 'done answer',
         mochi_message: `Ok! ${TOPIC_QUESTIONS.starting_point}`,
       })),
-    };
+    });
     const service = createChatService({ chat, interviews, ai, clock });
 
     await service.listMessages(1);
@@ -290,12 +290,12 @@ describe('chatService interview (Issue #3)', () => {
   it('maps Claude interview failures to AI_UNAVAILABLE', async () => {
     const chat = buildChatRepo();
     const interviews = buildInterviewRepo();
-    const ai: ChatAiClient = {
+    const ai = stubAi({
       completeChat: vi.fn(),
       evaluateInterviewAnswer: vi.fn(async () => {
         throw new Error('upstream boom');
       }),
-    };
+    });
     const service = createChatService({ chat, interviews, ai, clock });
 
     await expect(service.sendMessage(1, 'hello')).rejects.toMatchObject({
