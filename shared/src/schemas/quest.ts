@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { UserProgressSchema } from './progress.js';
+import { StampCardSchema } from './stamp.js';
 
 export const IsoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD');
 
@@ -25,13 +26,15 @@ export const TodayQuestsResponseSchema = z.object({
   done_count: z.number().int().nonnegative(),
   total_count: z.number().int().nonnegative(),
   progress: UserProgressSchema,
+  /** Current stamp card + past card history (#13). */
+  stamp_card: StampCardSchema,
 });
 
 export type TodayQuestsResponse = z.infer<typeof TodayQuestsResponseSchema>;
 
 export const ToggleQuestCompletionBodySchema = z.object({
   completed: z.boolean(),
-  /** User's local calendar date — drives streak (#12); falls back to injectable clock. */
+  /** User's local calendar date — drives streak (#12) + stamps (#13); falls back to injectable clock. */
   local_date: IsoDateSchema.optional(),
 });
 
@@ -42,6 +45,10 @@ export const ToggleQuestCompletionResponseSchema = z.object({
   progress: UserProgressSchema,
   leveled_up: z.boolean(),
   level_up_message: z.string().nullable(),
+  stamp_card: StampCardSchema,
+  /** True when this completion filled the last slot on the current card. */
+  card_completed: z.boolean(),
+  card_reward_message: z.string().nullable(),
 });
 
 export type ToggleQuestCompletionResponse = z.infer<typeof ToggleQuestCompletionResponseSchema>;

@@ -16,6 +16,7 @@ export function useDailyQuests() {
   const [error, setError] = useState<string | null>(null);
   const [busyQuestId, setBusyQuestId] = useState<number | null>(null);
   const [levelUpMessage, setLevelUpMessage] = useState<string | null>(null);
+  const [stampRewardMessage, setStampRewardMessage] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -48,10 +49,14 @@ export function useDailyQuests() {
           quests,
           done_count: doneCount,
           progress: result.progress,
+          stamp_card: result.stamp_card,
         };
       });
       if (result.leveled_up && result.level_up_message) {
         setLevelUpMessage(result.level_up_message);
+      }
+      if (result.card_completed && result.card_reward_message) {
+        setStampRewardMessage(result.card_reward_message);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not update quest');
@@ -64,6 +69,10 @@ export function useDailyQuests() {
     setLevelUpMessage(null);
   }, []);
 
+  const dismissStampReward = useCallback(() => {
+    setStampRewardMessage(null);
+  }, []);
+
   return {
     data,
     loading,
@@ -71,6 +80,8 @@ export function useDailyQuests() {
     busyQuestId,
     levelUpMessage,
     dismissLevelUp,
+    stampRewardMessage,
+    dismissStampReward,
     toggleQuest,
     reload,
   };

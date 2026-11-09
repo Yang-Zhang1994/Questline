@@ -4,6 +4,7 @@ import type {
   MilestoneStatus,
   Quest,
   QuestPlanDraft,
+  StampCard,
   UserProgress,
 } from '@questline/shared';
 import { toIsoDateTime } from '../clock.js';
@@ -15,6 +16,7 @@ import {
   type StreakState,
 } from '../config/game.js';
 import type { Db } from '../db/connection.js';
+import { createStampRepository } from './stampRepository.js';
 
 type QuestRow = {
   id: number;
@@ -186,8 +188,8 @@ export function createQuestRepository(db: Db) {
     },
 
     /**
-     * Complete or undo a quest and adjust XP + streak in one transaction (#11 / #12).
-     * Caller must only invoke when the completion state actually changes.
+     * Complete or undo a quest and adjust XP + streak + stamps in one transaction
+     * (#11 / #12 / #13). Caller must only invoke when the completion state changes.
      * `localDate` is the user's local YYYY-MM-DD (never server "today").
      */
     async setCompletionWithXp(
@@ -196,8 +198,16 @@ export function createQuestRepository(db: Db) {
       completedAt: string | null,
       xpDelta: number,
       localDate: string,
-    ): Promise<{ quest: Quest; progress: UserProgress; previousLevel: number } | null> {
+    ): Promise<{
+      quest: Quest;
+      progress: UserProgress;
+      previousLevel: number;
+      stamp_card: StampCard;
+      card_completed: boolean;
+      completed_card_number: number | null;
+    } | null> {
       const client = await db.connect();
+      const stamps = createStampRepository(db);
       try {
         await client.query('BEGIN');
 
@@ -250,20 +260,24 @@ export function createQuestRepository(db: Db) {
           last_active_date: progressRow.rows[0].last_active_date,
         };
         let activeDayCompletions = progressRow.rows[0].active_day_completions;
+        let firstActiveDay = false;
+        let clearActiveDay = false;
 
         if (xpDelta > 0) {
-          // Completing — first active quest of the local day bumps streak.
+          // Completing — first active quest of the local day bumps streak + stamp.
           if (streak.last_active_date === localDate) {
             activeDayCompletions += 1;
           } else {
             streak = applyActiveDay(streak, localDate);
             activeDayCompletions = 1;
+            firstActiveDay = true;
           }
         } else if (streak.last_active_date === localDate) {
-          // Undo — reverse streak only when this was the last completion that day.
+          // Undo — reverse streak/stamp only when this was the last completion that day.
           activeDayCompletions = Math.max(0, activeDayCompletions - 1);
           if (activeDayCompletions === 0) {
             streak = revertActiveDay(streak, localDate);
+            clearActiveDay = true;
           }
         }
 
@@ -284,11 +298,29 @@ export function createQuestRepository(db: Db) {
           ],
         );
 
+        let stamp_card: StampCard;
+        let card_completed = false;
+        let completed_card_number: number | null = null;
+
+        if (firstActiveDay) {
+          const stampResult = await stamps.addStampForDay(userId, localDate, client);
+          stamp_card = stampResult.stamp_card;
+          card_completed = stampResult.card_completed;
+          completed_card_number = stampResult.completed_card_number;
+        } else if (clearActiveDay) {
+          stamp_card = await stamps.removeStampForDay(userId, localDate, client);
+        } else {
+          stamp_card = await stamps.getCardState(userId, client);
+        }
+
         await client.query('COMMIT');
         return {
           quest: mapQuest(updated.rows[0]),
           progress: progressSnapshotFromXp(nextXp, streak),
           previousLevel,
+          stamp_card,
+          card_completed,
+          completed_card_number,
         };
       } catch (err) {
         await client.query('ROLLBACK');

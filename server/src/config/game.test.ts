@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
+  STAMPS_PER_CARD,
   XP_PER_QUEST,
   XP_TO_REACH_LEVEL,
   applyActiveDay,
   applyMissedDayReset,
+  buildStampCardState,
   levelFromTotalXp,
   levelUpMessage,
+  nextStampCardNumber,
   previousIsoDate,
   progressSnapshotFromXp,
   revertActiveDay,
+  stampCardRewardMessage,
   xpToReachLevel,
 } from './game.js';
 
@@ -109,5 +113,53 @@ describe('game streak helpers (Issue #12)', () => {
       best_streak: 1,
       last_active_date: '2026-10-28',
     });
+  });
+});
+
+describe('game stamp helpers (Issue #13)', () => {
+  it('defines a fixed STAMPS_PER_CARD slot count', () => {
+    expect(STAMPS_PER_CARD).toBe(7);
+  });
+
+  it('builds an empty first card when there are no stamps', () => {
+    expect(buildStampCardState([])).toEqual({
+      card_number: 1,
+      stamps_per_card: STAMPS_PER_CARD,
+      stamped_dates: [],
+      filled_count: 0,
+      past_cards: [],
+    });
+  });
+
+  it('keeps filling the current card until it is full, then advances', () => {
+    const rows = [
+      { card_number: 1, stamp_date: '2026-10-01' },
+      { card_number: 1, stamp_date: '2026-10-02' },
+    ];
+    const state = buildStampCardState(rows);
+    expect(state.card_number).toBe(1);
+    expect(state.filled_count).toBe(2);
+    expect(nextStampCardNumber(rows)).toBe(1);
+
+    const full = Array.from({ length: STAMPS_PER_CARD }, (_, i) => ({
+      card_number: 1,
+      stamp_date: `2026-10-${String(i + 1).padStart(2, '0')}`,
+    }));
+    const afterFull = buildStampCardState(full);
+    expect(afterFull.card_number).toBe(2);
+    expect(afterFull.filled_count).toBe(0);
+    expect(afterFull.past_cards).toEqual([
+      {
+        card_number: 1,
+        stamp_dates: full.map((r) => r.stamp_date),
+        stamp_count: STAMPS_PER_CARD,
+      },
+    ]);
+    expect(nextStampCardNumber(full)).toBe(2);
+  });
+
+  it('builds a warm stamp-card reward message', () => {
+    expect(stampCardRewardMessage(1)).toMatch(/Stamp card 1/);
+    expect(stampCardRewardMessage(1)).toMatch(/Mochi/i);
   });
 });

@@ -3,6 +3,7 @@ import { DailyNote } from '../components/DailyNote/DailyNote';
 import { BottomDock } from '../components/BottomDock/BottomDock';
 import { LevelUpToast } from '../components/LevelUpToast/LevelUpToast';
 import { QuestPlanEditor } from '../components/QuestPlanEditor/QuestPlanEditor';
+import { StampCard } from '../components/StampCard/StampCard';
 import { StreakCounter } from '../components/StreakCounter/StreakCounter';
 import { XpBar } from '../components/XpBar/XpBar';
 import { useDailyQuests } from '../hooks/useDailyQuests';
@@ -21,6 +22,8 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
     busyQuestId,
     levelUpMessage,
     dismissLevelUp,
+    stampRewardMessage,
+    dismissStampReward,
     toggleQuest,
     reload,
   } = useDailyQuests();
@@ -97,6 +100,7 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
         <div className="relative z-[1] mb-4 flex w-full max-w-[640px] flex-col gap-2">
           <XpBar progress={data.progress} />
           <StreakCounter progress={data.progress} />
+          {data.stamp_card ? <StampCard stampCard={data.stamp_card} /> : null}
         </div>
       ) : null}
 
@@ -115,6 +119,7 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
       />
 
       <LevelUpToast message={levelUpMessage} onDismiss={dismissLevelUp} />
+      <LevelUpToast message={stampRewardMessage} onDismiss={dismissStampReward} />
 
       {showEditor ? (
         <QuestPlanEditor

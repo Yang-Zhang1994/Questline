@@ -1,7 +1,10 @@
-/** Game tuning knobs — XP / levels (#11) and daily streaks (#12). */
+/** Game tuning knobs — XP / levels (#11), daily streaks (#12), stamp cards (#13). */
 
 /** XP awarded when a quest is completed (reversed on undo). */
 export const XP_PER_QUEST = 10;
+
+/** Fixed slots on one stamp card (not a 28-day calendar grid) — Issue #13. */
+export const STAMPS_PER_CARD = 7;
 
 /**
  * Cumulative XP required to *reach* each level (1-indexed).
@@ -160,4 +163,84 @@ export function progressSnapshotFromXp(
 /** Short Mochi celebration when the user levels up. */
 export function levelUpMessage(level: number): string {
   return `★ Level ${level}! Mochi is hopping with joy — you're growing so gently. ♡`;
+}
+
+/** Short Mochi celebration when a stamp card fills (#13). */
+export function stampCardRewardMessage(cardNumber: number): string {
+  return `★ Stamp card ${cardNumber} complete! Mochi pressed a soft little star on it — a fresh card is waiting for you. ♡`;
+}
+
+export type StampRow = {
+  card_number: number;
+  stamp_date: string;
+};
+
+export type StampCardSnapshot = {
+  card_number: number;
+  stamps_per_card: number;
+  stamped_dates: string[];
+  filled_count: number;
+  past_cards: Array<{
+    card_number: number;
+    stamp_dates: string[];
+    stamp_count: number;
+  }>;
+};
+
+/**
+ * Derive the current card + past history from persisted stamp rows.
+ * When the highest card is full, the "current" card is the next empty one.
+ */
+export function buildStampCardState(
+  rows: StampRow[],
+  stampsPerCard: number = STAMPS_PER_CARD,
+): StampCardSnapshot {
+  const byCard = new Map<number, string[]>();
+  for (const row of rows) {
+    const list = byCard.get(row.card_number) ?? [];
+    list.push(row.stamp_date);
+    byCard.set(row.card_number, list);
+  }
+  for (const dates of byCard.values()) {
+    dates.sort();
+  }
+
+  const cardNumbers = [...byCard.keys()].sort((a, b) => a - b);
+  let currentCard = 1;
+  if (cardNumbers.length > 0) {
+    const maxCard = cardNumbers[cardNumbers.length - 1]!;
+    const maxCount = byCard.get(maxCard)?.length ?? 0;
+    currentCard = maxCount >= stampsPerCard ? maxCard + 1 : maxCard;
+  }
+
+  const stampedDates = byCard.get(currentCard) ?? [];
+  const pastCards = cardNumbers
+    .filter((n) => n < currentCard)
+    .map((n) => {
+      const stamp_dates = byCard.get(n) ?? [];
+      return {
+        card_number: n,
+        stamp_dates,
+        stamp_count: stamp_dates.length,
+      };
+    });
+
+  return {
+    card_number: currentCard,
+    stamps_per_card: stampsPerCard,
+    stamped_dates: stampedDates,
+    filled_count: stampedDates.length,
+    past_cards: pastCards,
+  };
+}
+
+/**
+ * Which card number should receive the next stamp for `stampDate`.
+ * Same-day duplicates are handled by the caller (unique constraint / no-op).
+ */
+export function nextStampCardNumber(
+  rows: StampRow[],
+  stampsPerCard: number = STAMPS_PER_CARD,
+): number {
+  return buildStampCardState(rows, stampsPerCard).card_number;
 }

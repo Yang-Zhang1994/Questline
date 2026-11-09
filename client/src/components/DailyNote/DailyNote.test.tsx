@@ -42,6 +42,13 @@ const sample: TodayQuestsResponse = {
     best_streak: 1,
     last_active_date: '2026-10-28',
   },
+  stamp_card: {
+    card_number: 1,
+    stamps_per_card: 7,
+    stamped_dates: ['2026-10-28'],
+    filled_count: 1,
+    past_cards: [],
+  },
 };
 
 describe('DailyNote (Issue #9)', () => {

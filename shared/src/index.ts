@@ -20,6 +20,13 @@ export {
 } from './schemas/progress.js';
 
 export {
+  StampCardSchema,
+  StampPastCardSchema,
+  type StampCard,
+  type StampPastCard,
+} from './schemas/stamp.js';
+
+export {
   IsoDateSchema,
   IsoDateTimeSchema,
   QuestDraftItemSchema,

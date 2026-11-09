@@ -1,10 +1,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Clock } from '../clock.js';
-import { XP_PER_QUEST, XP_TO_REACH_LEVEL } from '../config/game.js';
+import { STAMPS_PER_CARD, XP_PER_QUEST, XP_TO_REACH_LEVEL } from '../config/game.js';
 import { openDatabase, resetDatabase, type Db } from '../db/connection.js';
 import { seedDemoDataIfEmpty } from '../db/seed.js';
 import { createProgressRepository } from '../repositories/progressRepository.js';
 import { createQuestRepository } from '../repositories/questRepository.js';
+import { createStampRepository } from '../repositories/stampRepository.js';
 import { createQuestService } from './questService.js';
 import { AppError } from './errors.js';
 
@@ -12,7 +13,7 @@ function fixedClock(iso: string): Clock {
   return { now: () => new Date(iso) };
 }
 
-describe('questService (Issue #9 / #11 / #12 / #17 / #31 Postgres)', () => {
+describe('questService (Issue #9 / #11 / #12 / #13 / #17 / #31 Postgres)', () => {
   let db: Db;
   let demoUserId: number;
   const iso = '2026-10-28T15:30:00.000Z';
@@ -38,7 +39,13 @@ describe('questService (Issue #9 / #11 / #12 / #17 / #31 Postgres)', () => {
   function service() {
     const quests = createQuestRepository(db);
     const progress = createProgressRepository(db);
-    return { quests, progress, service: createQuestService({ quests, progress, clock }) };
+    const stamps = createStampRepository(db);
+    return {
+      quests,
+      progress,
+      stamps,
+      service: createQuestService({ quests, progress, stamps, clock }),
+    };
   }
 
   // AC: User can mark a quest as done from the daily note
@@ -211,5 +218,65 @@ describe('questService (Issue #9 / #11 / #12 / #17 / #31 Postgres)', () => {
     expect(next.progress.current_streak).toBe(3);
     expect(next.progress.best_streak).toBe(4);
     expect(next.progress.last_active_date).toBe('2026-10-28');
+  });
+
+  // AC: Each day with at least one completed quest earns one stamp
+  // AC: Completing several quests on the same day still earns only one stamp
+  it('earns one stamp per local active day', async () => {
+    const { service: questService } = service();
+    const today = await questService.getToday(demoUserId, '2026-10-28');
+    expect(today.stamp_card.filled_count).toBe(0);
+    expect(today.stamp_card.stamps_per_card).toBe(STAMPS_PER_CARD);
+
+    const [first, second] = today.quests;
+    const one = await questService.setCompletion(demoUserId, first.id, true, '2026-10-28');
+    expect(one.stamp_card.filled_count).toBe(1);
+    expect(one.stamp_card.stamped_dates).toEqual(['2026-10-28']);
+    expect(one.card_completed).toBe(false);
+
+    const two = await questService.setCompletion(demoUserId, second.id, true, '2026-10-28');
+    expect(two.stamp_card.filled_count).toBe(1);
+    expect(two.stamp_card.stamped_dates).toEqual(['2026-10-28']);
+  });
+
+  // AC: Undoing the only completed quest of a day removes that day's stamp
+  it('removes the stamp when undoing the only completion of the local day', async () => {
+    const { service: questService } = service();
+    const quest = (await questService.getToday(demoUserId, '2026-10-28')).quests[0];
+    await questService.setCompletion(demoUserId, quest.id, true, '2026-10-28');
+    const undone = await questService.setCompletion(demoUserId, quest.id, false, '2026-10-28');
+    expect(undone.stamp_card.filled_count).toBe(0);
+    expect(undone.stamp_card.stamped_dates).toEqual([]);
+  });
+
+  // AC: A full stamp card triggers a reward message from Mochi and starts a new card
+  // AC: Past stamp cards and stamp history are saved
+  it('rewards a full card, keeps history, and starts a fresh card', async () => {
+    const { service: questService } = service();
+    // Seed STAMPS_PER_CARD - 1 stamps on card 1 so the next active day fills it.
+    for (let i = 0; i < STAMPS_PER_CARD - 1; i += 1) {
+      const day = `2026-10-${String(i + 1).padStart(2, '0')}`;
+      await db.query(
+        `INSERT INTO stamps (user_id, card_number, stamp_date) VALUES ($1, 1, $2)`,
+        [demoUserId, day],
+      );
+    }
+
+    const before = await questService.getToday(demoUserId, '2026-10-28');
+    expect(before.stamp_card.card_number).toBe(1);
+    expect(before.stamp_card.filled_count).toBe(STAMPS_PER_CARD - 1);
+
+    const quest = before.quests[0];
+    const filled = await questService.setCompletion(demoUserId, quest.id, true, '2026-10-28');
+    expect(filled.card_completed).toBe(true);
+    expect(filled.card_reward_message).toMatch(/Stamp card 1/);
+    expect(filled.card_reward_message).toMatch(/Mochi/i);
+    // Current card advances to an empty new card.
+    expect(filled.stamp_card.card_number).toBe(2);
+    expect(filled.stamp_card.filled_count).toBe(0);
+    expect(filled.stamp_card.past_cards).toHaveLength(1);
+    expect(filled.stamp_card.past_cards[0]?.card_number).toBe(1);
+    expect(filled.stamp_card.past_cards[0]?.stamp_count).toBe(STAMPS_PER_CARD);
+    expect(filled.stamp_card.past_cards[0]?.stamp_dates).toContain('2026-10-28');
   });
 });

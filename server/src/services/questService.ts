@@ -1,19 +1,22 @@
 import type {
   Quest,
+  StampCard,
   TodayQuestsResponse,
   ToggleQuestCompletionResponse,
   UserProgress,
 } from '@questline/shared';
 import type { Clock } from '../clock.js';
 import { formatLocalDate, toIsoDateTime } from '../clock.js';
-import { XP_PER_QUEST, levelUpMessage } from '../config/game.js';
+import { XP_PER_QUEST, levelUpMessage, stampCardRewardMessage } from '../config/game.js';
 import type { ProgressRepository } from '../repositories/progressRepository.js';
 import type { QuestRepository } from '../repositories/questRepository.js';
+import type { StampRepository } from '../repositories/stampRepository.js';
 import { notFound } from './errors.js';
 
 export type QuestServiceDeps = {
   quests: QuestRepository;
   progress: ProgressRepository;
+  stamps: StampRepository;
   clock: Clock;
 };
 
@@ -35,12 +38,21 @@ function completionPayload(
   quest: Quest,
   progress: UserProgress,
   leveledUp: boolean,
+  stampCard: StampCard,
+  cardCompleted: boolean,
+  completedCardNumber: number | null,
 ): ToggleQuestCompletionResponse {
   return {
     quest,
     progress,
     leveled_up: leveledUp,
     level_up_message: leveledUp ? levelUpMessage(progress.level) : null,
+    stamp_card: stampCard,
+    card_completed: cardCompleted,
+    card_reward_message:
+      cardCompleted && completedCardNumber != null
+        ? stampCardRewardMessage(completedCardNumber)
+        : null,
   };
 }
 
@@ -51,6 +63,7 @@ export function createQuestService(deps: QuestServiceDeps) {
       const ctx = await deps.quests.listDueOnDateForActiveGoal(userId, date);
       const doneCount = ctx.quests.filter((q) => q.completed_at !== null).length;
       const progress = await deps.progress.getOrCreate(userId, date);
+      const stamp_card = await deps.stamps.getCardState(userId);
 
       return {
         local_date: date,
@@ -61,6 +74,7 @@ export function createQuestService(deps: QuestServiceDeps) {
         done_count: doneCount,
         total_count: ctx.quests.length,
         progress,
+        stamp_card,
       };
     },
 
@@ -77,14 +91,16 @@ export function createQuestService(deps: QuestServiceDeps) {
 
       const date = localDate ?? formatLocalDate(deps.clock.now());
 
-      // Idempotent no-ops: still return current progress for the HUD.
+      // Idempotent no-ops: still return current progress + stamp card for the HUD.
       if (completed && existing.completed_at !== null) {
         const progress = await deps.progress.getOrCreate(userId, date);
-        return completionPayload(existing, progress, false);
+        const stamp_card = await deps.stamps.getCardState(userId);
+        return completionPayload(existing, progress, false, stamp_card, false, null);
       }
       if (!completed && existing.completed_at === null) {
         const progress = await deps.progress.getOrCreate(userId, date);
-        return completionPayload(existing, progress, false);
+        const stamp_card = await deps.stamps.getCardState(userId);
+        return completionPayload(existing, progress, false, stamp_card, false, null);
       }
 
       const result = await deps.quests.setCompletionWithXp(
@@ -99,7 +115,14 @@ export function createQuestService(deps: QuestServiceDeps) {
       }
 
       const leveledUp = completed && result.progress.level > result.previousLevel;
-      return completionPayload(result.quest, result.progress, leveledUp);
+      return completionPayload(
+        result.quest,
+        result.progress,
+        leveledUp,
+        result.stamp_card,
+        result.card_completed,
+        result.completed_card_number,
+      );
     },
   };
 }

@@ -17,7 +17,7 @@ async function loginAsDemo(app: ReturnType<typeof createApp>): Promise<string> {
   return res.body.token as string;
 }
 
-describe('GET/PATCH /api/quests (Issue #9 / #11 / #12 / #17 / #31)', () => {
+describe('GET/PATCH /api/quests (Issue #9 / #11 / #12 / #13 / #17 / #31)', () => {
   let db: Db;
   const iso = '2026-10-28T15:30:00.000Z';
   const clock = fixedClock(iso);
@@ -79,6 +79,9 @@ describe('GET/PATCH /api/quests (Issue #9 / #11 / #12 / #17 / #31)', () => {
     expect(res.body.progress.current_streak).toBe(1);
     expect(res.body.progress.best_streak).toBe(1);
     expect(res.body.leveled_up).toBe(false);
+    expect(res.body.stamp_card.filled_count).toBe(1);
+    expect(res.body.stamp_card.stamped_dates).toEqual(['2026-10-28']);
+    expect(res.body.card_completed).toBe(false);
   });
 
   // AC: The current streak and best streak are displayed (via Today + completion)
@@ -132,6 +135,7 @@ describe('GET/PATCH /api/quests (Issue #9 / #11 / #12 / #17 / #31)', () => {
 
     expect(undone.body.quest.completed_at).toBeNull();
     expect(undone.body.progress.xp).toBe(0);
+    expect(undone.body.stamp_card.filled_count).toBe(0);
   });
 
   // AC: Completion status and completion time are saved

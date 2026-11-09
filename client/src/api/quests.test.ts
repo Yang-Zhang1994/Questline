@@ -28,6 +28,13 @@ const todayPayload = {
     best_streak: 0,
     last_active_date: null,
   },
+  stamp_card: {
+    card_number: 1,
+    stamps_per_card: 7,
+    stamped_dates: [],
+    filled_count: 0,
+    past_cards: [],
+  },
 };
 
 describe('quests API client (Issue #8 / #9)', () => {
@@ -77,6 +84,15 @@ describe('quests API client (Issue #8 / #9)', () => {
           },
           leveled_up: false,
           level_up_message: null,
+          stamp_card: {
+            card_number: 1,
+            stamps_per_card: 7,
+            stamped_dates: ['2026-11-09'],
+            filled_count: 1,
+            past_cards: [],
+          },
+          card_completed: false,
+          card_reward_message: null,
         }),
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -85,6 +101,7 @@ describe('quests API client (Issue #8 / #9)', () => {
 
     expect(result.progress.xp).toBe(10);
     expect(result.progress.current_streak).toBe(1);
+    expect(result.stamp_card.filled_count).toBe(1);
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('/api/quests/1/completion');

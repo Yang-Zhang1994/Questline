@@ -30,6 +30,13 @@ const todayPayload = {
     best_streak: 0,
     last_active_date: null,
   },
+  stamp_card: {
+    card_number: 1,
+    stamps_per_card: 7,
+    stamped_dates: [],
+    filled_count: 0,
+    past_cards: [],
+  },
 };
 
 afterEach(() => {
@@ -126,6 +133,15 @@ describe('App auth gate (Issue #8)', () => {
               },
               leveled_up: false,
               level_up_message: null,
+              stamp_card: {
+                card_number: 1,
+                stamps_per_card: 7,
+                stamped_dates: ['2026-11-09'],
+                filled_count: 1,
+                past_cards: [],
+              },
+              card_completed: false,
+              card_reward_message: null,
             }),
         };
       }
@@ -136,6 +152,7 @@ describe('App auth gate (Issue #8)', () => {
     render(<App />);
 
     expect(await screen.findByTestId('streak-counter')).toBeInTheDocument();
+    expect(await screen.findByTestId('stamp-card')).toBeInTheDocument();
 
     const checkbox = await screen.findByRole('checkbox', { name: todayPayload.quests[0].title });
     await user.click(checkbox);
