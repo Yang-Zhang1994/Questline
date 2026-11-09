@@ -66,3 +66,20 @@ export {
   type InterviewStatus,
   type InterviewTopic,
 } from './schemas/interview.js';
+
+export {
+  ConfirmGoalBodySchema,
+  ConfirmGoalResponseSchema,
+  GoalDraftResponseSchema,
+  GoalDraftSchema,
+  GoalSchema,
+  GoalStatusSchema,
+  ReviseGoalDraftBodySchema,
+  type ConfirmGoalBody,
+  type ConfirmGoalResponse,
+  type Goal,
+  type GoalDraft,
+  type GoalDraftResponse,
+  type GoalStatus,
+  type ReviseGoalDraftBody,
+} from './schemas/goal.js';

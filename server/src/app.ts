@@ -7,14 +7,17 @@ import { systemClock } from './clock.js';
 import type { Db } from './db/connection.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { createChatRepository } from './repositories/chatRepository.js';
+import { createGoalRepository } from './repositories/goalRepository.js';
 import { createInterviewRepository } from './repositories/interviewRepository.js';
 import { createRoadmapRepository } from './repositories/roadmapRepository.js';
 import { createUserRepository } from './repositories/userRepository.js';
 import { createAuthRouter } from './routes/auth.js';
 import { createChatRouter } from './routes/chat.js';
+import { createGoalsRouter } from './routes/goals.js';
 import { createRoadmapRouter } from './routes/roadmap.js';
 import { createAuthService } from './services/authService.js';
 import { createChatService } from './services/chatService.js';
+import { createGoalService } from './services/goalService.js';
 import { createRoadmapService } from './services/roadmapService.js';
 
 export type CreateAppOptions = {
@@ -30,6 +33,7 @@ export function createApp(options: CreateAppOptions) {
   const chat = createChatRepository(options.db);
   const interviews = createInterviewRepository(options.db);
   const roadmap = createRoadmapRepository(options.db);
+  const goals = createGoalRepository(options.db);
   const authService = createAuthService({ users });
   const roadmapService = createRoadmapService({ roadmap });
 
@@ -47,9 +51,18 @@ export function createApp(options: CreateAppOptions) {
           cached ??= createClaudeClient();
           return cached.evaluateInterviewAnswer(input);
         },
+        async proposeGoalDraft(input) {
+          cached ??= createClaudeClient();
+          return cached.proposeGoalDraft(input);
+        },
+        async reviseGoalDraft(input) {
+          cached ??= createClaudeClient();
+          return cached.reviseGoalDraft(input);
+        },
       };
     })();
   const chatService = createChatService({ chat, interviews, ai, clock });
+  const goalService = createGoalService({ goals, interviews, ai, clock });
 
   const app = express();
   // express-rate-limit needs a stable IP behind proxies / Vitest.
@@ -66,6 +79,7 @@ export function createApp(options: CreateAppOptions) {
   // /api/quests (Today + check-off) removed with Issues #8 / #9 revert — re-own later.
   app.use('/api/chat', createChatRouter(chatService));
   app.use('/api/roadmap', createRoadmapRouter(roadmapService));
+  app.use('/api/goals', createGoalsRouter(goalService));
 
   app.use(errorHandler);
   return app;

@@ -69,7 +69,7 @@ curl -s -X POST http://localhost:3001/api/chat/interview/restart \
   -H "Authorization: Bearer <token-from-login>"
 ```
 
-Talk runs a **one-question-at-a-time goal interview** (#3): done definition → starting point → time budget → deadline, with follow-ups for vague answers and a **Start over** control. Goal confirm/save is Issue #4.
+Talk runs a **one-question-at-a-time goal interview** (#3): done definition → starting point → time budget → deadline, with follow-ups for vague answers and a **Start over** control. After the interview, **GoalConfirmCard** (#4) proposes a measurable goal — **★ Start this goal** saves to Postgres; **Revise with Mochi** regenerates a draft; **Adjust answers** returns to the interview. Nothing is written to `goals` until Accept.
 
 Missing/invalid tokens receive `{ "error": { "code": "UNAUTHORIZED", "message": "..." } }`. Chat queries are scoped to the authenticated user id. Vitest always mocks Claude — never calls the live API.
 

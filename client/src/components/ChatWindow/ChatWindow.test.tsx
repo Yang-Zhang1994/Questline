@@ -172,7 +172,7 @@ describe('ChatWindow (Issue #3 interview)', () => {
     expect(onRestart).toHaveBeenCalledTimes(1);
   });
 
-  it('shows a complete banner when the interview is finished', () => {
+  it('shows GoalConfirmCard when the interview is finished', () => {
     render(
       <ChatWindow
         messages={[mochiWelcome]}
@@ -194,10 +194,23 @@ describe('ChatWindow (Issue #3 interview)', () => {
         }}
         onSend={vi.fn()}
         onRestart={vi.fn()}
+        goalDraft={{
+          title: 'Read a Japanese novel on my own within one year',
+          done_definition: 'Finish one novel',
+          starting_point: 'Hiragana',
+          time_budget_minutes_per_day: 20,
+          deadline: '2027-11-09',
+          mochi_message: 'Here is a concrete goal ♡',
+        }}
+        onAcceptGoal={vi.fn()}
+        onReviseGoal={vi.fn()}
+        onReturnToInterview={vi.fn()}
       />,
     );
 
     expect(screen.getByTestId('interview-complete')).toBeInTheDocument();
-    expect(screen.getByTestId('interview-complete-banner')).toHaveTextContent(/confirm/i);
+    expect(screen.getByTestId('goal-confirm-card')).toBeInTheDocument();
+    expect(screen.getByTestId('goal-draft-title')).toHaveTextContent(/Japanese novel/i);
+    expect(screen.queryByTestId('interview-complete-banner')).not.toBeInTheDocument();
   });
 });

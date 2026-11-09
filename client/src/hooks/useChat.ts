@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ChatMessage, InterviewState } from '@questline/shared';
 import { fetchChatMessages, restartInterview, sendChatMessage } from '../api/chat';
+import { useGoalDraft } from './useGoalDraft';
 
 const EMPTY_INTERVIEW: InterviewState = {
   status: 'in_progress',
@@ -21,6 +22,11 @@ export function useChat() {
   const [sending, setSending] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const goal = useGoalDraft({
+    interviewComplete: interview.status === 'complete',
+    onInterviewUpdated: setInterview,
+  });
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -57,6 +63,8 @@ export function useChat() {
     }
   }, []);
 
+  const resetGoal = goal.reset;
+
   const restart = useCallback(async () => {
     setRestarting(true);
     setError(null);
@@ -64,12 +72,13 @@ export function useChat() {
       const payload = await restartInterview();
       setMessages(payload.messages);
       setInterview(payload.interview);
+      resetGoal();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not restart the interview');
     } finally {
       setRestarting(false);
     }
-  }, []);
+  }, [resetGoal]);
 
   return {
     messages,
@@ -81,5 +90,13 @@ export function useChat() {
     send,
     restart,
     reload,
+    goalDraft: goal.draft,
+    confirmedGoal: goal.confirmedGoal,
+    goalLoading: goal.loading,
+    goalBusy: goal.busy,
+    goalError: goal.error,
+    acceptGoal: goal.accept,
+    reviseGoal: goal.revise,
+    returnToInterview: goal.returnToInterview,
   };
 }
