@@ -2,7 +2,7 @@ import {
   TodayQuestsResponseSchema,
   ToggleQuestCompletionResponseSchema,
   type TodayQuestsResponse,
-  type Quest,
+  type ToggleQuestCompletionResponse,
 } from '@questline/shared';
 import { authHeaders } from './authToken';
 
@@ -38,7 +38,10 @@ export async function fetchTodayQuests(localDate?: string): Promise<TodayQuestsR
   return TodayQuestsResponseSchema.parse(body);
 }
 
-export async function setQuestCompletion(questId: number, completed: boolean): Promise<Quest> {
+export async function setQuestCompletion(
+  questId: number,
+  completed: boolean,
+): Promise<ToggleQuestCompletionResponse> {
   const res = await fetch(`/api/quests/${questId}/completion`, {
     method: 'PATCH',
     headers: authHeaders({ 'Content-Type': 'application/json' }),
@@ -48,5 +51,5 @@ export async function setQuestCompletion(questId: number, completed: boolean): P
   if (!res.ok) {
     throw new Error(errorMessage(body, 'Could not update quest'));
   }
-  return ToggleQuestCompletionResponseSchema.parse(body).quest;
+  return ToggleQuestCompletionResponseSchema.parse(body);
 }

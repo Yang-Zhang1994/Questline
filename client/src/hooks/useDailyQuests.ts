@@ -15,6 +15,7 @@ export function useDailyQuests() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyQuestId, setBusyQuestId] = useState<number | null>(null);
+  const [levelUpMessage, setLevelUpMessage] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -37,17 +38,21 @@ export function useDailyQuests() {
     setBusyQuestId(questId);
     setError(null);
     try {
-      const quest = await setQuestCompletion(questId, completed);
+      const result = await setQuestCompletion(questId, completed);
       setData((prev) => {
         if (!prev) return prev;
-        const quests = prev.quests.map((q) => (q.id === quest.id ? quest : q));
+        const quests = prev.quests.map((q) => (q.id === result.quest.id ? result.quest : q));
         const doneCount = quests.filter((q) => q.completed_at !== null).length;
         return {
           ...prev,
           quests,
           done_count: doneCount,
+          progress: result.progress,
         };
       });
+      if (result.leveled_up && result.level_up_message) {
+        setLevelUpMessage(result.level_up_message);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not update quest');
     } finally {
@@ -55,11 +60,17 @@ export function useDailyQuests() {
     }
   }, []);
 
+  const dismissLevelUp = useCallback(() => {
+    setLevelUpMessage(null);
+  }, []);
+
   return {
     data,
     loading,
     error,
     busyQuestId,
+    levelUpMessage,
+    dismissLevelUp,
     toggleQuest,
     reload,
   };

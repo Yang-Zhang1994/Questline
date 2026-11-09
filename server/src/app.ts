@@ -9,6 +9,7 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { createChatRepository } from './repositories/chatRepository.js';
 import { createInterviewRepository } from './repositories/interviewRepository.js';
 import { createMilestoneRepository } from './repositories/milestoneRepository.js';
+import { createProgressRepository } from './repositories/progressRepository.js';
 import { createQuestRepository } from './repositories/questRepository.js';
 import { createUserRepository } from './repositories/userRepository.js';
 import { createAuthRouter } from './routes/auth.js';
@@ -32,11 +33,12 @@ export function createApp(options: CreateAppOptions) {
   const clock = options.clock ?? systemClock;
   const users = createUserRepository(options.db);
   const quests = createQuestRepository(options.db);
+  const progress = createProgressRepository(options.db);
   const chat = createChatRepository(options.db);
   const interviews = createInterviewRepository(options.db);
   const milestones = createMilestoneRepository(options.db);
   const authService = createAuthService({ users });
-  const questService = createQuestService({ quests, clock });
+  const questService = createQuestService({ quests, progress, clock });
   // Lazy default so quest/auth tests can createApp without ANTHROPIC_* env.
   const ai: ChatAiClient =
     options.ai ??

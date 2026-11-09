@@ -17,7 +17,7 @@ async function loginAsDemo(app: ReturnType<typeof createApp>): Promise<string> {
   return res.body.token as string;
 }
 
-describe('GET/PATCH /api/quests (Issue #9 / #17 / #31)', () => {
+describe('GET/PATCH /api/quests (Issue #9 / #11 / #17 / #31)', () => {
   let db: Db;
   const iso = '2026-10-28T15:30:00.000Z';
   const clock = fixedClock(iso);
@@ -75,6 +75,8 @@ describe('GET/PATCH /api/quests (Issue #9 / #17 / #31)', () => {
       .expect(200);
 
     expect(res.body.quest.completed_at).toBe('2026-10-28T15:30:00Z');
+    expect(res.body.progress.xp).toBe(10);
+    expect(res.body.leveled_up).toBe(false);
   });
 
   // AC: User can undo an accidental check-off
@@ -100,6 +102,7 @@ describe('GET/PATCH /api/quests (Issue #9 / #17 / #31)', () => {
       .expect(200);
 
     expect(undone.body.quest.completed_at).toBeNull();
+    expect(undone.body.progress.xp).toBe(0);
   });
 
   // AC: Completion status and completion time are saved
@@ -127,6 +130,12 @@ describe('GET/PATCH /api/quests (Issue #9 / #17 / #31)', () => {
     const quest = reloaded.body.quests.find((q: { id: number }) => q.id === questId);
     expect(quest.completed_at).toBe('2026-10-28T15:30:00Z');
     expect(reloaded.body.done_count).toBe(1);
+    expect(reloaded.body.progress).toMatchObject({
+      xp: 10,
+      level: 1,
+      xp_into_level: expect.any(Number),
+      xp_for_next_level: expect.any(Number),
+    });
   });
 
   it('rejects invalid completion body', async () => {

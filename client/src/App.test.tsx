@@ -21,6 +21,12 @@ const todayPayload = {
   ],
   done_count: 0,
   total_count: 1,
+  progress: {
+    xp: 0,
+    level: 1,
+    xp_into_level: 0,
+    xp_for_next_level: 50,
+  },
 };
 
 afterEach(() => {
@@ -106,6 +112,14 @@ describe('App auth gate (Issue #8)', () => {
           text: async () =>
             JSON.stringify({
               quest: { ...todayPayload.quests[0], completed_at: '2026-11-09T12:00:00Z' },
+              progress: {
+                xp: 10,
+                level: 1,
+                xp_into_level: 10,
+                xp_for_next_level: 50,
+              },
+              leveled_up: false,
+              level_up_message: null,
             }),
         };
       }

@@ -69,6 +69,9 @@ describe('questPlanService (Issue #7)', () => {
       async setCompletedAtForUser() {
         return null;
       },
+      async setCompletionWithXp() {
+        return null;
+      },
       async findCurrentMilestoneQuestContext(userId: number) {
         if (!goal || !milestone || userId !== 1) return null;
         return { goal, milestone, draft, quests: saved };

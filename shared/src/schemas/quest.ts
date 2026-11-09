@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { UserProgressSchema } from './progress.js';
 
 export const IsoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD');
 
@@ -23,6 +24,7 @@ export const TodayQuestsResponseSchema = z.object({
   quests: z.array(QuestSchema),
   done_count: z.number().int().nonnegative(),
   total_count: z.number().int().nonnegative(),
+  progress: UserProgressSchema,
 });
 
 export type TodayQuestsResponse = z.infer<typeof TodayQuestsResponseSchema>;
@@ -35,6 +37,9 @@ export type ToggleQuestCompletionBody = z.infer<typeof ToggleQuestCompletionBody
 
 export const ToggleQuestCompletionResponseSchema = z.object({
   quest: QuestSchema,
+  progress: UserProgressSchema,
+  leveled_up: z.boolean(),
+  level_up_message: z.string().nullable(),
 });
 
 export type ToggleQuestCompletionResponse = z.infer<typeof ToggleQuestCompletionResponseSchema>;

@@ -15,6 +15,11 @@ export {
 } from './schemas/auth.js';
 
 export {
+  UserProgressSchema,
+  type UserProgress,
+} from './schemas/progress.js';
+
+export {
   IsoDateSchema,
   IsoDateTimeSchema,
   QuestDraftItemSchema,
@@ -30,7 +35,6 @@ export {
   type ToggleQuestCompletionBody,
   type ToggleQuestCompletionResponse,
 } from './schemas/quest.js';
-
 export {
   ConfirmQuestPlanBodySchema,
   ConfirmQuestPlanResponseSchema,

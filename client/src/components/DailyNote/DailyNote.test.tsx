@@ -33,6 +33,12 @@ const sample: TodayQuestsResponse = {
   ],
   done_count: 1,
   total_count: 2,
+  progress: {
+    xp: 10,
+    level: 1,
+    xp_into_level: 10,
+    xp_for_next_level: 50,
+  },
 };
 
 describe('DailyNote (Issue #9)', () => {

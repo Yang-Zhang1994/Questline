@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { DailyNote } from '../components/DailyNote/DailyNote';
 import { BottomDock } from '../components/BottomDock/BottomDock';
+import { LevelUpToast } from '../components/LevelUpToast/LevelUpToast';
 import { QuestPlanEditor } from '../components/QuestPlanEditor/QuestPlanEditor';
+import { XpBar } from '../components/XpBar/XpBar';
 import { useDailyQuests } from '../hooks/useDailyQuests';
 import { useQuestPlan } from '../hooks/useQuestPlan';
 
@@ -11,7 +13,16 @@ export type TodayPageProps = {
 };
 
 export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
-  const { data, loading, error, busyQuestId, toggleQuest, reload } = useDailyQuests();
+  const {
+    data,
+    loading,
+    error,
+    busyQuestId,
+    levelUpMessage,
+    dismissLevelUp,
+    toggleQuest,
+    reload,
+  } = useDailyQuests();
   const [planning, setPlanning] = useState(false);
 
   // Probe whether the current milestone already has saved quests (without auto-propose).
@@ -81,6 +92,12 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
         </div>
       </header>
 
+      {data?.progress ? (
+        <div className="relative z-[1] mb-4 w-full max-w-[640px]">
+          <XpBar progress={data.progress} />
+        </div>
+      ) : null}
+
       <DailyNote
         data={data}
         loading={loading}
@@ -94,6 +111,8 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
           void toggleQuest(questId, completed);
         }}
       />
+
+      <LevelUpToast message={levelUpMessage} onDismiss={dismissLevelUp} />
 
       {showEditor ? (
         <QuestPlanEditor

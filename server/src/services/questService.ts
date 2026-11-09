@@ -1,11 +1,19 @@
-import type { Quest, TodayQuestsResponse } from '@questline/shared';
+import type {
+  Quest,
+  TodayQuestsResponse,
+  ToggleQuestCompletionResponse,
+  UserProgress,
+} from '@questline/shared';
 import type { Clock } from '../clock.js';
 import { formatLocalDate, toIsoDateTime } from '../clock.js';
+import { XP_PER_QUEST, levelUpMessage } from '../config/game.js';
+import type { ProgressRepository } from '../repositories/progressRepository.js';
 import type { QuestRepository } from '../repositories/questRepository.js';
 import { notFound } from './errors.js';
 
 export type QuestServiceDeps = {
   quests: QuestRepository;
+  progress: ProgressRepository;
   clock: Clock;
 };
 
@@ -23,12 +31,26 @@ function greetingFor(hour: number, doneCount: number, totalCount: number): strin
   return `${timePart} Here are today's little quests. Check them off when you're ready — you can always undo.`;
 }
 
+function completionPayload(
+  quest: Quest,
+  progress: UserProgress,
+  leveledUp: boolean,
+): ToggleQuestCompletionResponse {
+  return {
+    quest,
+    progress,
+    leveled_up: leveledUp,
+    level_up_message: leveledUp ? levelUpMessage(progress.level) : null,
+  };
+}
+
 export function createQuestService(deps: QuestServiceDeps) {
   return {
     async getToday(userId: number, localDate?: string): Promise<TodayQuestsResponse> {
       const date = localDate ?? formatLocalDate(deps.clock.now());
       const ctx = await deps.quests.listDueOnDateForActiveGoal(userId, date);
       const doneCount = ctx.quests.filter((q) => q.completed_at !== null).length;
+      const progress = await deps.progress.getOrCreate(userId);
 
       return {
         local_date: date,
@@ -38,38 +60,42 @@ export function createQuestService(deps: QuestServiceDeps) {
         quests: ctx.quests,
         done_count: doneCount,
         total_count: ctx.quests.length,
+        progress,
       };
     },
 
-    async setCompletion(userId: number, questId: number, completed: boolean): Promise<Quest> {
+    async setCompletion(
+      userId: number,
+      questId: number,
+      completed: boolean,
+    ): Promise<ToggleQuestCompletionResponse> {
       const existing = await deps.quests.findByIdForUser(userId, questId);
       if (!existing) {
         throw notFound(`Quest ${questId} was not found`);
       }
 
-      if (completed) {
-        if (existing.completed_at !== null) {
-          return existing;
-        }
-        const updated = await deps.quests.setCompletedAtForUser(
-          userId,
-          questId,
-          toIsoDateTime(deps.clock.now()),
-        );
-        if (!updated) {
-          throw notFound(`Quest ${questId} was not found`);
-        }
-        return updated;
+      // Idempotent no-ops: still return current progress for the HUD.
+      if (completed && existing.completed_at !== null) {
+        const progress = await deps.progress.getOrCreate(userId);
+        return completionPayload(existing, progress, false);
+      }
+      if (!completed && existing.completed_at === null) {
+        const progress = await deps.progress.getOrCreate(userId);
+        return completionPayload(existing, progress, false);
       }
 
-      if (existing.completed_at === null) {
-        return existing;
-      }
-      const cleared = await deps.quests.setCompletedAtForUser(userId, questId, null);
-      if (!cleared) {
+      const result = await deps.quests.setCompletionWithXp(
+        userId,
+        questId,
+        completed ? toIsoDateTime(deps.clock.now()) : null,
+        completed ? XP_PER_QUEST : -XP_PER_QUEST,
+      );
+      if (!result) {
         throw notFound(`Quest ${questId} was not found`);
       }
-      return cleared;
+
+      const leveledUp = completed && result.progress.level > result.previousLevel;
+      return completionPayload(result.quest, result.progress, leveledUp);
     },
   };
 }
