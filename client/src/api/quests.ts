@@ -12,6 +12,18 @@ async function parseJson(res: Response): Promise<unknown> {
   return JSON.parse(text) as unknown;
 }
 
+function errorMessage(body: unknown, fallback: string): string {
+  if (
+    typeof body === 'object' &&
+    body !== null &&
+    'error' in body &&
+    typeof (body as { error?: { message?: string } }).error?.message === 'string'
+  ) {
+    return (body as { error: { message: string } }).error.message;
+  }
+  return fallback;
+}
+
 export async function fetchTodayQuests(localDate?: string): Promise<TodayQuestsResponse> {
   const params = new URLSearchParams();
   if (localDate) params.set('local_date', localDate);
@@ -21,14 +33,7 @@ export async function fetchTodayQuests(localDate?: string): Promise<TodayQuestsR
   });
   const body = await parseJson(res);
   if (!res.ok) {
-    const message =
-      typeof body === 'object' &&
-      body !== null &&
-      'error' in body &&
-      typeof (body as { error?: { message?: string } }).error?.message === 'string'
-        ? (body as { error: { message: string } }).error.message
-        : "Could not load today's quests";
-    throw new Error(message);
+    throw new Error(errorMessage(body, "Could not load today's quests"));
   }
   return TodayQuestsResponseSchema.parse(body);
 }
@@ -41,14 +46,7 @@ export async function setQuestCompletion(questId: number, completed: boolean): P
   });
   const body = await parseJson(res);
   if (!res.ok) {
-    const message =
-      typeof body === 'object' &&
-      body !== null &&
-      'error' in body &&
-      typeof (body as { error?: { message?: string } }).error?.message === 'string'
-        ? (body as { error: { message: string } }).error.message
-        : 'Could not update quest';
-    throw new Error(message);
+    throw new Error(errorMessage(body, 'Could not update quest'));
   }
   return ToggleQuestCompletionResponseSchema.parse(body).quest;
 }

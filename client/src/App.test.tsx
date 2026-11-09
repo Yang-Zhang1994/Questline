@@ -1,0 +1,123 @@
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { App } from './App';
+import { clearAuthToken } from './api/authToken';
+
+const todayPayload = {
+  local_date: '2026-11-09',
+  goal_title: 'Read a Japanese novel on my own',
+  milestone_title: 'Build a tiny daily reading habit',
+  greeting: "Good afternoon! Here are today's little quests.",
+  quests: [
+    {
+      id: 1,
+      milestone_id: 2,
+      title: 'Read 2 pages of your graded reader',
+      due_date: '2026-11-09',
+      estimated_minutes: 15,
+      completed_at: null,
+    },
+  ],
+  done_count: 0,
+  total_count: 1,
+};
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  sessionStorage.clear();
+  clearAuthToken();
+});
+
+beforeEach(() => {
+  sessionStorage.clear();
+  clearAuthToken();
+});
+
+describe('App auth gate (Issue #8)', () => {
+  it('shows login first, then Today with Bearer-backed quests after demo login', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/auth/login')) {
+        return {
+          ok: true,
+          text: async () =>
+            JSON.stringify({
+              user: { id: 1, email: 'demo@questline.local' },
+              token: 'demo-jwt-token',
+            }),
+        };
+      }
+      if (url.includes('/api/quests/today')) {
+        const headers = new Headers(init?.headers);
+        expect(headers.get('Authorization')).toBe('Bearer demo-jwt-token');
+        return {
+          ok: true,
+          text: async () => JSON.stringify(todayPayload),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(screen.getByRole('heading', { name: /welcome back/i })).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(/email/i), 'demo@questline.local');
+    await user.type(screen.getByLabelText(/password/i), 'demo-password-123');
+    await user.click(screen.getByRole('button', { name: /^log in$/i }));
+
+    expect(await screen.findByRole('region', { name: /a note from mochi/i })).toBeInTheDocument();
+    expect(screen.getByText(todayPayload.greeting)).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: todayPayload.quests[0].title })).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/quests/today'))).toBe(true);
+    });
+  });
+
+  it('check-off sends Bearer Authorization on completion PATCH', async () => {
+    const user = userEvent.setup();
+    sessionStorage.setItem('questline.authToken', 'demo-jwt-token');
+    sessionStorage.setItem(
+      'questline.authUser',
+      JSON.stringify({ id: 1, email: 'demo@questline.local' }),
+    );
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/quests/today')) {
+        return {
+          ok: true,
+          text: async () => JSON.stringify(todayPayload),
+        };
+      }
+      if (url.includes('/api/quests/1/completion')) {
+        const headers = new Headers(init?.headers);
+        expect(headers.get('Authorization')).toBe('Bearer demo-jwt-token');
+        expect(init?.method).toBe('PATCH');
+        return {
+          ok: true,
+          text: async () =>
+            JSON.stringify({
+              quest: { ...todayPayload.quests[0], completed_at: '2026-11-09T12:00:00Z' },
+            }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    const checkbox = await screen.findByRole('checkbox', { name: todayPayload.quests[0].title });
+    await user.click(checkbox);
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/completion'))).toBe(true);
+    });
+  });
+});

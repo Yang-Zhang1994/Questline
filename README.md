@@ -40,9 +40,11 @@ npm run dev:client   # Vite default port
 
 Migrations live in `server/src/db/migrations/` and apply automatically when the server (or tests) open the pool. Demo seed creates `demo@questline.local` / `demo-password-123` with an active Goal → Milestone → today's Quests when the `users` table is empty.
 
-## Auth (JWT — Issue #31)
+## Auth (JWT — Issues #31 / #8)
 
-**Choice:** API returns a JWT in the JSON body; clients send it as `Authorization: Bearer <token>` (not an httpOnly cookie). This keeps curl / Supertest / a future SPA login simple for the course app.
+**Choice:** API returns a JWT in the JSON body; the SPA and curl clients send it as `Authorization: Bearer <token>` (not an httpOnly cookie). The client keeps the token in memory and mirrors it to `sessionStorage` for tab reloads.
+
+**UI demo:** open the Vite client → log in with `demo@questline.local` / `demo-password-123` → Today loads Mochi's note + Postgres quests → check/undo.
 
 ```bash
 # Register
