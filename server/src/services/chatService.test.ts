@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ChatAiClient } from '../ai/client.js';
 import { MOCHI_WELCOME_MESSAGE } from '../ai/prompts/mochiChat.js';
 import type { Clock } from '../clock.js';
