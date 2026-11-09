@@ -57,6 +57,40 @@ The prototype is the **visual and interaction reference**. Rebuild it as React c
 
 Rename prototype labels: "＋ New quest" → "＋ New goal"; "★ Start this quest" → "★ Start this goal"; "New task" → "New quest"; etc.
 
+## Agent UI checklist (before any UI PR)
+
+1. Open the matching screenshot (`today.png` / `map.png` / `talk.png`) and this README.
+2. Copy color/font tokens into `client/src/styles/tokens.css` and map into the Tailwind theme — do **not** invent an alternate “cozy” palette.
+3. Rebuild with React + Tailwind; do not copy prototype HTML, browser storage, or in-browser Claude.
+4. Use PRD terms (**Goal / Milestone / Quest**), not prototype “quest”/“task” wording for goals.
+
+## Key UI components
+
+| Component                               | Expected behavior                                                                        | Issue    |
+| --------------------------------------- | ---------------------------------------------------------------------------------------- | -------- |
+| `ChatWindow` / bubbles / input          | Enter or button send; distinct bubbles; Mochi name+avatar; auto-scroll; typing indicator | #2       |
+| Goal interview                          | Exactly one question per message; four topics; follow-ups; restart                       | #3       |
+| `GoalConfirmCard`                       | Proposed goal + deadline; Accept / revise; save only on Accept                           | #4       |
+| `MilestonePlanEditor`                   | 3–7 milestones; edit via Mochi; save only on confirm                                     | #5       |
+| `RoadmapView` / `MilestoneNode`         | Start → stages → goal; current highlighted; title + date                                 | #6, #10  |
+| `DailyNote` / `QuestItem`               | Window card “A note from Mochi”; today’s quests or rest-day; check/undo; done faded      | #8, #9   |
+| `XpBar` / `LevelUpToast`                | XP on complete/undo; level bar; short celebration                                        | #11      |
+| `StreakCounter`                         | Current/best; +1 per active day; reset after miss; local date                            | #12      |
+| `StampCard`                             | One stamp/active day; fixed slots; full card → reward + new card                         | #13      |
+| `ReschedulePreview` / `WeekPlanPreview` | Preview → confirm; encouraging copy; no duplicates                                       | #14, #15 |
+
+**Mochi's voice:** warm, short, never guilt-tripping. Prefer "Let's adjust the plan together."
+
+## User flows
+
+**A — Onboarding:** no goal → chat interview (one Q at a time) → confirm goal → confirm milestones → generate quests → Home.  
+**B — Daily visit:** today's quests → check off (XP/streak/stamp) → stage complete advances roadmap (#10).  
+**C — Falling behind:** overdue flagged → reschedule preview (#14) or week plan (#15) → confirm.
+
+## Accessibility (UI)
+
+WCAG 2.1 AA. Keyboard-reachable controls with visible focus. Chat `aria-live="polite"`. Real checkboxes (or `role="checkbox"` + `aria-checked`) with labels. Roadmap state via text/icons, not color alone. Contrast ≥4.5:1 text / ≥3:1 UI. Honor `prefers-reduced-motion`. Meaningful `alt` (decorative `alt=""`). Usable at 320px and 200% zoom.
+
 ## Sprint 2 prototype extras
 
 Build only when their Issue is in progress: multi-goal selector (#18), diary note (#19), manual quest add/delete (#20), manual plan form (#21).
