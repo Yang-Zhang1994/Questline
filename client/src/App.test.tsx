@@ -40,6 +40,49 @@ const todayPayload = {
   },
 };
 
+const goalsPayload = {
+  goals: [
+    {
+      id: 1,
+      user_id: 1,
+      title: 'Read a Japanese novel on my own',
+      done_definition: null,
+      starting_point: null,
+      time_budget_minutes_per_day: 20,
+      deadline: '2027-11-09',
+      status: 'active',
+      created_at: '2026-11-01T00:00:00Z',
+    },
+  ],
+  active_goal_id: 1,
+};
+
+const diaryPayload = {
+  id: null,
+  goal_id: 1,
+  note_date: '2026-11-09',
+  content: '',
+  updated_at: null,
+};
+
+function okJson(body: unknown) {
+  return {
+    ok: true,
+    text: async () => JSON.stringify(body),
+  };
+}
+
+/** Shared Today bootstraps — goals (#18) + diary (#19) + quests. */
+function matchTodayBootstrap(url: string, init?: RequestInit) {
+  if (url.includes('/api/goals') && (!init?.method || init.method === 'GET')) {
+    return okJson(goalsPayload);
+  }
+  if (url.includes('/api/diary-notes')) {
+    return okJson(diaryPayload);
+  }
+  return null;
+}
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -60,22 +103,17 @@ describe('App auth gate (Issue #8)', () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/api/auth/login')) {
-        return {
-          ok: true,
-          text: async () =>
-            JSON.stringify({
-              user: { id: 1, email: 'demo@questline.local' },
-              token: 'demo-jwt-token',
-            }),
-        };
+        return okJson({
+          user: { id: 1, email: 'demo@questline.local' },
+          token: 'demo-jwt-token',
+        });
       }
+      const bootstrap = matchTodayBootstrap(url, init);
+      if (bootstrap) return bootstrap;
       if (url.includes('/api/quests/today')) {
         const headers = new Headers(init?.headers);
         expect(headers.get('Authorization')).toBe('Bearer demo-jwt-token');
-        return {
-          ok: true,
-          text: async () => JSON.stringify(todayPayload),
-        };
+        return okJson(todayPayload);
       }
       throw new Error(`Unexpected fetch: ${url}`);
     });
@@ -92,6 +130,9 @@ describe('App auth gate (Issue #8)', () => {
     expect(await screen.findByRole('region', { name: /a note from mochi/i })).toBeInTheDocument();
     expect(screen.getByText(todayPayload.greeting)).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: todayPayload.quests[0].title })).toBeInTheDocument();
+    // AC (#19): diary note textarea on Today
+    expect(await screen.findByTestId('diary-note')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: /diary note for today/i })).toBeInTheDocument();
 
     await waitFor(() => {
       expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/quests/today'))).toBe(true);
@@ -108,43 +149,38 @@ describe('App auth gate (Issue #8)', () => {
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const bootstrap = matchTodayBootstrap(url, init);
+      if (bootstrap) return bootstrap;
       if (url.includes('/api/quests/today')) {
-        return {
-          ok: true,
-          text: async () => JSON.stringify(todayPayload),
-        };
+        return okJson(todayPayload);
       }
       if (url.includes('/api/quests/1/completion')) {
         const headers = new Headers(init?.headers);
         expect(headers.get('Authorization')).toBe('Bearer demo-jwt-token');
         expect(init?.method).toBe('PATCH');
-        return {
-          ok: true,
-          text: async () =>
-            JSON.stringify({
-              quest: { ...todayPayload.quests[0], completed_at: '2026-11-09T12:00:00Z' },
-              progress: {
-                xp: 10,
-                level: 1,
-                xp_into_level: 10,
-                xp_for_next_level: 50,
-                current_streak: 1,
-                best_streak: 1,
-                last_active_date: '2026-11-09',
-              },
-              leveled_up: false,
-              level_up_message: null,
-              stamp_card: {
-                card_number: 1,
-                stamps_per_card: 7,
-                stamped_dates: ['2026-11-09'],
-                filled_count: 1,
-                past_cards: [],
-              },
-              card_completed: false,
-              card_reward_message: null,
-            }),
-        };
+        return okJson({
+          quest: { ...todayPayload.quests[0], completed_at: '2026-11-09T12:00:00Z' },
+          progress: {
+            xp: 10,
+            level: 1,
+            xp_into_level: 10,
+            xp_for_next_level: 50,
+            current_streak: 1,
+            best_streak: 1,
+            last_active_date: '2026-11-09',
+          },
+          leveled_up: false,
+          level_up_message: null,
+          stamp_card: {
+            card_number: 1,
+            stamps_per_card: 7,
+            stamped_dates: ['2026-11-09'],
+            filled_count: 1,
+            past_cards: [],
+          },
+          card_completed: false,
+          card_reward_message: null,
+        });
       }
       throw new Error(`Unexpected fetch: ${url}`);
     });
@@ -174,42 +210,37 @@ describe('App auth gate (Issue #8)', () => {
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const bootstrap = matchTodayBootstrap(url, init);
+      if (bootstrap) return bootstrap;
       if (url.includes('/api/quests/today')) {
-        return {
-          ok: true,
-          text: async () => JSON.stringify(todayPayload),
-        };
+        return okJson(todayPayload);
       }
       if (url.includes('/api/chat/messages') && (!init?.method || init.method === 'GET')) {
         const headers = new Headers(init?.headers);
         expect(headers.get('Authorization')).toBe('Bearer demo-jwt-token');
-        return {
-          ok: true,
-          text: async () =>
-            JSON.stringify({
-              messages: [
-                {
-                  id: 1,
-                  user_id: 1,
-                  goal_id: null,
-                  role: 'mochi',
-                  content: "Hi, I'm Mochi! Let's chat.",
-                  created_at: '2026-11-09T15:00:00Z',
-                },
-              ],
-              interview: {
-                status: 'in_progress',
-                current_topic: 'done_definition',
-                answered_topics: [],
-                answers: {
-                  done_definition: null,
-                  starting_point: null,
-                  time_budget: null,
-                  deadline: null,
-                },
-              },
-            }),
-        };
+        return okJson({
+          messages: [
+            {
+              id: 1,
+              user_id: 1,
+              goal_id: null,
+              role: 'mochi',
+              content: "Hi, I'm Mochi! Let's chat.",
+              created_at: '2026-11-09T15:00:00Z',
+            },
+          ],
+          interview: {
+            status: 'in_progress',
+            current_topic: 'done_definition',
+            answered_topics: [],
+            answers: {
+              done_definition: null,
+              starting_point: null,
+              time_budget: null,
+              deadline: null,
+            },
+          },
+        });
       }
       throw new Error(`Unexpected fetch: ${url}`);
     });
@@ -235,51 +266,46 @@ describe('App auth gate (Issue #8)', () => {
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const bootstrap = matchTodayBootstrap(url, init);
+      if (bootstrap) return bootstrap;
       if (url.includes('/api/quests/today')) {
-        return {
-          ok: true,
-          text: async () => JSON.stringify(todayPayload),
-        };
+        return okJson(todayPayload);
       }
       if (url.includes('/api/milestones/draft')) {
         const headers = new Headers(init?.headers);
         expect(headers.get('Authorization')).toBe('Bearer demo-jwt-token');
-        return {
-          ok: true,
-          text: async () =>
-            JSON.stringify({
-              draft: null,
-              confirmed: true,
-              goal: {
-                id: 1,
-                title: 'Read a Japanese novel on my own',
-                done_definition: null,
-                starting_point: null,
-                time_budget_minutes_per_day: 20,
-                deadline: '2027-11-09',
-              },
-              milestones: [
-                {
-                  id: 10,
-                  goal_id: 1,
-                  position: 1,
-                  title: 'Build a tiny daily reading habit',
-                  description: 'Start soft',
-                  target_date: '2026-12-01',
-                  status: 'current',
-                },
-                {
-                  id: 11,
-                  goal_id: 1,
-                  position: 2,
-                  title: 'Finish a graded reader',
-                  description: 'Level up',
-                  target_date: '2027-03-01',
-                  status: 'upcoming',
-                },
-              ],
-            }),
-        };
+        return okJson({
+          draft: null,
+          confirmed: true,
+          goal: {
+            id: 1,
+            title: 'Read a Japanese novel on my own',
+            done_definition: null,
+            starting_point: null,
+            time_budget_minutes_per_day: 20,
+            deadline: '2027-11-09',
+          },
+          milestones: [
+            {
+              id: 10,
+              goal_id: 1,
+              position: 1,
+              title: 'Build a tiny daily reading habit',
+              description: 'Start soft',
+              target_date: '2026-12-01',
+              status: 'current',
+            },
+            {
+              id: 11,
+              goal_id: 1,
+              position: 2,
+              title: 'Finish a graded reader',
+              description: 'Level up',
+              target_date: '2027-03-01',
+              status: 'upcoming',
+            },
+          ],
+        });
       }
       throw new Error(`Unexpected fetch: ${url}`);
     });

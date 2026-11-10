@@ -7,6 +7,7 @@ import { systemClock } from './clock.js';
 import type { Db } from './db/connection.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { createChatRepository } from './repositories/chatRepository.js';
+import { createDiaryNoteRepository } from './repositories/diaryNoteRepository.js';
 import { createGoalRepository } from './repositories/goalRepository.js';
 import { createInterviewRepository } from './repositories/interviewRepository.js';
 import { createMilestoneRepository } from './repositories/milestoneRepository.js';
@@ -16,11 +17,13 @@ import { createStampRepository } from './repositories/stampRepository.js';
 import { createUserRepository } from './repositories/userRepository.js';
 import { createAuthRouter } from './routes/auth.js';
 import { createChatRouter } from './routes/chat.js';
+import { createDiaryNotesRouter } from './routes/diaryNotes.js';
 import { createGoalsRouter } from './routes/goals.js';
 import { createMilestonesRouter } from './routes/milestones.js';
 import { createQuestsRouter } from './routes/quests.js';
 import { createAuthService } from './services/authService.js';
 import { createChatService } from './services/chatService.js';
+import { createDiaryNoteService } from './services/diaryNoteService.js';
 import { createGoalService } from './services/goalService.js';
 import { createMilestoneAdvanceService } from './services/milestoneAdvanceService.js';
 import { createMilestonePlanService } from './services/milestonePlanService.js';
@@ -46,8 +49,10 @@ export function createApp(options: CreateAppOptions) {
   const interviews = createInterviewRepository(options.db);
   const goals = createGoalRepository(options.db);
   const milestones = createMilestoneRepository(options.db);
+  const diaryNotes = createDiaryNoteRepository(options.db, clock);
   const authService = createAuthService({ users });
   const questService = createQuestService({ quests, progress, stamps, clock });
+  const diaryNoteService = createDiaryNoteService({ diaryNotes, goals, clock });
   // Lazy default so quest/auth tests can createApp without ANTHROPIC_* env.
   const ai: ChatAiClient =
     options.ai ??
@@ -120,6 +125,7 @@ export function createApp(options: CreateAppOptions) {
 
   app.use('/api/auth', createAuthRouter(authService));
   app.use('/api/goals', createGoalsRouter(goalService));
+  app.use('/api/diary-notes', createDiaryNotesRouter(diaryNoteService));
   app.use(
     '/api/quests',
     createQuestsRouter(questService, questPlanService, rescheduleService, weekPlanService),

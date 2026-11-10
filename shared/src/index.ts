@@ -126,6 +126,16 @@ export {
 } from './schemas/goal.js';
 
 export {
+  DIARY_NOTE_MAX_LENGTH,
+  DiaryNoteResponseSchema,
+  DiaryNoteSchema,
+  UpsertDiaryNoteBodySchema,
+  type DiaryNote,
+  type DiaryNoteResponse,
+  type UpsertDiaryNoteBody,
+} from './schemas/diaryNote.js';
+
+export {
   CompleteStageResponseSchema,
   ConfirmMilestonePlanBodySchema,
   ConfirmMilestonePlanResponseSchema,

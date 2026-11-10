@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { DailyNote } from '../components/DailyNote/DailyNote';
+import { DiaryNote } from '../components/DiaryNote/DiaryNote';
 import { BottomDock } from '../components/BottomDock/BottomDock';
 import { GoalCelebration } from '../components/GoalCelebration/GoalCelebration';
 import { GoalSelector } from '../components/GoalSelector/GoalSelector';
@@ -13,6 +14,7 @@ import { StreakCounter } from '../components/StreakCounter/StreakCounter';
 import { WeekPlanPreview } from '../components/WeekPlanPreview/WeekPlanPreview';
 import { XpBar } from '../components/XpBar/XpBar';
 import { useDailyQuests } from '../hooks/useDailyQuests';
+import { useDiaryNote } from '../hooks/useDiaryNote';
 import { useGoals } from '../hooks/useGoals';
 import { useQuestPlan } from '../hooks/useQuestPlan';
 import { useReschedule } from '../hooks/useReschedule';
@@ -48,6 +50,15 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
     beginNewGoal,
     removeGoal,
   } = useGoals();
+  const {
+    content: diaryContent,
+    loading: diaryLoading,
+    saving: diarySaving,
+    saved: diarySaved,
+    error: diaryError,
+    setContent: setDiaryContent,
+    flush: flushDiary,
+  } = useDiaryNote({ activeGoalId });
   const [planning, setPlanning] = useState(false);
   const [rescheduling, setRescheduling] = useState(false);
   const [weekPlanning, setWeekPlanning] = useState(false);
@@ -266,6 +277,20 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
           void toggleQuest(questId, completed);
         }}
       />
+
+      {activeGoalId ? (
+        <DiaryNote
+          content={diaryContent}
+          loading={diaryLoading}
+          saving={diarySaving}
+          saved={diarySaved}
+          error={diaryError}
+          onChange={setDiaryContent}
+          onBlur={() => {
+            void flushDiary();
+          }}
+        />
+      ) : null}
 
       <LevelUpToast message={levelUpMessage} onDismiss={dismissLevelUp} />
       <LevelUpToast message={stampRewardMessage} onDismiss={dismissStampReward} />
