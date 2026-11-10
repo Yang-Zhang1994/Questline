@@ -8,10 +8,11 @@ import type {
   SendChatMessageResponse,
 } from '@questline/shared';
 import type { ChatAiClient, ClaudeChatTurn } from '../ai/client.js';
-import { countQuestions } from '../ai/parse.js';
+import { countQuestions, parseTimeBudgetAnswer } from '../ai/parse.js';
 import { MOCHI_WELCOME_MESSAGE } from '../ai/prompts/mochiChat.js';
 import {
   INTERVIEW_COMPLETE_STUB,
+  buildAcceptedReply,
   followUpForTopic,
   nextTopicAfter,
   questionForTopic,
@@ -113,17 +114,41 @@ export function createChatService(deps: ChatServiceDeps) {
     const currentTopic = interview.current_topic;
     const nextTopic = nextTopicAfter(currentTopic);
 
+    // Deterministic Time accept: compact answers must advance even if Claude marks vague.
+    const timeParsed =
+      currentTopic === 'time_budget' ? parseTimeBudgetAnswer(content) : null;
+
     let evaluation;
-    try {
-      evaluation = await deps.ai.evaluateInterviewAnswer({
-        history: priorForClaude,
-        current_topic: currentTopic,
-        answered: interview.answers,
-        user_answer: content,
-        next_topic: nextTopic,
-      });
-    } catch {
-      throw aiUnavailable();
+    if (timeParsed) {
+      evaluation = {
+        evaluation: 'accepted' as const,
+        extracted_answer: timeParsed.display,
+        mochi_message: buildAcceptedReply(currentTopic, nextTopic, timeParsed.display),
+      };
+    } else {
+      try {
+        evaluation = await deps.ai.evaluateInterviewAnswer({
+          history: priorForClaude,
+          current_topic: currentTopic,
+          answered: interview.answers,
+          user_answer: content,
+          next_topic: nextTopic,
+        });
+      } catch {
+        throw aiUnavailable();
+      }
+
+      // Safety net: if AI still says vague on a parseable time answer, force accept.
+      if (evaluation.evaluation === 'vague' && currentTopic === 'time_budget') {
+        const retryParse = parseTimeBudgetAnswer(content);
+        if (retryParse) {
+          evaluation = {
+            evaluation: 'accepted' as const,
+            extracted_answer: retryParse.display,
+            mochi_message: buildAcceptedReply(currentTopic, nextTopic, retryParse.display),
+          };
+        }
+      }
     }
 
     let mochiMessage = evaluation.mochi_message;

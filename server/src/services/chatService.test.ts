@@ -330,4 +330,50 @@ describe('chatService interview (Issue #3)', () => {
       status: 503,
     } satisfies Partial<AppError>);
   });
+
+  // Regression: Time topic must advance on compact natural answers (not loop).
+  it.each(['10h/week', '1.5h/day', '1.5/day', '100', 'skip'])(
+    'advances time_budget → deadline for answer %s without calling Claude',
+    async (timeAnswer) => {
+      const chat = buildChatRepo();
+      const interviews = buildInterviewRepo();
+      await interviews.saveProgress(1, {
+        status: 'in_progress',
+        current_topic: 'time_budget',
+        answers: {
+          done_definition: 'Finish one novel',
+          starting_point: 'Know hiragana',
+          time_budget: null,
+          deadline: null,
+        },
+        updatedAt: '2026-11-09T15:00:00Z',
+      });
+
+      const evaluateInterviewAnswer = vi.fn(async () => ({
+        evaluation: 'vague' as const,
+        extracted_answer: null,
+        mochi_message: 'How many minutes a day feels realistic?',
+      }));
+      const ai: ChatAiClient = {
+        completeChat: vi.fn(),
+        proposeGoalDraft: vi.fn(),
+        reviseGoalDraft: vi.fn(),
+        evaluateInterviewAnswer,
+      };
+      const service = createChatService({ chat, interviews, ai, clock });
+
+      const result = await service.sendMessage(1, timeAnswer);
+
+      expect(evaluateInterviewAnswer).not.toHaveBeenCalled();
+      expect(result.interview.current_topic).toBe('deadline');
+      expect(result.interview.answered_topics).toEqual([
+        'done_definition',
+        'starting_point',
+        'time_budget',
+      ]);
+      expect(result.interview.answers.time_budget).toBeTruthy();
+      expect(countQuestions(result.mochi_message.content)).toBe(1);
+      expect(result.mochi_message.content).toContain(TOPIC_QUESTIONS.deadline);
+    },
+  );
 });
