@@ -3,6 +3,7 @@ import { BottomDock } from '../components/BottomDock/BottomDock';
 import { MilestonePlanEditor } from '../components/MilestonePlanEditor/MilestonePlanEditor';
 import { QuestPlanEditor } from '../components/QuestPlanEditor/QuestPlanEditor';
 import { useChat } from '../hooks/useChat';
+import { useGoals } from '../hooks/useGoals';
 import { useMilestonePlan } from '../hooks/useMilestonePlan';
 import { useQuestPlan } from '../hooks/useQuestPlan';
 
@@ -12,7 +13,9 @@ export type TalkPageProps = {
 };
 
 export function TalkPage({ userEmail = null, onLogout }: TalkPageProps) {
-  const { messages, interview, loading, sending, restarting, error, send, restart } = useChat();
+  const { messages, interview, loading, sending, restarting, error, send, restart, reload } =
+    useChat();
+  const { beginNewGoal, busy: goalsBusy } = useGoals();
   const {
     draft: milestoneDraft,
     goal: milestoneGoal,
@@ -23,6 +26,7 @@ export function TalkPage({ userEmail = null, onLogout }: TalkPageProps) {
     error: milestoneError,
     confirm: confirmMilestones,
     revise: reviseMilestones,
+    reset: resetMilestones,
   } = useMilestonePlan();
 
   const {
@@ -36,6 +40,7 @@ export function TalkPage({ userEmail = null, onLogout }: TalkPageProps) {
     error: questError,
     confirm: confirmQuests,
     revise: reviseQuests,
+    reload: reloadQuestPlan,
   } = useQuestPlan({
     enabled: milestonesConfirmed && savedMilestones.length > 0,
     autoPropose: true,
@@ -83,6 +88,25 @@ export function TalkPage({ userEmail = null, onLogout }: TalkPageProps) {
           ) : null}
         </div>
       </header>
+
+      <div className="relative z-[1] mb-3 flex w-full max-w-[640px] justify-end">
+        <button
+          type="button"
+          data-testid="talk-new-goal"
+          disabled={goalsBusy || restarting || sending || loading}
+          onClick={() => {
+            void (async () => {
+              await beginNewGoal();
+              resetMilestones();
+              await reload();
+              await reloadQuestPlan();
+            })();
+          }}
+          className="rounded-pill bg-gel-pink px-4 py-2 text-[0.85rem] font-bold text-white shadow-[inset_0_2px_0_rgba(255,255,255,0.45)] hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-55"
+        >
+          ＋ New goal
+        </button>
+      </div>
 
       <ChatWindow
         messages={messages}

@@ -117,9 +117,10 @@ describe('milestoneAdvanceService (Issue #10)', () => {
     expect(result.mochi_message).toMatch(/Mochi/i);
 
     const goal = await db.query<{ status: string }>(
-      `SELECT status FROM goals WHERE user_id = $1 ORDER BY id DESC LIMIT 1`,
+      `SELECT status FROM goals WHERE user_id = $1 AND status = 'completed'`,
       [demoUserId],
     );
+    expect(goal.rowCount).toBe(1);
     expect(goal.rows[0].status).toBe('completed');
   });
 

@@ -111,6 +111,21 @@ export {
 } from './schemas/interview.js';
 
 export {
+  ActivateGoalResponseSchema,
+  DeleteGoalResponseSchema,
+  GoalSchema,
+  GoalStatusSchema,
+  GoalsListResponseSchema,
+  StartNewGoalResponseSchema,
+  type ActivateGoalResponse,
+  type DeleteGoalResponse,
+  type Goal,
+  type GoalStatus,
+  type GoalsListResponse,
+  type StartNewGoalResponse,
+} from './schemas/goal.js';
+
+export {
   CompleteStageResponseSchema,
   ConfirmMilestonePlanBodySchema,
   ConfirmMilestonePlanResponseSchema,

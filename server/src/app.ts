@@ -7,6 +7,7 @@ import { systemClock } from './clock.js';
 import type { Db } from './db/connection.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { createChatRepository } from './repositories/chatRepository.js';
+import { createGoalRepository } from './repositories/goalRepository.js';
 import { createInterviewRepository } from './repositories/interviewRepository.js';
 import { createMilestoneRepository } from './repositories/milestoneRepository.js';
 import { createProgressRepository } from './repositories/progressRepository.js';
@@ -15,10 +16,12 @@ import { createStampRepository } from './repositories/stampRepository.js';
 import { createUserRepository } from './repositories/userRepository.js';
 import { createAuthRouter } from './routes/auth.js';
 import { createChatRouter } from './routes/chat.js';
+import { createGoalsRouter } from './routes/goals.js';
 import { createMilestonesRouter } from './routes/milestones.js';
 import { createQuestsRouter } from './routes/quests.js';
 import { createAuthService } from './services/authService.js';
 import { createChatService } from './services/chatService.js';
+import { createGoalService } from './services/goalService.js';
 import { createMilestoneAdvanceService } from './services/milestoneAdvanceService.js';
 import { createMilestonePlanService } from './services/milestonePlanService.js';
 import { createQuestPlanService } from './services/questPlanService.js';
@@ -41,6 +44,7 @@ export function createApp(options: CreateAppOptions) {
   const stamps = createStampRepository(options.db);
   const chat = createChatRepository(options.db);
   const interviews = createInterviewRepository(options.db);
+  const goals = createGoalRepository(options.db);
   const milestones = createMilestoneRepository(options.db);
   const authService = createAuthService({ users });
   const questService = createQuestService({ quests, progress, stamps, clock });
@@ -93,6 +97,10 @@ export function createApp(options: CreateAppOptions) {
       };
     })();
   const chatService = createChatService({ chat, interviews, ai, clock });
+  const goalService = createGoalService({
+    goals,
+    restartInterview: (userId) => chatService.restartInterview(userId),
+  });
   const milestonePlanService = createMilestonePlanService({ milestones, ai, clock });
   const milestoneAdvanceService = createMilestoneAdvanceService({ milestones });
   const questPlanService = createQuestPlanService({ quests, ai, clock });
@@ -111,6 +119,7 @@ export function createApp(options: CreateAppOptions) {
   });
 
   app.use('/api/auth', createAuthRouter(authService));
+  app.use('/api/goals', createGoalsRouter(goalService));
   app.use(
     '/api/quests',
     createQuestsRouter(questService, questPlanService, rescheduleService, weekPlanService),

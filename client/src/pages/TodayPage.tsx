@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router';
 import { DailyNote } from '../components/DailyNote/DailyNote';
 import { BottomDock } from '../components/BottomDock/BottomDock';
 import { GoalCelebration } from '../components/GoalCelebration/GoalCelebration';
+import { GoalSelector } from '../components/GoalSelector/GoalSelector';
 import { LevelUpToast } from '../components/LevelUpToast/LevelUpToast';
 import { QuestPlanEditor } from '../components/QuestPlanEditor/QuestPlanEditor';
 import { ReschedulePreview } from '../components/ReschedulePreview/ReschedulePreview';
@@ -11,6 +13,7 @@ import { StreakCounter } from '../components/StreakCounter/StreakCounter';
 import { WeekPlanPreview } from '../components/WeekPlanPreview/WeekPlanPreview';
 import { XpBar } from '../components/XpBar/XpBar';
 import { useDailyQuests } from '../hooks/useDailyQuests';
+import { useGoals } from '../hooks/useGoals';
 import { useQuestPlan } from '../hooks/useQuestPlan';
 import { useReschedule } from '../hooks/useReschedule';
 import { useStageAdvance } from '../hooks/useStageAdvance';
@@ -22,6 +25,7 @@ export type TodayPageProps = {
 };
 
 export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
+  const navigate = useNavigate();
   const {
     data,
     loading,
@@ -34,6 +38,16 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
     toggleQuest,
     reload,
   } = useDailyQuests();
+  const {
+    goals,
+    activeGoalId,
+    loading: goalsLoading,
+    busy: goalsBusy,
+    error: goalsError,
+    selectGoal,
+    beginNewGoal,
+    removeGoal,
+  } = useGoals();
   const [planning, setPlanning] = useState(false);
   const [rescheduling, setRescheduling] = useState(false);
   const [weekPlanning, setWeekPlanning] = useState(false);
@@ -192,13 +206,44 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
         </div>
       </header>
 
-      {data?.progress ? (
-        <div className="relative z-[1] mb-4 flex w-full max-w-[640px] flex-col gap-2">
-          <XpBar progress={data.progress} />
-          <StreakCounter progress={data.progress} />
-          {data.stamp_card ? <StampCard stampCard={data.stamp_card} /> : null}
-        </div>
-      ) : null}
+      <div className="relative z-[1] mb-4 flex w-full max-w-[640px] flex-col gap-2">
+        <GoalSelector
+          goals={goals}
+          activeGoalId={activeGoalId}
+          loading={goalsLoading}
+          busy={goalsBusy}
+          error={goalsError}
+          onSelect={async (goalId) => {
+            await selectGoal(goalId);
+            setPlanning(false);
+            setRescheduling(false);
+            setWeekPlanning(false);
+            await reload();
+          }}
+          onNewGoal={async () => {
+            await beginNewGoal();
+            setPlanning(false);
+            setRescheduling(false);
+            setWeekPlanning(false);
+            await reload();
+            navigate('/talk');
+          }}
+          onDelete={async (goalId) => {
+            await removeGoal(goalId);
+            setPlanning(false);
+            setRescheduling(false);
+            setWeekPlanning(false);
+            await reload();
+          }}
+        />
+        {data?.progress ? (
+          <>
+            <XpBar progress={data.progress} />
+            <StreakCounter progress={data.progress} />
+            {data.stamp_card ? <StampCard stampCard={data.stamp_card} /> : null}
+          </>
+        ) : null}
+      </div>
 
       <DailyNote
         data={data}
