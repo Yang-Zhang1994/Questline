@@ -86,3 +86,57 @@ export const QuestPlanDraftSchema = z.object({
 });
 
 export type QuestPlanDraft = z.infer<typeof QuestPlanDraftSchema>;
+
+/** Manual create on a milestone sheet (Issue #20). */
+export const CreateQuestBodySchema = z.object({
+  milestone_id: z.number().int().positive(),
+  title: z
+    .string()
+    .trim()
+    .min(1, 'Give this quest a little name ♡')
+    .max(200, 'Keep the quest name a bit shorter'),
+  due_date: IsoDateSchema,
+  estimated_minutes: z.number().int().positive().max(120).nullable().optional(),
+});
+
+export type CreateQuestBody = z.infer<typeof CreateQuestBodySchema>;
+
+export const CreateQuestResponseSchema = z.object({
+  quest: QuestSchema,
+});
+
+export type CreateQuestResponse = z.infer<typeof CreateQuestResponseSchema>;
+
+/** Optional local_date so deleting a completed quest can reverse XP/streak/stamps. */
+export const DeleteQuestBodySchema = z.object({
+  local_date: IsoDateSchema.optional(),
+});
+
+export type DeleteQuestBody = z.infer<typeof DeleteQuestBodySchema>;
+
+export const DeleteQuestResponseSchema = z.object({
+  ok: z.literal(true),
+  quest: QuestSchema,
+  xp_reversed: z.boolean(),
+  progress: UserProgressSchema,
+  stamp_card: StampCardSchema,
+});
+
+export type DeleteQuestResponse = z.infer<typeof DeleteQuestResponseSchema>;
+
+/** Quests listed for one milestone on the Map sheet (#20). */
+export const MilestoneQuestsResponseSchema = z.object({
+  milestone: z.object({
+    id: z.number().int().positive(),
+    title: z.string().min(1),
+    description: z.string().nullable(),
+    target_date: IsoDateSchema.nullable(),
+    status: z.enum(['upcoming', 'current', 'completed']),
+    position: z.number().int().positive(),
+  }),
+  quests: z.array(QuestSchema),
+  done_count: z.number().int().nonnegative(),
+  total_count: z.number().int().nonnegative(),
+});
+
+export type MilestoneQuestsResponse = z.infer<typeof MilestoneQuestsResponseSchema>;

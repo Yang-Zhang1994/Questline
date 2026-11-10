@@ -5,6 +5,8 @@ import { MilestoneNode } from '../MilestoneNode/MilestoneNode';
 export type RoadmapViewProps = {
   goal: MilestoneGoalSummary;
   milestones: Milestone[];
+  /** Open the milestone sheet when a stage node is tapped (Issue #20). */
+  onSelectMilestone?: (milestone: Milestone) => void;
 };
 
 function prefersReducedMotion(): boolean {
@@ -26,7 +28,7 @@ function PathConnector({ walked, testId }: { walked: boolean; testId: string }) 
  * Visual Start → milestones → Goal path for the Map page (Issue #6).
  * Highlights the current stage; completed vs upcoming are distinct via text/icons.
  */
-export function RoadmapView({ goal, milestones }: RoadmapViewProps) {
+export function RoadmapView({ goal, milestones, onSelectMilestone }: RoadmapViewProps) {
   const pathRef = useRef<HTMLOListElement | null>(null);
   const ordered = [...milestones].sort((a, b) => a.position - b.position);
   const cleared = ordered.filter((m) => m.status === 'completed').length;
@@ -129,6 +131,9 @@ export function RoadmapView({ goal, milestones }: RoadmapViewProps) {
                   status={milestone.status}
                   position={milestone.position}
                   isCurrent={milestone.status === 'current'}
+                  onSelect={
+                    onSelectMilestone ? () => onSelectMilestone(milestone) : undefined
+                  }
                 />
               </Fragment>
             );

@@ -14,6 +14,10 @@ export type MilestoneNodeProps = {
   position?: number;
   /** Mark the live stage so the map can scroll to it. */
   isCurrent?: boolean;
+  /** Open the milestone sheet (Issue #20) — milestone kind only. */
+  onSelect?: () => void;
+  /** Optional ♡ done/total from the sheet loader. */
+  questProgress?: { done: number; total: number } | null;
 };
 
 const STATUS_LABEL: Record<MilestoneStatus, string> = {
@@ -39,6 +43,8 @@ export function MilestoneNode({
   status = 'upcoming',
   position,
   isCurrent = false,
+  onSelect,
+  questProgress = null,
 }: MilestoneNodeProps) {
   const goalComplete = kind === 'goal' && status === 'completed';
   const state =
@@ -52,9 +58,11 @@ export function MilestoneNode({
           : 'Goal'
         : STATUS_LABEL[status];
   const icon = kind === 'start' ? '🏠' : kind === 'goal' ? '★' : STATUS_ICON[status];
+  const selectable = kind === 'milestone' && typeof onSelect === 'function';
 
   const shellClass = [
     'relative w-full max-w-[22rem] rounded-[18px] border-[3px] px-3 py-2.5 text-left shadow-polaroid',
+    selectable ? 'cursor-pointer transition hover:brightness-[1.02] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pink' : '',
     kind === 'start'
       ? 'border-blue-ink/30 bg-blue-pale'
       : kind === 'goal'
@@ -67,6 +75,54 @@ export function MilestoneNode({
             ? 'border-pink bg-panel ring-2 ring-pink/40'
             : 'border-ink-soft/25 bg-road',
   ].join(' ');
+
+  const body = (
+    <div className="flex items-start gap-2.5">
+      <span
+        className={[
+          'mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[1.05rem] font-bold',
+          kind === 'goal' || status === 'current'
+            ? 'bg-gel-pink text-white'
+            : status === 'completed'
+              ? 'bg-tree text-ink'
+              : 'bg-panel text-ink-soft',
+        ].join(' ')}
+        aria-hidden="true"
+      >
+        {kind === 'milestone' && status === 'current' ? (
+          <span className="block h-7 w-7 [&_svg]:h-full [&_svg]:w-full">
+            <MochiAvatar mood="happy" />
+          </span>
+        ) : (
+          icon
+        )}
+      </span>
+
+      <div className="min-w-0 flex-1">
+        <p className="m-0 font-ui text-[0.72rem] font-bold uppercase tracking-[0.04em] text-ink-soft">
+          <span aria-hidden="true">{icon} </span>
+          {label}
+          {kind === 'milestone' && position != null ? (
+            <span className="normal-case tracking-normal text-ink-soft/80">
+              {' '}
+              · Stage {position}
+            </span>
+          ) : null}
+        </p>
+        <h3 className="m-0 mt-0.5 font-display text-[0.98rem] leading-snug text-ink">{title}</h3>
+        {date ? (
+          <p className="m-0 mt-1 text-[0.8rem] text-ink-soft" data-testid="node-target-date">
+            Target: {date}
+          </p>
+        ) : null}
+        {questProgress ? (
+          <p className="m-0 mt-1 text-[0.78rem] text-ink-soft" data-testid="node-quest-progress">
+            ♡ {questProgress.done}/{questProgress.total}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
 
   return (
     <li
@@ -83,48 +139,20 @@ export function MilestoneNode({
       data-kind={kind}
       aria-current={isCurrent ? 'step' : undefined}
     >
-      <article className={shellClass} aria-label={`${label}: ${title}`}>
-        <div className="flex items-start gap-2.5">
-          <span
-            className={[
-              'mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[1.05rem] font-bold',
-              kind === 'goal' || status === 'current'
-                ? 'bg-gel-pink text-white'
-                : status === 'completed'
-                  ? 'bg-tree text-ink'
-                  : 'bg-panel text-ink-soft',
-            ].join(' ')}
-            aria-hidden="true"
-          >
-            {kind === 'milestone' && status === 'current' ? (
-              <span className="block h-7 w-7 [&_svg]:h-full [&_svg]:w-full">
-                <MochiAvatar mood="happy" />
-              </span>
-            ) : (
-              icon
-            )}
-          </span>
-
-          <div className="min-w-0 flex-1">
-            <p className="m-0 font-ui text-[0.72rem] font-bold uppercase tracking-[0.04em] text-ink-soft">
-              <span aria-hidden="true">{icon} </span>
-              {label}
-              {kind === 'milestone' && position != null ? (
-                <span className="normal-case tracking-normal text-ink-soft/80">
-                  {' '}
-                  · Stage {position}
-                </span>
-              ) : null}
-            </p>
-            <h3 className="m-0 mt-0.5 font-display text-[0.98rem] leading-snug text-ink">{title}</h3>
-            {date ? (
-              <p className="m-0 mt-1 text-[0.8rem] text-ink-soft" data-testid="node-target-date">
-                Target: {date}
-              </p>
-            ) : null}
-          </div>
-        </div>
-      </article>
+      {selectable ? (
+        <button
+          type="button"
+          className={shellClass}
+          aria-label={`Open stage sheet: ${title}`}
+          onClick={onSelect}
+        >
+          {body}
+        </button>
+      ) : (
+        <article className={shellClass} aria-label={`${label}: ${title}`}>
+          {body}
+        </article>
+      )}
     </li>
   );
 }

@@ -2,6 +2,8 @@ import {
   ConfirmQuestPlanBodySchema,
   ConfirmRescheduleBodySchema,
   ConfirmWeekPlanBodySchema,
+  CreateQuestBodySchema,
+  DeleteQuestBodySchema,
   IsoDateSchema,
   ReviseQuestPlanBodySchema,
   ReviseRescheduleBodySchema,
@@ -60,6 +62,42 @@ export function createQuestsRouter(
       const localDate = parseOptionalLocalDate(req.query.local_date);
       const payload = await questService.getToday(user.id, localDate);
       res.json(payload);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /** List quests for one milestone (Map sheet — Issue #20). */
+  router.get('/', async (req, res, next) => {
+    try {
+      const user = getRequestUser(req);
+      if (!user) throw unauthorized();
+
+      const raw = req.query.milestone_id;
+      const milestoneId = typeof raw === 'string' ? Number(raw) : NaN;
+      if (!Number.isInteger(milestoneId) || milestoneId < 1) {
+        throw validationError('milestone_id must be a positive integer');
+      }
+      const payload = await questService.listForMilestone(user.id, milestoneId);
+      res.json(payload);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /** Manual create — immediate write, no AI draft (Issue #20). */
+  router.post('/', questWriteLimiter, async (req, res, next) => {
+    try {
+      const user = getRequestUser(req);
+      if (!user) throw unauthorized();
+      const body = CreateQuestBodySchema.parse(req.body);
+      const payload = await questService.createManual(user.id, {
+        milestoneId: body.milestone_id,
+        title: body.title,
+        dueDate: body.due_date,
+        estimatedMinutes: body.estimated_minutes,
+      });
+      res.status(201).json(payload);
     } catch (err) {
       next(err);
     }
@@ -279,6 +317,29 @@ export function createQuestsRouter(
         questId,
         body.completed,
         body.local_date,
+      );
+      res.json(payload);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /** Delete a quest; completed ones reverse XP first (Issue #20). */
+  router.delete('/:questId', questWriteLimiter, async (req, res, next) => {
+    try {
+      const user = getRequestUser(req);
+      if (!user) throw unauthorized();
+
+      const questId = Number(req.params.questId);
+      if (!Number.isInteger(questId) || questId < 1) {
+        throw validationError('questId must be a positive integer');
+      }
+      const fromQuery = parseOptionalLocalDate(req.query.local_date);
+      const body = DeleteQuestBodySchema.parse(req.body ?? {});
+      const payload = await questService.deleteManual(
+        user.id,
+        questId,
+        body.local_date ?? fromQuery,
       );
       res.json(payload);
     } catch (err) {

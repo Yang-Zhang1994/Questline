@@ -15,6 +15,7 @@ import {
   levelFromTotalXp,
   progressSnapshotFromXp,
   revertActiveDay,
+  XP_PER_QUEST,
   type StreakState,
 } from '../config/game.js';
 import type { Db } from '../db/connection.js';
@@ -177,6 +178,181 @@ export function createQuestRepository(db: Db) {
       );
       const row = result.rows[0];
       return row ? mapQuest(row) : null;
+    },
+
+    /** Milestone + its quests for the Map sheet (Issue #20). Scoped to the user's goals. */
+    async listByMilestoneIdForUser(
+      userId: number,
+      milestoneId: number,
+    ): Promise<{ milestone: Milestone; quests: Quest[] } | null> {
+      const milestoneResult = await db.query<MilestoneRow>(
+        `SELECT m.id, m.goal_id, m.position, m.title, m.description, m.target_date, m.status, m.quest_draft
+         FROM milestones m
+         INNER JOIN goals g ON g.id = m.goal_id
+         WHERE m.id = $1 AND g.user_id = $2`,
+        [milestoneId, userId],
+      );
+      const milestoneRow = milestoneResult.rows[0];
+      if (!milestoneRow) return null;
+
+      const questResult = await db.query<QuestRow>(
+        `SELECT id, milestone_id, title, due_date, estimated_minutes, completed_at
+         FROM quests
+         WHERE milestone_id = $1
+         ORDER BY due_date ASC, id ASC`,
+        [milestoneId],
+      );
+
+      return {
+        milestone: mapMilestone(milestoneRow),
+        quests: questResult.rows.map(mapQuest),
+      };
+    },
+
+    /**
+     * Insert one manual quest on a user-owned milestone (Issue #20).
+     * Does not wipe sibling quests (unlike AI confirmQuestPlan).
+     */
+    async insertForUser(
+      userId: number,
+      input: {
+        milestoneId: number;
+        title: string;
+        dueDate: string;
+        estimatedMinutes: number | null;
+      },
+    ): Promise<Quest | null> {
+      const owned = await db.query<{ id: number }>(
+        `SELECT m.id
+         FROM milestones m
+         INNER JOIN goals g ON g.id = m.goal_id
+         WHERE m.id = $1 AND g.user_id = $2`,
+        [input.milestoneId, userId],
+      );
+      if (!owned.rows[0]) return null;
+
+      const inserted = await db.query<QuestRow>(
+        `INSERT INTO quests (milestone_id, title, due_date, estimated_minutes, completed_at)
+         VALUES ($1, $2, $3, $4, NULL)
+         RETURNING id, milestone_id, title, due_date, estimated_minutes, completed_at`,
+        [input.milestoneId, input.title, input.dueDate, input.estimatedMinutes],
+      );
+      return mapQuest(inserted.rows[0]);
+    },
+
+    /**
+     * Delete a quest; if it was completed, reverse XP (+ streak/stamp when same local day)
+     * in one transaction (Issue #20).
+     */
+    async deleteWithRewardReverse(
+      userId: number,
+      id: number,
+      localDate: string,
+    ): Promise<{
+      quest: Quest;
+      progress: UserProgress;
+      stamp_card: StampCard;
+      xp_reversed: boolean;
+    } | null> {
+      const client = await db.connect();
+      const stamps = createStampRepository(db);
+      try {
+        await client.query('BEGIN');
+
+        const owned = await client.query<QuestRow>(
+          `SELECT q.id, q.milestone_id, q.title, q.due_date, q.estimated_minutes, q.completed_at
+           FROM quests q
+           INNER JOIN milestones m ON m.id = q.milestone_id
+           INNER JOIN goals g ON g.id = m.goal_id
+           WHERE q.id = $1 AND g.user_id = $2
+           FOR UPDATE OF q`,
+          [id, userId],
+        );
+        const row = owned.rows[0];
+        if (!row) {
+          await client.query('ROLLBACK');
+          return null;
+        }
+
+        const quest = mapQuest(row);
+        const xpReversed = quest.completed_at != null;
+
+        const progressRow = await client.query<{
+          xp: number;
+          level: number;
+          current_streak: number;
+          best_streak: number;
+          last_active_date: string | null;
+          active_day_completions: number;
+        }>(
+          `INSERT INTO user_progress (
+             user_id, xp, level, current_streak, best_streak, last_active_date, active_day_completions
+           )
+           VALUES ($1, 0, 1, 0, 0, NULL, 0)
+           ON CONFLICT (user_id) DO UPDATE SET user_id = EXCLUDED.user_id
+           RETURNING xp, level, current_streak, best_streak, last_active_date, active_day_completions`,
+          [userId],
+        );
+
+        let streak: StreakState = {
+          current_streak: progressRow.rows[0].current_streak,
+          best_streak: progressRow.rows[0].best_streak,
+          last_active_date: progressRow.rows[0].last_active_date,
+        };
+        let activeDayCompletions = progressRow.rows[0].active_day_completions;
+        let nextXp = progressRow.rows[0].xp;
+        let clearActiveDay = false;
+
+        if (xpReversed) {
+          nextXp = Math.max(0, nextXp - XP_PER_QUEST);
+          if (streak.last_active_date === localDate) {
+            activeDayCompletions = Math.max(0, activeDayCompletions - 1);
+            if (activeDayCompletions === 0) {
+              streak = revertActiveDay(streak, localDate);
+              clearActiveDay = true;
+            }
+          }
+
+          await client.query(
+            `UPDATE user_progress
+             SET xp = $1, level = $2,
+                 current_streak = $3, best_streak = $4, last_active_date = $5,
+                 active_day_completions = $6
+             WHERE user_id = $7`,
+            [
+              nextXp,
+              levelFromTotalXp(nextXp),
+              streak.current_streak,
+              streak.best_streak,
+              streak.last_active_date,
+              activeDayCompletions,
+              userId,
+            ],
+          );
+        }
+
+        await client.query(`DELETE FROM quests WHERE id = $1`, [id]);
+
+        let stamp_card: StampCard;
+        if (clearActiveDay) {
+          stamp_card = await stamps.removeStampForDay(userId, localDate, client);
+        } else {
+          stamp_card = await stamps.getCardState(userId, client);
+        }
+
+        await client.query('COMMIT');
+        return {
+          quest,
+          progress: progressSnapshotFromXp(nextXp, streak),
+          stamp_card,
+          xp_reversed: xpReversed,
+        };
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
     },
 
     async listDueOnDateForActiveGoal(userId: number, localDate: string): Promise<TodayQuestContext> {

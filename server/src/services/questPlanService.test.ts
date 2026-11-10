@@ -63,6 +63,15 @@ describe('questPlanService (Issue #7)', () => {
       async findByIdForUser() {
         return null;
       },
+      async listByMilestoneIdForUser() {
+        return null;
+      },
+      async insertForUser() {
+        return null;
+      },
+      async deleteWithRewardReverse() {
+        return null;
+      },
       async listDueOnDateForActiveGoal() {
         return { goalTitle: null, milestoneTitle: null, quests: [] };
       },

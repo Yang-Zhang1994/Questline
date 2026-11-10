@@ -1,4 +1,7 @@
 import type {
+  CreateQuestResponse,
+  DeleteQuestResponse,
+  MilestoneQuestsResponse,
   Quest,
   StageReadySummary,
   StampCard,
@@ -12,7 +15,7 @@ import { XP_PER_QUEST, levelUpMessage, stampCardRewardMessage } from '../config/
 import type { ProgressRepository } from '../repositories/progressRepository.js';
 import type { QuestRepository } from '../repositories/questRepository.js';
 import type { StampRepository } from '../repositories/stampRepository.js';
-import { notFound } from './errors.js';
+import { notFound, validationError } from './errors.js';
 
 export type QuestServiceDeps = {
   quests: QuestRepository;
@@ -159,6 +162,78 @@ export function createQuestService(deps: QuestServiceDeps) {
         result.completed_card_number,
         stage,
       );
+    },
+
+    /** List quests for a tapped milestone on the Map sheet (Issue #20). */
+    async listForMilestone(userId: number, milestoneId: number): Promise<MilestoneQuestsResponse> {
+      const ctx = await deps.quests.listByMilestoneIdForUser(userId, milestoneId);
+      if (!ctx) {
+        throw notFound(`Milestone ${milestoneId} was not found`);
+      }
+      const done_count = ctx.quests.filter((q) => q.completed_at !== null).length;
+      return {
+        milestone: {
+          id: ctx.milestone.id,
+          title: ctx.milestone.title,
+          description: ctx.milestone.description,
+          target_date: ctx.milestone.target_date,
+          status: ctx.milestone.status,
+          position: ctx.milestone.position,
+        },
+        quests: ctx.quests,
+        done_count,
+        total_count: ctx.quests.length,
+      };
+    },
+
+    /** Manual Add on the milestone sheet — immediate insert, no AI draft (Issue #20). */
+    async createManual(
+      userId: number,
+      input: {
+        milestoneId: number;
+        title: string;
+        dueDate: string;
+        estimatedMinutes?: number | null;
+      },
+    ): Promise<CreateQuestResponse> {
+      const title = input.title.trim();
+      if (!title) {
+        throw validationError('Give this quest a little name ♡');
+      }
+
+      const quest = await deps.quests.insertForUser(userId, {
+        milestoneId: input.milestoneId,
+        title,
+        dueDate: input.dueDate,
+        estimatedMinutes: input.estimatedMinutes ?? null,
+      });
+      if (!quest) {
+        throw notFound(`Milestone ${input.milestoneId} was not found`);
+      }
+      return { quest };
+    },
+
+    /**
+     * Delete a quest from the sheet. Completed quests reverse their XP (and same-day
+     * streak/stamp) before the row is removed (Issue #20).
+     */
+    async deleteManual(
+      userId: number,
+      questId: number,
+      localDate?: string,
+    ): Promise<DeleteQuestResponse> {
+      const date = localDate ?? formatLocalDate(deps.clock.now());
+      const result = await deps.quests.deleteWithRewardReverse(userId, questId, date);
+      if (!result) {
+        throw notFound(`Quest ${questId} was not found`);
+      }
+      return {
+        ok: true,
+        quest: result.quest,
+        xp_reversed: result.xp_reversed,
+        progress: result.progress,
+        stamp_card: result.stamp_card,
+      };
     },
   };
 }

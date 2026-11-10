@@ -73,6 +73,7 @@ Rename prototype labels: "＋ New quest" → "＋ New goal"; "★ Start this que
 | `GoalConfirmCard`                       | Proposed goal + deadline; Accept / revise; save only on Accept                           | #4       |
 | `MilestonePlanEditor`                   | 3–7 milestones; edit via Mochi; save only on confirm                                     | #5       |
 | `RoadmapView` / `MilestoneNode`         | Start → stages → goal; current highlighted; title + date                                 | #6, #10  |
+| `MilestoneSheet`                        | Stage bottom sheet: quest list + ✕ delete; New quest / Due date / Add; Ask Mochi to plan | #20      |
 | `DailyNote` / `QuestItem`               | Window card “A note from Mochi”; today’s quests or rest-day; check/undo; done faded      | #8, #9   |
 | `XpBar` / `LevelUpToast`                | XP on complete/undo; level bar; short celebration                                        | #11      |
 | `StreakCounter`                         | Current/best; +1 per active day; reset after miss; local date                            | #12      |

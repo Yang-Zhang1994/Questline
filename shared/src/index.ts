@@ -27,8 +27,13 @@ export {
 } from './schemas/stamp.js';
 
 export {
+  CreateQuestBodySchema,
+  CreateQuestResponseSchema,
+  DeleteQuestBodySchema,
+  DeleteQuestResponseSchema,
   IsoDateSchema,
   IsoDateTimeSchema,
+  MilestoneQuestsResponseSchema,
   QuestDraftItemSchema,
   QuestPlanDraftSchema,
   QuestSchema,
@@ -36,6 +41,11 @@ export {
   TodayQuestsResponseSchema,
   ToggleQuestCompletionBodySchema,
   ToggleQuestCompletionResponseSchema,
+  type CreateQuestBody,
+  type CreateQuestResponse,
+  type DeleteQuestBody,
+  type DeleteQuestResponse,
+  type MilestoneQuestsResponse,
   type Quest,
   type QuestDraftItem,
   type QuestPlanDraft,

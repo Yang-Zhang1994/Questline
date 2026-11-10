@@ -1,4 +1,5 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MapPage } from './MapPage';
@@ -104,5 +105,83 @@ describe('MapPage (Issue #6)', () => {
     await waitFor(() => {
       expect(screen.queryByTestId('map-empty')).not.toBeInTheDocument();
     });
+  });
+
+  // AC: tapping a milestone opens the sheet with New quest / Due date / Add
+  it('opens the milestone sheet when a stage node is tapped (Issue #20)', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/milestones/draft')) {
+          return {
+            ok: true,
+            text: async () =>
+              JSON.stringify({
+                draft: null,
+                confirmed: true,
+                goal: {
+                  id: 1,
+                  title: 'Read a Japanese novel on my own',
+                  done_definition: null,
+                  starting_point: null,
+                  time_budget_minutes_per_day: 20,
+                  deadline: '2027-11-09',
+                },
+                milestones: [
+                  {
+                    id: 10,
+                    goal_id: 1,
+                    position: 1,
+                    title: 'Build a tiny daily reading habit',
+                    description: 'Start soft',
+                    target_date: '2026-12-01',
+                    status: 'current',
+                  },
+                ],
+              }),
+          };
+        }
+        if (url.includes('/api/quests?milestone_id=10')) {
+          return {
+            ok: true,
+            text: async () =>
+              JSON.stringify({
+                milestone: {
+                  id: 10,
+                  title: 'Build a tiny daily reading habit',
+                  description: 'Start soft',
+                  target_date: '2026-12-01',
+                  status: 'current',
+                  position: 1,
+                },
+                quests: [
+                  {
+                    id: 1,
+                    milestone_id: 10,
+                    title: 'Read 2 pages',
+                    due_date: '2026-10-28',
+                    estimated_minutes: 15,
+                    completed_at: null,
+                  },
+                ],
+                done_count: 0,
+                total_count: 1,
+              }),
+          };
+        }
+        return { ok: false, text: async () => JSON.stringify({ error: { message: 'nope' } }) };
+      }),
+    );
+
+    renderMap();
+
+    await user.click(await screen.findByRole('button', { name: /open stage sheet/i }));
+    expect(await screen.findByTestId('milestone-sheet')).toBeInTheDocument();
+    expect(screen.getByLabelText(/new quest/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/due date/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^add$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /delete read 2 pages/i })).toBeInTheDocument();
   });
 });

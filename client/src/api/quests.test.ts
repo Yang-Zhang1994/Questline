@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearAuthToken, setAuthToken } from './authToken';
-import { fetchTodayQuests, setQuestCompletion } from './quests';
+import {
+  createQuest,
+  deleteQuest,
+  fetchMilestoneQuests,
+  fetchTodayQuests,
+  setQuestCompletion,
+} from './quests';
 
 const todayPayload = {
   local_date: '2026-11-09',
@@ -114,5 +120,86 @@ describe('quests API client (Issue #8 / #9)', () => {
     const headers = new Headers(init.headers);
     expect(headers.get('Authorization')).toBe('Bearer demo-jwt');
     expect(headers.get('Content-Type')).toBe('application/json');
+  });
+
+  it('POSTs a manual quest to /api/quests (Issue #20)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () =>
+        JSON.stringify({
+          quest: {
+            id: 9,
+            milestone_id: 2,
+            title: 'Sketch one kanji',
+            due_date: '2026-11-09',
+            estimated_minutes: null,
+            completed_at: null,
+          },
+        }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await createQuest({
+      milestoneId: 2,
+      title: 'Sketch one kanji',
+      dueDate: '2026-11-09',
+    });
+
+    expect(result.quest.id).toBe(9);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/quests');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({
+      milestone_id: 2,
+      title: 'Sketch one kanji',
+      due_date: '2026-11-09',
+    });
+  });
+
+  it('DELETEs a quest and parses XP reverse payload (Issue #20)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () =>
+        JSON.stringify({
+          ok: true,
+          quest: todayPayload.quests[0],
+          xp_reversed: true,
+          progress: todayPayload.progress,
+          stamp_card: todayPayload.stamp_card,
+        }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await deleteQuest(1, '2026-11-09');
+    expect(result.xp_reversed).toBe(true);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/quests/1');
+    expect(init.method).toBe('DELETE');
+    expect(JSON.parse(String(init.body))).toEqual({ local_date: '2026-11-09' });
+  });
+
+  it('GETs quests for a milestone sheet (Issue #20)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () =>
+        JSON.stringify({
+          milestone: {
+            id: 2,
+            title: 'Build a tiny daily reading habit',
+            description: 'Start soft',
+            target_date: '2026-12-01',
+            status: 'current',
+            position: 1,
+          },
+          quests: todayPayload.quests,
+          done_count: 0,
+          total_count: 1,
+        }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await fetchMilestoneQuests(2);
+    expect(result.total_count).toBe(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/quests?milestone_id=2');
   });
 });

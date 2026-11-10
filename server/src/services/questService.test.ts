@@ -296,4 +296,51 @@ describe('questService (Issue #9 / #11 / #12 / #13 / #17 / #31 Postgres)', () =>
     expect(filled.stamp_card.past_cards[0]?.stamp_count).toBe(STAMPS_PER_CARD);
     expect(filled.stamp_card.past_cards[0]?.stamp_dates).toContain('2026-10-28');
   });
+
+  // Issue #20 — manual add / delete
+  it('creates a manual quest on a milestone and lists it', async () => {
+    const { service: questService } = service();
+    const today = await questService.getToday(demoUserId);
+    const milestoneId = today.quests[0].milestone_id;
+
+    const created = await questService.createManual(demoUserId, {
+      milestoneId,
+      title: 'Copy one sentence by hand',
+      dueDate: '2026-10-28',
+    });
+    expect(created.quest.title).toBe('Copy one sentence by hand');
+
+    const sheet = await questService.listForMilestone(demoUserId, milestoneId);
+    expect(sheet.quests.some((q) => q.id === created.quest.id)).toBe(true);
+  });
+
+  it('rejects blank manual quest titles', async () => {
+    const { service: questService } = service();
+    const milestoneId = (await questService.getToday(demoUserId)).quests[0].milestone_id;
+    await expect(
+      questService.createManual(demoUserId, {
+        milestoneId,
+        title: '  ',
+        dueDate: '2026-10-28',
+      }),
+    ).rejects.toMatchObject({
+      code: 'VALIDATION_ERROR',
+      message: expect.stringMatching(/little name/i),
+    } satisfies Partial<AppError>);
+  });
+
+  it('removes XP when deleting a completed quest', async () => {
+    const { service: questService } = service();
+    const quest = (await questService.getToday(demoUserId)).quests[0];
+    await questService.setCompletion(demoUserId, quest.id, true, '2026-10-28');
+
+    const deleted = await questService.deleteManual(demoUserId, quest.id, '2026-10-28');
+    expect(deleted.xp_reversed).toBe(true);
+    expect(deleted.progress.xp).toBe(0);
+    expect(deleted.stamp_card.filled_count).toBe(0);
+
+    await expect(questService.deleteManual(demoUserId, quest.id, '2026-10-28')).rejects.toMatchObject(
+      { code: 'NOT_FOUND' } satisfies Partial<AppError>,
+    );
+  });
 });

@@ -1,7 +1,11 @@
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
+import type { Milestone } from '@questline/shared';
 import { BottomDock } from '../components/BottomDock/BottomDock';
+import { MilestoneSheet } from '../components/MilestoneSheet/MilestoneSheet';
 import { MochiAvatar } from '../components/MochiAvatar';
 import { RoadmapView } from '../components/RoadmapView/RoadmapView';
+import { useMilestoneQuests } from '../hooks/useMilestoneQuests';
 import { useRoadmap } from '../hooks/useRoadmap';
 
 export type MapPageProps = {
@@ -9,9 +13,34 @@ export type MapPageProps = {
   onLogout?: () => void;
 };
 
+function todayLocalDate(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 export function MapPage({ userEmail = null, onLogout }: MapPageProps) {
   const { goal, milestones, confirmed, loading, error } = useRoadmap();
+  const [selectedMilestone, setSelectedMilestone] = useState<Milestone | null>(null);
+  const localDate = useMemo(() => todayLocalDate(), []);
+  const sheet = useMilestoneQuests({
+    milestoneId: selectedMilestone?.id ?? null,
+    localDate,
+  });
   const hasMap = confirmed && goal != null && milestones.length > 0;
+
+  const sheetMilestone = selectedMilestone
+    ? {
+        id: selectedMilestone.id,
+        title: selectedMilestone.title,
+        description: selectedMilestone.description,
+        target_date: selectedMilestone.target_date,
+        status: selectedMilestone.status,
+        position: selectedMilestone.position,
+      }
+    : null;
 
   return (
     <div className="flex min-h-screen flex-col items-center px-4 pb-24 pt-6">
@@ -92,7 +121,29 @@ export function MapPage({ userEmail = null, onLogout }: MapPageProps) {
         </section>
       ) : null}
 
-      {hasMap && goal ? <RoadmapView goal={goal} milestones={milestones} /> : null}
+      {hasMap && goal ? (
+        <RoadmapView
+          goal={goal}
+          milestones={milestones}
+          onSelectMilestone={(milestone) => setSelectedMilestone(milestone)}
+        />
+      ) : null}
+
+      {sheetMilestone ? (
+        <MilestoneSheet
+          milestone={sheetMilestone}
+          quests={sheet.quests}
+          doneCount={sheet.data?.done_count ?? 0}
+          totalCount={sheet.data?.total_count ?? 0}
+          loading={sheet.loading}
+          busy={sheet.busy}
+          error={sheet.error}
+          defaultDueDate={localDate}
+          onClose={() => setSelectedMilestone(null)}
+          onAdd={sheet.addQuest}
+          onDelete={sheet.removeQuest}
+        />
+      ) : null}
 
       <BottomDock />
     </div>
