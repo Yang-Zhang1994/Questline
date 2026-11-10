@@ -40,11 +40,11 @@ npm run dev:client   # Vite default port
 
 Migrations live in `server/src/db/migrations/` and apply automatically when the server (or tests) open the pool. Demo seed creates `demo@questline.local` / `demo-password-123` with an active Goal → Milestone → today's Quests when the `users` table is empty.
 
-## Auth (JWT — Issues #31 / #8)
+## Auth (JWT — Issue #31)
 
 **Choice:** API returns a JWT in the JSON body; the SPA and curl clients send it as `Authorization: Bearer <token>` (not an httpOnly cookie). The client keeps the token in memory and mirrors it to `sessionStorage` for tab reloads.
 
-**UI demo:** open the Vite client → log in with `demo@questline.local` / `demo-password-123` → Today loads Mochi's note + Postgres quests → check/undo → dock **💌 Talk** for Mochi Messenger.
+**UI demo:** open the Vite client → log in with `demo@questline.local` / `demo-password-123` → Today shows a temporary placeholder (Issues #8 / #9 greeting note + quest check-off were reverted for reimplementation) → dock **💌 Talk** for Mochi Messenger.
 
 ```bash
 # Register
@@ -56,10 +56,6 @@ curl -s http://localhost:3001/api/auth/register \
 curl -s http://localhost:3001/api/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"demo@questline.local","password":"demo-password-123"}'
-
-# Call a protected route
-curl -s http://localhost:3001/api/quests/today \
-  -H "Authorization: Bearer <token-from-login>"
 
 # Chat history + send (Issues #2 / #3 — goal interview; needs ANTHROPIC_* for real Claude)
 curl -s http://localhost:3001/api/chat/messages \
@@ -75,7 +71,7 @@ curl -s -X POST http://localhost:3001/api/chat/interview/restart \
 
 Talk runs a **one-question-at-a-time goal interview** (#3): done definition → starting point → time budget → deadline, with follow-ups for vague answers and a **Start over** control. Goal confirm/save is Issue #4.
 
-Missing/invalid tokens receive `{ "error": { "code": "UNAUTHORIZED", "message": "..." } }`. Goal/quest/chat queries are scoped to the authenticated user id. Vitest always mocks Claude — never calls the live API.
+Missing/invalid tokens receive `{ "error": { "code": "UNAUTHORIZED", "message": "..." } }`. Chat queries are scoped to the authenticated user id. Vitest always mocks Claude — never calls the live API.
 
 ## Mockup
 

@@ -8,14 +8,11 @@ import type { Db } from './db/connection.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { createChatRepository } from './repositories/chatRepository.js';
 import { createInterviewRepository } from './repositories/interviewRepository.js';
-import { createQuestRepository } from './repositories/questRepository.js';
 import { createUserRepository } from './repositories/userRepository.js';
 import { createAuthRouter } from './routes/auth.js';
 import { createChatRouter } from './routes/chat.js';
-import { createQuestsRouter } from './routes/quests.js';
 import { createAuthService } from './services/authService.js';
 import { createChatService } from './services/chatService.js';
-import { createQuestService } from './services/questService.js';
 
 export type CreateAppOptions = {
   db: Db;
@@ -27,12 +24,10 @@ export type CreateAppOptions = {
 export function createApp(options: CreateAppOptions) {
   const clock = options.clock ?? systemClock;
   const users = createUserRepository(options.db);
-  const quests = createQuestRepository(options.db);
   const chat = createChatRepository(options.db);
   const interviews = createInterviewRepository(options.db);
   const authService = createAuthService({ users });
-  const questService = createQuestService({ quests, clock });
-  // Lazy default so quest/auth tests can createApp without ANTHROPIC_* env.
+  // Lazy default so auth/chat tests can createApp without ANTHROPIC_* env.
   const ai: ChatAiClient =
     options.ai ??
     (() => {
@@ -62,7 +57,7 @@ export function createApp(options: CreateAppOptions) {
   });
 
   app.use('/api/auth', createAuthRouter(authService));
-  app.use('/api/quests', createQuestsRouter(questService));
+  // /api/quests (Today + check-off) removed with Issues #8 / #9 revert — re-own later.
   app.use('/api/chat', createChatRouter(chatService));
 
   app.use(errorHandler);
