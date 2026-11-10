@@ -10,3 +10,8 @@ coverage/
 .vite/
 playwright-report/
 test-results/
+
+# Local DB artifacts
+server/data/
+*.sqlite-*
+data/

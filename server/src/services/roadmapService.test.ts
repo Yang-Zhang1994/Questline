@@ -1,45 +1,52 @@
 import { describe, expect, it } from 'vitest';
-import { openDatabase } from '../db/connection.js';
-import { seedDemoDataIfEmpty } from '../db/seed.js';
-import { createRoadmapRepository } from '../repositories/roadmapRepository.js';
 import { createRoadmapService } from './roadmapService.js';
+import type { RoadmapRepository } from '../repositories/roadmapRepository.js';
 
 describe('roadmapService (Issue #6)', () => {
-  it('returns the active goal and milestones in position order', () => {
-    const db = openDatabase({ filename: ':memory:' });
-    seedDemoDataIfEmpty(db);
-    const roadmap = createRoadmapRepository(db);
-    const service = createRoadmapService({ roadmap });
+  it('forwards active roadmap for a user', async () => {
+    const mockRepo: RoadmapRepository = {
+      getActiveGoalRoadmapForUser: async (_userId: number) => ({
+        goal: {
+          id: 1,
+          title: 'Read a Japanese novel on my own',
+          deadline: '2027-10-28',
+          status: 'active',
+        },
+        milestones: [
+          {
+            id: 1,
+            goal_id: 1,
+            position: 1,
+            title: 'Build a tiny daily reading habit',
+            description: 'Read a few pages each day',
+            target_date: '2026-12-01',
+            status: 'current',
+            total_quests: 3,
+            done_quests: 0,
+          },
+        ],
+      }),
+    };
 
-    const result = service.getActiveRoadmap();
+    const service = createRoadmapService({ roadmap: mockRepo });
+    const result = await service.getActiveRoadmap(42);
 
-    expect(result.goal).not.toBeNull();
     expect(result.goal?.title).toBe('Read a Japanese novel on my own');
-    expect(result.goal?.deadline).toBe('2027-10-28');
-    expect(result.goal?.status).toBe('active');
-
-    expect(result.milestones).toHaveLength(5);
-    expect(result.milestones[0].position).toBe(1);
-    expect(result.milestones[0].status).toBe('completed');
-    expect(result.milestones[0].done_quests).toBe(1);
-    expect(result.milestones[0].total_quests).toBe(1);
-
-    expect(result.milestones[1].position).toBe(2);
-    expect(result.milestones[1].status).toBe('current');
-    expect(result.milestones[1].total_quests).toBe(3);
-    expect(result.milestones[1].done_quests).toBe(0);
-
-    expect(result.milestones[4].position).toBe(5);
-    expect(result.milestones[4].status).toBe('upcoming');
+    expect(result.milestones).toHaveLength(1);
+    expect(result.milestones[0].status).toBe('current');
   });
 
-  it('returns null goal and empty milestones when there is no active goal', () => {
-    const db = openDatabase({ filename: ':memory:' });
-    // Empty database without seed
-    const roadmap = createRoadmapRepository(db);
-    const service = createRoadmapService({ roadmap });
+  it('handles null goal and empty milestones', async () => {
+    const mockRepo: RoadmapRepository = {
+      getActiveGoalRoadmapForUser: async () => ({
+        goal: null,
+        milestones: [],
+      }),
+    };
 
-    const result = service.getActiveRoadmap();
+    const service = createRoadmapService({ roadmap: mockRepo });
+    const result = await service.getActiveRoadmap(42);
+
     expect(result.goal).toBeNull();
     expect(result.milestones).toEqual([]);
   });

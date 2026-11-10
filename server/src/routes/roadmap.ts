@@ -1,12 +1,21 @@
 import { Router } from 'express';
+import { getRequestUser } from '../auth/requestUser.js';
+import { requireAuth } from '../middleware/requireAuth.js';
 import type { RoadmapService } from '../services/roadmapService.js';
+import { unauthorized } from '../services/errors.js';
 
 export function createRoadmapRouter(roadmapService: RoadmapService): Router {
   const router = Router();
 
-  router.get('/', (_req, res, next) => {
+  router.use(requireAuth);
+
+  router.get('/', async (req, res, next) => {
     try {
-      const data = roadmapService.getActiveRoadmap();
+      const user = getRequestUser(req);
+      if (!user) {
+        throw unauthorized();
+      }
+      const data = await roadmapService.getActiveRoadmap(user.id);
       res.json(data);
     } catch (err) {
       next(err);

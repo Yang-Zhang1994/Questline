@@ -1,4 +1,5 @@
 import type { Quest } from '@questline/shared';
+import { toIsoDateTime } from '../clock.js';
 import type { Db } from '../db/connection.js';
 
 type QuestRow = {
@@ -7,8 +8,17 @@ type QuestRow = {
   title: string;
   due_date: string;
   estimated_minutes: number | null;
-  completed_at: string | null;
+  completed_at: Date | string | null;
 };
+
+function mapCompletedAt(value: Date | string | null): string | null {
+  if (value == null) return null;
+  if (value instanceof Date) return toIsoDateTime(value);
+  // pg may return timestamptz as string depending on parsers
+  const asDate = new Date(value);
+  if (Number.isNaN(asDate.getTime())) return value;
+  return toIsoDateTime(asDate);
+}
 
 function mapQuest(row: QuestRow): Quest {
   return {
@@ -17,7 +27,7 @@ function mapQuest(row: QuestRow): Quest {
     title: row.title,
     due_date: row.due_date,
     estimated_minutes: row.estimated_minutes,
-    completed_at: row.completed_at,
+    completed_at: mapCompletedAt(row.completed_at),
   };
 }
 
@@ -29,57 +39,74 @@ export type TodayQuestContext = {
 
 export function createQuestRepository(db: Db) {
   return {
-    findById(id: number): Quest | null {
-      const row = db
-        .prepare(
-          `SELECT id, milestone_id, title, due_date, estimated_minutes, completed_at
-           FROM quests WHERE id = ?`,
-        )
-        .get(id) as QuestRow | undefined;
+    async findByIdForUser(userId: number, id: number): Promise<Quest | null> {
+      const result = await db.query<QuestRow>(
+        `SELECT q.id, q.milestone_id, q.title, q.due_date, q.estimated_minutes, q.completed_at
+         FROM quests q
+         INNER JOIN milestones m ON m.id = q.milestone_id
+         INNER JOIN goals g ON g.id = m.goal_id
+         WHERE q.id = $1 AND g.user_id = $2`,
+        [id, userId],
+      );
+      const row = result.rows[0];
       return row ? mapQuest(row) : null;
     },
 
-    listDueOnDateForActiveGoal(localDate: string): TodayQuestContext {
-      const goal = db
-        .prepare(`SELECT id, title FROM goals WHERE status = 'active' ORDER BY id LIMIT 1`)
-        .get() as { id: number; title: string } | undefined;
+    async listDueOnDateForActiveGoal(userId: number, localDate: string): Promise<TodayQuestContext> {
+      const goalResult = await db.query<{ id: number; title: string }>(
+        `SELECT id, title FROM goals
+         WHERE user_id = $1 AND status = 'active'
+         ORDER BY id LIMIT 1`,
+        [userId],
+      );
+      const goal = goalResult.rows[0];
 
       if (!goal) {
         return { goalTitle: null, milestoneTitle: null, quests: [] };
       }
 
-      const milestone = db
-        .prepare(
-          `SELECT id, title FROM milestones
-           WHERE goal_id = ? AND status = 'current'
-           ORDER BY position LIMIT 1`,
-        )
-        .get(goal.id) as { id: number; title: string } | undefined;
+      const milestoneResult = await db.query<{ id: number; title: string }>(
+        `SELECT id, title FROM milestones
+         WHERE goal_id = $1 AND status = 'current'
+         ORDER BY position LIMIT 1`,
+        [goal.id],
+      );
+      const milestone = milestoneResult.rows[0];
 
-      const rows = db
-        .prepare(
-          `SELECT q.id, q.milestone_id, q.title, q.due_date, q.estimated_minutes, q.completed_at
-           FROM quests q
-           INNER JOIN milestones m ON m.id = q.milestone_id
-           WHERE m.goal_id = ? AND q.due_date = ?
-           ORDER BY q.id ASC`,
-        )
-        .all(goal.id, localDate) as QuestRow[];
+      const questResult = await db.query<QuestRow>(
+        `SELECT q.id, q.milestone_id, q.title, q.due_date, q.estimated_minutes, q.completed_at
+         FROM quests q
+         INNER JOIN milestones m ON m.id = q.milestone_id
+         WHERE m.goal_id = $1 AND q.due_date = $2
+         ORDER BY q.id ASC`,
+        [goal.id, localDate],
+      );
 
       return {
         goalTitle: goal.title,
         milestoneTitle: milestone?.title ?? null,
-        quests: rows.map(mapQuest),
+        quests: questResult.rows.map(mapQuest),
       };
     },
 
-    setCompletedAt(id: number, completedAt: string | null): Quest {
-      db.prepare(`UPDATE quests SET completed_at = ? WHERE id = ?`).run(completedAt, id);
-      const updated = this.findById(id);
-      if (!updated) {
-        throw new Error(`Quest ${id} missing after update`);
-      }
-      return updated;
+    async setCompletedAtForUser(
+      userId: number,
+      id: number,
+      completedAt: string | null,
+    ): Promise<Quest | null> {
+      const result = await db.query<QuestRow>(
+        `UPDATE quests q
+         SET completed_at = $1
+         FROM milestones m
+         INNER JOIN goals g ON g.id = m.goal_id
+         WHERE q.id = $2
+           AND q.milestone_id = m.id
+           AND g.user_id = $3
+         RETURNING q.id, q.milestone_id, q.title, q.due_date, q.estimated_minutes, q.completed_at`,
+        [completedAt, id, userId],
+      );
+      const row = result.rows[0];
+      return row ? mapQuest(row) : null;
     },
   };
 }

@@ -1,6 +1,5 @@
 import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { BrowserRouter } from 'react-router';
+import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
 import { BottomDock } from './BottomDock';
 
@@ -11,30 +10,29 @@ afterEach(() => {
 describe('BottomDock', () => {
   it('highlights the active tab with aria-current="page"', () => {
     render(
-      <BrowserRouter>
-        <BottomDock activeTab="map" />
-      </BrowserRouter>
+      <MemoryRouter initialEntries={['/map']}>
+        <BottomDock />
+      </MemoryRouter>
     );
 
-    const mapBtn = screen.getByRole('button', { name: /map/i });
-    const todayBtn = screen.getByRole('button', { name: /today/i });
-    const talkBtn = screen.getByRole('button', { name: /talk/i });
+    const mapLink = screen.getByRole('link', { name: /map/i });
+    const todayLink = screen.getByRole('link', { name: /today/i });
+    const talkLink = screen.getByRole('link', { name: /talk/i });
 
-    expect(mapBtn).toHaveAttribute('aria-current', 'page');
-    expect(todayBtn).not.toHaveAttribute('aria-current');
-    expect(talkBtn).toBeDisabled();
+    expect(mapLink).toHaveAttribute('aria-current', 'page');
+    expect(todayLink).not.toHaveAttribute('aria-current');
+    expect(talkLink).not.toHaveAttribute('aria-current');
   });
 
-  it('navigates when clicking an inactive tab', async () => {
-    const user = userEvent.setup();
+  it('renders all three navigation links', () => {
     render(
-      <BrowserRouter>
-        <BottomDock activeTab="today" />
-      </BrowserRouter>
+      <MemoryRouter initialEntries={['/']}>
+        <BottomDock />
+      </MemoryRouter>
     );
 
-    const mapBtn = screen.getByRole('button', { name: /map/i });
-    await user.click(mapBtn);
-    expect(window.location.pathname).toBe('/map');
+    expect(screen.getByRole('link', { name: /today/i })).toHaveAttribute('href', '/');
+    expect(screen.getByRole('link', { name: /map/i })).toHaveAttribute('href', '/map');
+    expect(screen.getByRole('link', { name: /talk/i })).toHaveAttribute('href', '/talk');
   });
 });

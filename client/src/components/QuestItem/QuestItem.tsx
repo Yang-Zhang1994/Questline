@@ -1,5 +1,4 @@
 import type { Quest } from '@questline/shared';
-import styles from './QuestItem.module.css';
 
 export type QuestItemProps = {
   quest: Quest;
@@ -13,27 +12,31 @@ export function QuestItem({ quest, onToggle, disabled = false }: QuestItemProps)
 
   return (
     <li
-      className={`${styles.item} ${done ? styles.itemDone : ''}`.trim()}
+      className={`flex items-start gap-3 rounded-[14px] border border-pink/30 px-3 py-[0.65rem] transition-[opacity,background-color] duration-150 ease-in-out ${
+        done ? 'bg-pink-pale/55 opacity-55' : 'bg-white/72'
+      }`}
       data-completed={done ? 'true' : 'false'}
     >
       <input
         id={checkboxId}
-        className={styles.checkbox}
+        className="mt-[0.15rem] h-5 w-5 shrink-0 cursor-pointer accent-pink-ink"
         type="checkbox"
         checked={done}
         disabled={disabled}
         aria-label={quest.title}
         onChange={(event) => onToggle(quest.id, event.target.checked)}
       />
-      <label htmlFor={checkboxId} className={styles.label}>
-        <span className={`${styles.title} ${done ? styles.titleDone : ''}`.trim()}>
+      <label htmlFor={checkboxId} className="flex cursor-pointer flex-col gap-[0.2rem] leading-[1.35] text-ink">
+        <span className={`font-bold ${done ? 'text-ink-soft line-through' : ''}`.trim()}>
           {quest.title}
         </span>
         {quest.estimated_minutes !== null ? (
-          <span className={styles.meta}>~{quest.estimated_minutes} min</span>
+          <span className="font-ui text-[0.8rem] text-ink-soft">~{quest.estimated_minutes} min</span>
         ) : null}
         {done && quest.completed_at ? (
-          <span className={styles.meta}>Done at {formatCompletedAt(quest.completed_at)}</span>
+          <span className="font-ui text-[0.8rem] text-ink-soft">
+            Done at {formatCompletedAt(quest.completed_at)}
+          </span>
         ) : null}
       </label>
     </li>

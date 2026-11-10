@@ -1,4 +1,10 @@
-export type ErrorCode = 'VALIDATION_ERROR' | 'NOT_FOUND' | 'INTERNAL_ERROR';
+export type ErrorCode =
+  | 'VALIDATION_ERROR'
+  | 'NOT_FOUND'
+  | 'UNAUTHORIZED'
+  | 'CONFLICT'
+  | 'AI_UNAVAILABLE'
+  | 'INTERNAL_ERROR';
 
 export class AppError extends Error {
   readonly code: ErrorCode;
@@ -18,4 +24,19 @@ export function notFound(message: string): AppError {
 
 export function validationError(message: string): AppError {
   return new AppError('VALIDATION_ERROR', message, 400);
+}
+
+export function unauthorized(message = 'Authentication required'): AppError {
+  return new AppError('UNAUTHORIZED', message, 401);
+}
+
+export function conflict(message: string): AppError {
+  return new AppError('CONFLICT', message, 409);
+}
+
+/** Friendly Mochi copy when Claude fails (never leak raw provider errors). */
+export function aiUnavailable(
+  message = "Mochi got a little tangled. Try sending that again in a moment.",
+): AppError {
+  return new AppError('AI_UNAVAILABLE', message, 503);
 }

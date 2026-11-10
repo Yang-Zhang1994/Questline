@@ -7,8 +7,8 @@ export type RoadmapServiceDeps = {
 
 export function createRoadmapService(deps: RoadmapServiceDeps) {
   return {
-    getActiveRoadmap(): RoadmapResponse {
-      return deps.roadmap.getActiveGoalRoadmap();
+    async getActiveRoadmap(userId: number): Promise<RoadmapResponse> {
+      return deps.roadmap.getActiveGoalRoadmapForUser(userId);
     },
   };
 }

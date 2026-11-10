@@ -19,22 +19,22 @@ type MilestoneRow = {
   description: string | null;
   target_date: string | null;
   status: 'upcoming' | 'current' | 'completed';
-  total_quests: number;
-  done_quests: number;
+  total_quests: number | string;
+  done_quests: number | string;
 };
 
 export function createRoadmapRepository(db: Db) {
   return {
-    getActiveGoalRoadmap(): RoadmapResponse {
-      const goalRow = db
-        .prepare(
-          `SELECT id, title, done_definition, starting_point, time_budget_minutes_per_day, deadline, status
-           FROM goals
-           WHERE status = 'active'
-           ORDER BY id LIMIT 1`,
-        )
-        .get() as GoalRow | undefined;
+    async getActiveGoalRoadmapForUser(userId: number): Promise<RoadmapResponse> {
+      const goalResult = await db.query<GoalRow>(
+        `SELECT id, title, done_definition, starting_point, time_budget_minutes_per_day, deadline, status
+         FROM goals
+         WHERE user_id = $1 AND status = 'active'
+         ORDER BY id LIMIT 1`,
+        [userId],
+      );
 
+      const goalRow = goalResult.rows[0];
       if (!goalRow) {
         return { goal: null, milestones: [] };
       }
@@ -49,27 +49,26 @@ export function createRoadmapRepository(db: Db) {
         status: goalRow.status,
       };
 
-      const milestoneRows = db
-        .prepare(
-          `SELECT
-             m.id,
-             m.goal_id,
-             m.position,
-             m.title,
-             m.description,
-             m.target_date,
-             m.status,
-             COUNT(q.id) AS total_quests,
-             SUM(CASE WHEN q.completed_at IS NOT NULL THEN 1 ELSE 0 END) AS done_quests
-           FROM milestones m
-           LEFT JOIN quests q ON q.milestone_id = m.id
-           WHERE m.goal_id = ?
-           GROUP BY m.id
-           ORDER BY m.position ASC`,
-        )
-        .all(goal.id) as MilestoneRow[];
+      const milestoneResult = await db.query<MilestoneRow>(
+        `SELECT
+           m.id,
+           m.goal_id,
+           m.position,
+           m.title,
+           m.description,
+           m.target_date,
+           m.status,
+           COUNT(q.id)::int AS total_quests,
+           COALESCE(SUM(CASE WHEN q.completed_at IS NOT NULL THEN 1 ELSE 0 END), 0)::int AS done_quests
+         FROM milestones m
+         LEFT JOIN quests q ON q.milestone_id = m.id
+         WHERE m.goal_id = $1
+         GROUP BY m.id
+         ORDER BY m.position ASC`,
+        [goal.id],
+      );
 
-      const milestones: Milestone[] = milestoneRows.map((row) => ({
+      const milestones: Milestone[] = milestoneResult.rows.map((row: MilestoneRow) => ({
         id: row.id,
         goal_id: row.goal_id,
         position: row.position,

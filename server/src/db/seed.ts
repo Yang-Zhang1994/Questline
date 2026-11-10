@@ -1,104 +1,105 @@
 import type { Clock } from '../clock.js';
 import { formatLocalDate, systemClock, toIsoDateTime } from '../clock.js';
+import { hashPassword } from '../auth/password.js';
 import type { Db } from './connection.js';
+
+/** Demo login for local/dev after JWT (#31). */
+export const DEMO_EMAIL = 'demo@questline.local';
+export const DEMO_PASSWORD = 'demo-password-123';
 
 const DEMO_GOAL_TITLE = 'Read a Japanese novel on my own';
 const DEMO_MILESTONE_TITLE = 'Build a tiny daily reading habit';
 
 /**
- * Seeds one active goal, current milestone, and today's quests when the DB
- * has no goals yet — enough to demo Issue #9 check-off / undo.
+ * Seeds one demo user, active goal, current milestone, and today's quests when
+ * the DB has no users yet — enough to demo Today / check-off with JWT.
  */
-export function seedDemoDataIfEmpty(db: Db, clock: Clock = systemClock): void {
-  const count = (db.prepare('SELECT COUNT(*) AS c FROM goals').get() as { c: number }).c;
-  if (count > 0) return;
+export async function seedDemoDataIfEmpty(db: Db, clock: Clock = systemClock): Promise<void> {
+  const count = await db.query<{ c: string }>('SELECT COUNT(*)::text AS c FROM users');
+  if (Number(count.rows[0].c) > 0) return;
 
   const now = clock.now();
   const today = formatLocalDate(now);
   const createdAt = toIsoDateTime(now);
+  const passwordHash = await hashPassword(DEMO_PASSWORD);
 
-  const insertAll = db.transaction(() => {
-    const goal = db
-      .prepare(
-        `INSERT INTO goals (title, done_definition, starting_point, time_budget_minutes_per_day, deadline, status, created_at)
-         VALUES (?, ?, ?, ?, ?, 'active', ?)
-         RETURNING id`,
-      )
-      .get(
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+
+    const user = await client.query<{ id: number }>(
+      `INSERT INTO users (email, password_hash, created_at)
+       VALUES ($1, $2, $3)
+       RETURNING id`,
+      [DEMO_EMAIL, passwordHash, createdAt],
+    );
+    const userId = user.rows[0].id;
+
+    const goal = await client.query<{ id: number }>(
+      `INSERT INTO goals (
+         user_id, title, done_definition, starting_point,
+         time_budget_minutes_per_day, deadline, status, created_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, 'active', $7)
+       RETURNING id`,
+      [
+        userId,
         DEMO_GOAL_TITLE,
         'Finish one short Japanese novel without looking up every word',
         'Know hiragana and a few basic phrases',
         30,
         '2027-10-28',
         createdAt,
-      ) as { id: number };
+      ],
+    );
 
-    const insertMilestone = db.prepare(
+    const milestone = await client.query<{ id: number }>(
       `INSERT INTO milestones (goal_id, position, title, description, target_date, status)
-       VALUES (?, ?, ?, ?, ?, ?)
+       VALUES ($1, 1, $2, $3, $4, 'current')
        RETURNING id`,
+      [
+        goal.rows[0].id,
+        DEMO_MILESTONE_TITLE,
+        'Read a few pages each day with Mochi cheering you on',
+        '2026-12-01',
+      ],
     );
 
-    const m1 = insertMilestone.get(
-      goal.id,
-      1,
-      'Learn Hiragana & Katakana',
-      'Master reading and writing both basic syllabaries and recognize common sounds.',
-      '2026-11-15',
-      'completed',
-    ) as { id: number };
+    const milestoneId = milestone.rows[0].id;
+    const quests = [
+      ['Read 2 pages of your graded reader', 15],
+      ['Write down 3 new words you noticed', 10],
+      ['Say one sentence from today out loud to Mochi', 5],
+    ] as const;
 
-    const m2 = insertMilestone.get(
-      goal.id,
-      2,
-      DEMO_MILESTONE_TITLE,
-      'Read a few pages each day with Mochi cheering you on',
-      '2026-12-01',
-      'current',
-    ) as { id: number };
+    for (const [title, minutes] of quests) {
+      await client.query(
+        `INSERT INTO quests (milestone_id, title, due_date, estimated_minutes, completed_at)
+         VALUES ($1, $2, $3, $4, NULL)`,
+        [milestoneId, title, today, minutes],
+      );
+    }
 
-    insertMilestone.run(
-      goal.id,
-      3,
-      'Finish first graded reader (Level 1)',
-      'Complete all short stories in Level 1 with 80%+ comprehension without a dictionary.',
-      '2027-02-15',
-      'upcoming',
+    await client.query(
+      `INSERT INTO user_progress (user_id, xp, level, current_streak, best_streak)
+       VALUES ($1, 0, 1, 0, 0)`,
+      [userId],
     );
 
-    insertMilestone.run(
-      goal.id,
-      4,
-      'Read first short manga chapter',
-      'Tackle simple dialogue and sound effects in a slice-of-life manga.',
-      '2027-05-30',
-      'upcoming',
-    );
-
-    insertMilestone.run(
-      goal.id,
-      5,
-      'Finish a full Japanese light novel',
-      'Read cover-to-cover at your own pace and celebrate reaching your dream!',
-      '2027-10-28',
-      'upcoming',
-    );
-
-    const insertQuest = db.prepare(
-      `INSERT INTO quests (milestone_id, title, due_date, estimated_minutes, completed_at)
-       VALUES (?, ?, ?, ?, ?)`,
-    );
-
-    insertQuest.run(m1.id, 'Master Hiragana vowels and basic sounds', '2026-11-01', 20, createdAt);
-    insertQuest.run(m2.id, 'Read 2 pages of your graded reader', today, 15, null);
-    insertQuest.run(m2.id, 'Write down 3 new words you noticed', today, 10, null);
-    insertQuest.run(m2.id, 'Say one sentence from today out loud to Mochi', today, 5, null);
-  });
-
-  insertAll();
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 export const DEMO_TITLES = {
   goal: DEMO_GOAL_TITLE,
   milestone: DEMO_MILESTONE_TITLE,
+} as const;
+
+export const DEMO_USER = {
+  email: DEMO_EMAIL,
+  password: DEMO_PASSWORD,
 } as const;
