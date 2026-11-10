@@ -57,6 +57,8 @@ export function useDailyQuests() {
           done_count: doneCount,
           progress: result.progress,
           stamp_card: result.stamp_card,
+          stage_ready: result.stage_ready,
+          stage_ready_milestone: result.stage_ready_milestone,
         };
       });
       if (result.leveled_up && result.level_up_message) {

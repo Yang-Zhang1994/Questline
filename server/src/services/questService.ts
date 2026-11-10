@@ -1,5 +1,6 @@
 import type {
   Quest,
+  StageReadySummary,
   StampCard,
   TodayQuestsResponse,
   ToggleQuestCompletionResponse,
@@ -34,6 +35,27 @@ function greetingFor(hour: number, doneCount: number, totalCount: number): strin
   return `${timePart} Here are today's little quests. Check them off when you're ready — you can always undo.`;
 }
 
+async function stageReadiness(
+  quests: QuestRepository,
+  userId: number,
+): Promise<{ stage_ready: boolean; stage_ready_milestone: StageReadySummary | null }> {
+  const ctx = await quests.findCurrentMilestoneQuestContext(userId);
+  if (!ctx || ctx.quests.length === 0) {
+    return { stage_ready: false, stage_ready_milestone: null };
+  }
+  const ready = ctx.quests.every((q) => q.completed_at !== null);
+  if (!ready) {
+    return { stage_ready: false, stage_ready_milestone: null };
+  }
+  return {
+    stage_ready: true,
+    stage_ready_milestone: {
+      milestone_id: ctx.milestone.id,
+      milestone_title: ctx.milestone.title,
+    },
+  };
+}
+
 function completionPayload(
   quest: Quest,
   progress: UserProgress,
@@ -41,6 +63,7 @@ function completionPayload(
   stampCard: StampCard,
   cardCompleted: boolean,
   completedCardNumber: number | null,
+  stage: { stage_ready: boolean; stage_ready_milestone: StageReadySummary | null },
 ): ToggleQuestCompletionResponse {
   return {
     quest,
@@ -53,6 +76,8 @@ function completionPayload(
       cardCompleted && completedCardNumber != null
         ? stampCardRewardMessage(completedCardNumber)
         : null,
+    stage_ready: stage.stage_ready,
+    stage_ready_milestone: stage.stage_ready_milestone,
   };
 }
 
@@ -65,6 +90,7 @@ export function createQuestService(deps: QuestServiceDeps) {
       const doneCount = ctx.quests.filter((q) => q.completed_at !== null).length;
       const progress = await deps.progress.getOrCreate(userId, date);
       const stamp_card = await deps.stamps.getCardState(userId);
+      const stage = await stageReadiness(deps.quests, userId);
 
       return {
         local_date: date,
@@ -77,6 +103,8 @@ export function createQuestService(deps: QuestServiceDeps) {
         total_count: ctx.quests.length,
         progress,
         stamp_card,
+        stage_ready: stage.stage_ready,
+        stage_ready_milestone: stage.stage_ready_milestone,
       };
     },
 
@@ -97,14 +125,17 @@ export function createQuestService(deps: QuestServiceDeps) {
       if (completed && existing.completed_at !== null) {
         const progress = await deps.progress.getOrCreate(userId, date);
         const stamp_card = await deps.stamps.getCardState(userId);
-        return completionPayload(existing, progress, false, stamp_card, false, null);
+        const stage = await stageReadiness(deps.quests, userId);
+        return completionPayload(existing, progress, false, stamp_card, false, null, stage);
       }
       if (!completed && existing.completed_at === null) {
         const progress = await deps.progress.getOrCreate(userId, date);
         const stamp_card = await deps.stamps.getCardState(userId);
-        return completionPayload(existing, progress, false, stamp_card, false, null);
+        const stage = await stageReadiness(deps.quests, userId);
+        return completionPayload(existing, progress, false, stamp_card, false, null, stage);
       }
 
+      // XP / streak / stamps stay inside this transaction — no milestone status writes.
       const result = await deps.quests.setCompletionWithXp(
         userId,
         questId,
@@ -117,6 +148,8 @@ export function createQuestService(deps: QuestServiceDeps) {
       }
 
       const leveledUp = completed && result.progress.level > result.previousLevel;
+      // Detect stage-ready AFTER the completion commit (Issue #10).
+      const stage = await stageReadiness(deps.quests, userId);
       return completionPayload(
         result.quest,
         result.progress,
@@ -124,6 +157,7 @@ export function createQuestService(deps: QuestServiceDeps) {
         result.stamp_card,
         result.card_completed,
         result.completed_card_number,
+        stage,
       );
     },
   };

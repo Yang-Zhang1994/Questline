@@ -170,6 +170,19 @@ export function stampCardRewardMessage(cardNumber: number): string {
   return `★ Stamp card ${cardNumber} complete! Mochi pressed a soft little star on it — a fresh card is waiting for you. ♡`;
 }
 
+/** Encouraging Mochi copy when a stage clears (#10) — never guilt. */
+export function stageClearedMessage(stageTitle: string, nextTitle: string | null): string {
+  if (nextTitle) {
+    return `★ Stage cleared: “${stageTitle}”! Soft paws of applause — next up is “${nextTitle}”. Take it gentle. ♡`;
+  }
+  return `★ Stage cleared: “${stageTitle}”! Soft paws of applause — that was the last stage on this map. ♡`;
+}
+
+/** Celebration when the final milestone finishes the goal (#10). */
+export function goalCompletedMessage(goalTitle: string): string {
+  return `★ You did it! “${goalTitle}” is complete. Mochi is so proud of this gentle journey — celebrate softly. ♡`;
+}
+
 export type StampRow = {
   card_number: number;
   stamp_date: string;

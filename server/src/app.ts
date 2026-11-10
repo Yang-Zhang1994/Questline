@@ -19,6 +19,7 @@ import { createMilestonesRouter } from './routes/milestones.js';
 import { createQuestsRouter } from './routes/quests.js';
 import { createAuthService } from './services/authService.js';
 import { createChatService } from './services/chatService.js';
+import { createMilestoneAdvanceService } from './services/milestoneAdvanceService.js';
 import { createMilestonePlanService } from './services/milestonePlanService.js';
 import { createQuestPlanService } from './services/questPlanService.js';
 import { createQuestService } from './services/questService.js';
@@ -93,6 +94,7 @@ export function createApp(options: CreateAppOptions) {
     })();
   const chatService = createChatService({ chat, interviews, ai, clock });
   const milestonePlanService = createMilestonePlanService({ milestones, ai, clock });
+  const milestoneAdvanceService = createMilestoneAdvanceService({ milestones });
   const questPlanService = createQuestPlanService({ quests, ai, clock });
   const rescheduleService = createRescheduleService({ quests, ai, clock });
   const weekPlanService = createWeekPlanService({ quests, ai, clock });
@@ -114,7 +116,7 @@ export function createApp(options: CreateAppOptions) {
     createQuestsRouter(questService, questPlanService, rescheduleService, weekPlanService),
   );
   app.use('/api/chat', createChatRouter(chatService));
-  app.use('/api/milestones', createMilestonesRouter(milestonePlanService));
+  app.use('/api/milestones', createMilestonesRouter(milestonePlanService, milestoneAdvanceService));
 
   app.use(errorHandler);
   return app;

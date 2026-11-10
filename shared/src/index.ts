@@ -32,12 +32,14 @@ export {
   QuestDraftItemSchema,
   QuestPlanDraftSchema,
   QuestSchema,
+  StageReadySummarySchema,
   TodayQuestsResponseSchema,
   ToggleQuestCompletionBodySchema,
   ToggleQuestCompletionResponseSchema,
   type Quest,
   type QuestDraftItem,
   type QuestPlanDraft,
+  type StageReadySummary,
   type TodayQuestsResponse,
   type ToggleQuestCompletionBody,
   type ToggleQuestCompletionResponse,
@@ -109,6 +111,7 @@ export {
 } from './schemas/interview.js';
 
 export {
+  CompleteStageResponseSchema,
   ConfirmMilestonePlanBodySchema,
   ConfirmMilestonePlanResponseSchema,
   MilestoneDraftItemSchema,
@@ -118,6 +121,7 @@ export {
   MilestoneSchema,
   MilestoneStatusSchema,
   ReviseMilestonePlanBodySchema,
+  type CompleteStageResponse,
   type ConfirmMilestonePlanBody,
   type ConfirmMilestonePlanResponse,
   type Milestone,

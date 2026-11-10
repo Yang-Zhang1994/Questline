@@ -77,3 +77,16 @@ export const ConfirmMilestonePlanResponseSchema = z.object({
 });
 
 export type ConfirmMilestonePlanResponse = z.infer<typeof ConfirmMilestonePlanResponseSchema>;
+
+/** Response after the user confirms a stage clear (confirm-before-save). */
+export const CompleteStageResponseSchema = z.object({
+  completed_milestone: MilestoneSchema,
+  /** Next stage now marked `current`, or null when the goal is finished. */
+  next_milestone: MilestoneSchema.nullable(),
+  goal_completed: z.boolean(),
+  goal: MilestoneGoalSummarySchema,
+  milestones: z.array(MilestoneSchema),
+  mochi_message: z.string().trim().min(1).max(1000),
+});
+
+export type CompleteStageResponse = z.infer<typeof CompleteStageResponseSchema>;

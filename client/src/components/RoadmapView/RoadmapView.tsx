@@ -31,6 +31,7 @@ export function RoadmapView({ goal, milestones }: RoadmapViewProps) {
   const ordered = [...milestones].sort((a, b) => a.position - b.position);
   const cleared = ordered.filter((m) => m.status === 'completed').length;
   const total = ordered.length;
+  const goalReached = total > 0 && cleared === total;
   const currentId = ordered.find((m) => m.status === 'current')?.id ?? null;
   const currentPosition = ordered.find((m) => m.status === 'current')?.position ?? null;
 
@@ -133,11 +134,14 @@ export function RoadmapView({ goal, milestones }: RoadmapViewProps) {
             );
           })}
 
-          <PathConnector
-            walked={cleared === total && total > 0}
-            testId="roadmap-connector-goal"
+          <PathConnector walked={goalReached} testId="roadmap-connector-goal" />
+          <MilestoneNode
+            kind="goal"
+            title={goal.title}
+            date={goal.deadline}
+            isCurrent={goalReached}
+            status={goalReached ? 'completed' : 'upcoming'}
           />
-          <MilestoneNode kind="goal" title={goal.title} date={goal.deadline} />
         </ol>
       </div>
     </section>

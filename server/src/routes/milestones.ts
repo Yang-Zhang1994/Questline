@@ -6,8 +6,9 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { getRequestUser } from '../auth/requestUser.js';
 import { requireAuth } from '../middleware/requireAuth.js';
+import type { MilestoneAdvanceService } from '../services/milestoneAdvanceService.js';
 import type { MilestonePlanService } from '../services/milestonePlanService.js';
-import { unauthorized } from '../services/errors.js';
+import { unauthorized, validationError } from '../services/errors.js';
 
 const milestoneWriteLimiter = rateLimit({
   windowMs: 60_000,
@@ -22,7 +23,10 @@ const milestoneWriteLimiter = rateLimit({
   },
 });
 
-export function createMilestonesRouter(milestonePlanService: MilestonePlanService): Router {
+export function createMilestonesRouter(
+  milestonePlanService: MilestonePlanService,
+  milestoneAdvanceService: MilestoneAdvanceService,
+): Router {
   const router = Router();
 
   router.use(requireAuth);
@@ -73,6 +77,22 @@ export function createMilestonesRouter(milestonePlanService: MilestonePlanServic
       const body = ConfirmMilestonePlanBodySchema.parse(req.body);
       const payload = await milestonePlanService.confirmPlan(user.id, body.draft);
       res.status(201).json(payload);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /** Mark the current stage complete and advance the roadmap (#10). */
+  router.post('/:milestoneId/complete', milestoneWriteLimiter, async (req, res, next) => {
+    try {
+      const user = getRequestUser(req);
+      if (!user) throw unauthorized();
+      const milestoneId = Number(req.params.milestoneId);
+      if (!Number.isInteger(milestoneId) || milestoneId < 1) {
+        throw validationError('milestoneId must be a positive integer');
+      }
+      const payload = await milestoneAdvanceService.completeStage(user.id, milestoneId);
+      res.json(payload);
     } catch (err) {
       next(err);
     }

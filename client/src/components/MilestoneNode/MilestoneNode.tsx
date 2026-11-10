@@ -40,9 +40,17 @@ export function MilestoneNode({
   position,
   isCurrent = false,
 }: MilestoneNodeProps) {
-  const state = kind === 'start' ? 'start' : kind === 'goal' ? 'goal' : status;
+  const goalComplete = kind === 'goal' && status === 'completed';
+  const state =
+    kind === 'start' ? 'start' : kind === 'goal' ? (goalComplete ? 'goal-complete' : 'goal') : status;
   const label =
-    kind === 'start' ? 'Start' : kind === 'goal' ? 'Goal' : STATUS_LABEL[status];
+    kind === 'start'
+      ? 'Start'
+      : kind === 'goal'
+        ? goalComplete
+          ? 'Goal reached'
+          : 'Goal'
+        : STATUS_LABEL[status];
   const icon = kind === 'start' ? '🏠' : kind === 'goal' ? '★' : STATUS_ICON[status];
 
   const shellClass = [
@@ -50,7 +58,9 @@ export function MilestoneNode({
     kind === 'start'
       ? 'border-blue-ink/30 bg-blue-pale'
       : kind === 'goal'
-        ? 'border-pink bg-pink-pale'
+        ? goalComplete
+          ? 'border-tree bg-meadow/80 ring-2 ring-tree/40'
+          : 'border-pink bg-pink-pale'
         : status === 'completed'
           ? 'border-tree bg-meadow/80'
           : status === 'current'

@@ -114,4 +114,32 @@ describe('RoadmapView (Issue #6)', () => {
     expect(container.querySelector('[data-testid="roadmap-view"]')).toBeTruthy();
     expect(screen.getByTestId('roadmap-cleared-count')).toHaveTextContent('1/3 stages cleared');
   });
+
+  // AC (#10): Completing a stage moves highlight; completed milestones stay cleared
+  it('highlights the next current stage after an earlier one is completed', () => {
+    const advanced: Milestone[] = [
+      { ...milestones[0], status: 'completed' },
+      { ...milestones[1], status: 'completed' },
+      { ...milestones[2], status: 'current' },
+    ];
+    render(<RoadmapView goal={goal} milestones={advanced} />);
+
+    expect(screen.getByTestId('milestone-node-1')).toHaveAttribute('data-state', 'completed');
+    expect(screen.getByTestId('milestone-node-2')).toHaveAttribute('data-state', 'completed');
+    const current = screen.getByTestId('milestone-node-3');
+    expect(current).toHaveAttribute('data-state', 'current');
+    expect(current).toHaveAttribute('aria-current', 'step');
+    expect(screen.getByTestId('roadmap-cleared-count')).toHaveTextContent('2/3 stages cleared');
+  });
+
+  // AC (#10): Final goal node celebrates when every stage is cleared
+  it('marks the goal node as reached when all stages are completed', () => {
+    const finished: Milestone[] = milestones.map((m) => ({ ...m, status: 'completed' as const }));
+    render(<RoadmapView goal={goal} milestones={finished} />);
+
+    const goalNode = screen.getByTestId('milestone-node-goal');
+    expect(goalNode).toHaveAttribute('data-state', 'goal-complete');
+    expect(within(goalNode).getByText(/goal reached/i)).toBeInTheDocument();
+    expect(screen.getByTestId('roadmap-cleared-count')).toHaveTextContent('3/3 stages cleared');
+  });
 });

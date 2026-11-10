@@ -117,6 +117,23 @@ describe('questService (Issue #9 / #11 / #12 / #13 / #17 / #31 Postgres)', () =>
     expect(again.leveled_up).toBe(false);
   });
 
+  // AC (#10): When all quests for the current milestone are done, stage_ready prompts completion
+  it('sets stage_ready after the last current-milestone quest is completed', async () => {
+    const { service: questService } = service();
+    const today = await questService.getToday(demoUserId);
+    expect(today.stage_ready).toBe(false);
+
+    let last = null as Awaited<ReturnType<typeof questService.setCompletion>> | null;
+    for (const quest of today.quests) {
+      last = await questService.setCompletion(demoUserId, quest.id, true);
+    }
+    expect(last?.stage_ready).toBe(true);
+    expect(last?.stage_ready_milestone?.milestone_title).toMatch(/daily reading habit/i);
+    // XP / stamp path still intact alongside stage detection.
+    expect(last?.progress.xp).toBe(XP_PER_QUEST * today.quests.length);
+    expect(last?.stamp_card.filled_count).toBeGreaterThan(0);
+  });
+
   // AC: Completion status and completion time are saved
   it('persists completion status and timestamp via the repository', async () => {
     const { service: questService, quests } = service();

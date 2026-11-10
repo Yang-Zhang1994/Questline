@@ -50,6 +50,8 @@ const sample: TodayQuestsResponse = {
     filled_count: 1,
     past_cards: [],
   },
+  stage_ready: false,
+  stage_ready_milestone: null,
 };
 
 describe('DailyNote (Issue #9)', () => {

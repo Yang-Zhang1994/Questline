@@ -69,6 +69,10 @@ describe('milestonePlanService (Issue #5)', () => {
         if (!goal || userId !== 1) return null;
         return { goal, draft };
       },
+      async findGoalPlanForMap(userId: number) {
+        if (!goal || userId !== 1) return null;
+        return { goal, draft };
+      },
       async saveDraft(goalId: number, userId: number, next: MilestonePlanDraft | null) {
         expect(goalId).toBe(goal?.id);
         expect(userId).toBe(1);
@@ -92,6 +96,9 @@ describe('milestonePlanService (Issue #5)', () => {
           status: item.position === 1 ? ('current' as const) : ('upcoming' as const),
         }));
         return saved;
+      },
+      async completeCurrentAndAdvance() {
+        throw new Error('not used in plan service tests');
       },
     };
   }

@@ -34,7 +34,8 @@ export function createMilestonePlanService(deps: MilestonePlanServiceDeps) {
   }
 
   async function getPlan(userId: number): Promise<MilestonePlanResponse> {
-    const record = await deps.milestones.findActiveGoalPlan(userId);
+    // Map may show a completed goal after the final stage clears (#10).
+    const record = await deps.milestones.findGoalPlanForMap(userId);
     if (!record) {
       return { draft: null, confirmed: false, goal: null, milestones: [] };
     }

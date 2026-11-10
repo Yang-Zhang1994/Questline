@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { DailyNote } from '../components/DailyNote/DailyNote';
 import { BottomDock } from '../components/BottomDock/BottomDock';
+import { GoalCelebration } from '../components/GoalCelebration/GoalCelebration';
 import { LevelUpToast } from '../components/LevelUpToast/LevelUpToast';
 import { QuestPlanEditor } from '../components/QuestPlanEditor/QuestPlanEditor';
 import { ReschedulePreview } from '../components/ReschedulePreview/ReschedulePreview';
+import { StageCompletePrompt } from '../components/StageCompletePrompt/StageCompletePrompt';
 import { StampCard } from '../components/StampCard/StampCard';
 import { StreakCounter } from '../components/StreakCounter/StreakCounter';
 import { WeekPlanPreview } from '../components/WeekPlanPreview/WeekPlanPreview';
@@ -11,6 +13,7 @@ import { XpBar } from '../components/XpBar/XpBar';
 import { useDailyQuests } from '../hooks/useDailyQuests';
 import { useQuestPlan } from '../hooks/useQuestPlan';
 import { useReschedule } from '../hooks/useReschedule';
+import { useStageAdvance } from '../hooks/useStageAdvance';
 import { useWeekPlan } from '../hooks/useWeekPlan';
 
 export type TodayPageProps = {
@@ -87,6 +90,14 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
     localDate: data?.local_date,
   });
 
+  const {
+    busy: stageBusy,
+    error: stageError,
+    result: stageResult,
+    confirm: confirmStage,
+    dismissResult: dismissStageResult,
+  } = useStageAdvance();
+
   // Once the user asks to plan, load/propose a draft.
   useEffect(() => {
     if (!planning) return;
@@ -140,6 +151,16 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
     !weekPlanDraft &&
     !showEditor;
   const showWeekPlanPreview = weekPlanning || Boolean(weekPlanDraft);
+
+  const showStagePrompt =
+    Boolean(data?.stage_ready && data.stage_ready_milestone) &&
+    !stageResult &&
+    !showEditor &&
+    !showReschedulePreview &&
+    !showWeekPlanPreview;
+
+  const stageAdvanceToast =
+    stageResult && !stageResult.goal_completed ? stageResult.mochi_message : null;
 
   return (
     <div className="flex min-h-screen flex-col items-center px-4 pb-24 pt-6">
@@ -203,6 +224,41 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
 
       <LevelUpToast message={levelUpMessage} onDismiss={dismissLevelUp} />
       <LevelUpToast message={stampRewardMessage} onDismiss={dismissStampReward} />
+      <LevelUpToast
+        message={stageAdvanceToast}
+        onDismiss={() => {
+          dismissStageResult();
+        }}
+      />
+
+      {showStagePrompt && data?.stage_ready_milestone ? (
+        <StageCompletePrompt
+          milestoneTitle={data.stage_ready_milestone.milestone_title}
+          busy={stageBusy}
+          error={stageError}
+          onConfirm={() => {
+            void (async () => {
+              try {
+                await confirmStage(data.stage_ready_milestone!.milestone_id);
+                setPlanning(false);
+                setWeekPlanning(false);
+                await reload();
+                await reloadQuestPlan();
+              } catch {
+                // Error surfaced via useStageAdvance.
+              }
+            })();
+          }}
+        />
+      ) : null}
+
+      {stageResult?.goal_completed ? (
+        <GoalCelebration
+          goalTitle={stageResult.goal.title}
+          message={stageResult.mochi_message}
+          onDismiss={dismissStageResult}
+        />
+      ) : null}
 
       {showEditor ? (
         <QuestPlanEditor

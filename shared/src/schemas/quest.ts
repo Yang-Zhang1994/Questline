@@ -4,6 +4,14 @@ import { StampCardSchema } from './stamp.js';
 
 export const IsoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD');
 
+/** Current stage is ready to mark complete (all its quests done) — Issue #10. */
+export const StageReadySummarySchema = z.object({
+  milestone_id: z.number().int().positive(),
+  milestone_title: z.string().min(1),
+});
+
+export type StageReadySummary = z.infer<typeof StageReadySummarySchema>;
+
 export const IsoDateTimeSchema = z.string().datetime({ offset: true });
 
 export const QuestSchema = z.object({
@@ -30,6 +38,9 @@ export const TodayQuestsResponseSchema = z.object({
   progress: UserProgressSchema,
   /** Current stamp card + past card history (#13). */
   stamp_card: StampCardSchema,
+  /** True when every quest on the current milestone is done (#10). */
+  stage_ready: z.boolean().default(false),
+  stage_ready_milestone: StageReadySummarySchema.nullable().default(null),
 });
 
 export type TodayQuestsResponse = z.infer<typeof TodayQuestsResponseSchema>;
@@ -51,6 +62,9 @@ export const ToggleQuestCompletionResponseSchema = z.object({
   /** True when this completion filled the last slot on the current card. */
   card_completed: z.boolean(),
   card_reward_message: z.string().nullable(),
+  /** True when every quest on the current milestone is done (#10). */
+  stage_ready: z.boolean().default(false),
+  stage_ready_milestone: StageReadySummarySchema.nullable().default(null),
 });
 
 export type ToggleQuestCompletionResponse = z.infer<typeof ToggleQuestCompletionResponseSchema>;

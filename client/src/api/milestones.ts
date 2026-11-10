@@ -1,7 +1,9 @@
 import {
+  CompleteStageResponseSchema,
   ConfirmMilestonePlanResponseSchema,
   MilestonePlanDraftSchema,
   MilestonePlanResponseSchema,
+  type CompleteStageResponse,
   type ConfirmMilestonePlanResponse,
   type MilestonePlanDraft,
   type MilestonePlanResponse,
@@ -77,4 +79,17 @@ export async function confirmMilestonePlan(
     throw new Error(errorMessage(body, 'Could not save the milestone plan'));
   }
   return ConfirmMilestonePlanResponseSchema.parse(body);
+}
+
+/** Confirm stage clear — advances roadmap highlight (#10). */
+export async function completeStage(milestoneId: number): Promise<CompleteStageResponse> {
+  const res = await fetch(`/api/milestones/${milestoneId}/complete`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  const body = await parseJson(res);
+  if (!res.ok) {
+    throw new Error(errorMessage(body, 'Could not mark this stage complete'));
+  }
+  return CompleteStageResponseSchema.parse(body);
 }
