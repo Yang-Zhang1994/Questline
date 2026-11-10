@@ -6,8 +6,11 @@ import { systemClock } from './clock.js';
 import type { Db } from './db/connection.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { createQuestRepository } from './repositories/questRepository.js';
+import { createRoadmapRepository } from './repositories/roadmapRepository.js';
 import { createQuestsRouter } from './routes/quests.js';
+import { createRoadmapRouter } from './routes/roadmap.js';
 import { createQuestService } from './services/questService.js';
+import { createRoadmapService } from './services/roadmapService.js';
 
 export type CreateAppOptions = {
   db: Db;
@@ -18,6 +21,8 @@ export function createApp(options: CreateAppOptions) {
   const clock = options.clock ?? systemClock;
   const quests = createQuestRepository(options.db);
   const questService = createQuestService({ quests, clock });
+  const roadmap = createRoadmapRepository(options.db);
+  const roadmapService = createRoadmapService({ roadmap });
 
   const app = express();
   app.use(helmet({ contentSecurityPolicy: false }));
@@ -29,6 +34,7 @@ export function createApp(options: CreateAppOptions) {
   });
 
   app.use('/api/quests', createQuestsRouter(questService));
+  app.use('/api/roadmap', createRoadmapRouter(roadmapService));
 
   app.use(errorHandler);
   return app;

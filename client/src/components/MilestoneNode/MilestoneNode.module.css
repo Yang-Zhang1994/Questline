@@ -1,0 +1,168 @@
+.card {
+  position: relative;
+  background: var(--panel);
+  border: 2px solid rgba(61, 53, 112, 0.12);
+  border-radius: var(--radius-window);
+  padding: 1rem 1.15rem;
+  box-shadow: 0 4px 12px rgba(61, 53, 112, 0.06);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  width: 100%;
+  max-width: 380px;
+  box-sizing: border-box;
+}
+
+.card:focus-visible {
+  outline: 3px solid var(--blue-ink);
+  outline-offset: 3px;
+}
+
+.completed {
+  border-color: #a4e48b;
+  background: linear-gradient(180deg, #ffffff 0%, #f6fdf2 100%);
+}
+
+.current {
+  border-color: var(--pink);
+  box-shadow: 0 8px 24px rgba(255, 111, 177, 0.28), 0 0 0 2px var(--pink-pale);
+  background: linear-gradient(180deg, #ffffff 0%, var(--pink-pale) 100%);
+}
+
+.upcoming {
+  opacity: 0.92;
+  border-style: dashed;
+  background: #fafcfe;
+}
+
+.mochiIndicator {
+  position: absolute;
+  top: -2.3rem;
+  right: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  animation: mochi-bounce 2.6s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.avatarWrapper {
+  width: 44px;
+  height: 44px;
+  filter: drop-shadow(0 4px 6px rgba(28, 127, 200, 0.25));
+}
+
+.mochiBubble {
+  background: var(--pink);
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-pill);
+  box-shadow: 0 2px 6px rgba(210, 58, 130, 0.3);
+  white-space: nowrap;
+}
+
+.headerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.45rem;
+}
+
+.stageBadge {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  color: var(--blue-ink);
+  background: var(--blue-pale);
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid rgba(28, 127, 200, 0.15);
+}
+
+.statusPill {
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.statusPillCleared {
+  background: #e8f9e0;
+  color: #2e7d32;
+  border: 1px solid #b7ebb0;
+}
+
+.statusPillCurrent {
+  background: var(--pink-pale);
+  color: var(--pink-ink);
+  border: 1px solid var(--pink);
+}
+
+.statusPillUpcoming {
+  background: #f0f4f8;
+  color: var(--ink-soft);
+  border: 1px solid #d8e2ec;
+}
+
+.title {
+  margin: 0 0 0.35rem;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  color: var(--ink);
+  line-height: 1.35;
+}
+
+.description {
+  margin: 0 0 0.75rem;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+
+.footerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-top: 1px solid rgba(61, 53, 112, 0.06);
+  padding-top: 0.5rem;
+}
+
+.targetDate {
+  color: var(--ink-soft);
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.dateIcon {
+  font-size: 0.85rem;
+}
+
+.questProgress {
+  color: var(--pink-ink);
+  background: var(--pink-pale);
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-pill);
+}
+
+@keyframes mochi-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mochiIndicator {
+    animation: none;
+  }
+}

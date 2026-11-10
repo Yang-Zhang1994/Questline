@@ -33,27 +33,66 @@ export function seedDemoDataIfEmpty(db: Db, clock: Clock = systemClock): void {
         createdAt,
       ) as { id: number };
 
-    const milestone = db
-      .prepare(
-        `INSERT INTO milestones (goal_id, position, title, description, target_date, status)
-         VALUES (?, 1, ?, ?, ?, 'current')
-         RETURNING id`,
-      )
-      .get(
-        goal.id,
-        DEMO_MILESTONE_TITLE,
-        'Read a few pages each day with Mochi cheering you on',
-        '2026-12-01',
-      ) as { id: number };
+    const insertMilestone = db.prepare(
+      `INSERT INTO milestones (goal_id, position, title, description, target_date, status)
+       VALUES (?, ?, ?, ?, ?, ?)
+       RETURNING id`,
+    );
+
+    const m1 = insertMilestone.get(
+      goal.id,
+      1,
+      'Learn Hiragana & Katakana',
+      'Master reading and writing both basic syllabaries and recognize common sounds.',
+      '2026-11-15',
+      'completed',
+    ) as { id: number };
+
+    const m2 = insertMilestone.get(
+      goal.id,
+      2,
+      DEMO_MILESTONE_TITLE,
+      'Read a few pages each day with Mochi cheering you on',
+      '2026-12-01',
+      'current',
+    ) as { id: number };
+
+    insertMilestone.run(
+      goal.id,
+      3,
+      'Finish first graded reader (Level 1)',
+      'Complete all short stories in Level 1 with 80%+ comprehension without a dictionary.',
+      '2027-02-15',
+      'upcoming',
+    );
+
+    insertMilestone.run(
+      goal.id,
+      4,
+      'Read first short manga chapter',
+      'Tackle simple dialogue and sound effects in a slice-of-life manga.',
+      '2027-05-30',
+      'upcoming',
+    );
+
+    insertMilestone.run(
+      goal.id,
+      5,
+      'Finish a full Japanese light novel',
+      'Read cover-to-cover at your own pace and celebrate reaching your dream!',
+      '2027-10-28',
+      'upcoming',
+    );
 
     const insertQuest = db.prepare(
       `INSERT INTO quests (milestone_id, title, due_date, estimated_minutes, completed_at)
-       VALUES (?, ?, ?, ?, NULL)`,
+       VALUES (?, ?, ?, ?, ?)`,
     );
 
-    insertQuest.run(milestone.id, 'Read 2 pages of your graded reader', today, 15);
-    insertQuest.run(milestone.id, 'Write down 3 new words you noticed', today, 10);
-    insertQuest.run(milestone.id, 'Say one sentence from today out loud to Mochi', today, 5);
+    insertQuest.run(m1.id, 'Master Hiragana vowels and basic sounds', '2026-11-01', 20, createdAt);
+    insertQuest.run(m2.id, 'Read 2 pages of your graded reader', today, 15, null);
+    insertQuest.run(m2.id, 'Write down 3 new words you noticed', today, 10, null);
+    insertQuest.run(m2.id, 'Say one sentence from today out loud to Mochi', today, 5, null);
   });
 
   insertAll();

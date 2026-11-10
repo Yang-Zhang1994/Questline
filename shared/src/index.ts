@@ -13,3 +13,16 @@ export {
   type ToggleQuestCompletionBody,
   type ToggleQuestCompletionResponse,
 } from './schemas/quest.js';
+
+export {
+  GoalStatusSchema,
+  MilestoneSchema,
+  MilestoneStatusSchema,
+  RoadmapGoalSchema,
+  RoadmapResponseSchema,
+  type GoalStatus,
+  type Milestone,
+  type MilestoneStatus,
+  type RoadmapGoal,
+  type RoadmapResponse,
+} from './schemas/roadmap.js';

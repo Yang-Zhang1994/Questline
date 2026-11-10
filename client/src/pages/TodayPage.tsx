@@ -1,4 +1,5 @@
 import { DailyNote } from '../components/DailyNote/DailyNote';
+import { BottomDock } from '../components/BottomDock/BottomDock';
 import { useDailyQuests } from '../hooks/useDailyQuests';
 import styles from './TodayPage.module.css';
 
@@ -23,17 +24,7 @@ export function TodayPage() {
         }}
       />
 
-      <nav className={styles.dock} aria-label="Main">
-        <button type="button" className={`${styles.dockItem} ${styles.dockItemActive}`}>
-          ☀️ Today
-        </button>
-        <button type="button" className={styles.dockItem} disabled>
-          🗺️ Map
-        </button>
-        <button type="button" className={styles.dockItem} disabled>
-          💌 Talk
-        </button>
-      </nav>
+      <BottomDock activeTab="today" />
     </div>
   );
 }
