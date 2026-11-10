@@ -203,10 +203,17 @@ JWT notes: the API returns a token in the JSON body; the SPA sends `Authorizatio
 | --- | -------- |
 | [`docs/PRD.md`](docs/PRD.md) | Product, user stories, sprint scope |
 | [`AGENTS.md`](AGENTS.md) | Agent / contributor instructions |
+| [`docs/openapi.yaml`](docs/openapi.yaml) | OpenAPI 3 — auth, goals, milestones, quests, chat, diary, progress/XP |
+| [`docs/architecture.md`](docs/architecture.md) | Architecture + DB ER Mermaid diagrams |
 | [`docs/data-model.md`](docs/data-model.md) | Schema, naming, Postgres |
 | [`docs/design/`](docs/design/) | UI look, components, a11y, mockup screenshots |
 | [`docs/tdd-and-ci.md`](docs/tdd-and-ci.md) | Testing & CI |
 | [`docs/scrum-workflow.md`](docs/scrum-workflow.md) | Branches, commits, PRs |
+
+### API & diagrams
+
+- **OpenAPI / Swagger:** source of truth is [`docs/openapi.yaml`](docs/openapi.yaml). Paste it into [Swagger Editor](https://editor.swagger.io/) (File → Import file) or [Redocly](https://redocly.github.io/redoc/) to browse interactively. There is no in-app Swagger UI route yet.
+- **Architecture + schema:** Mermaid diagrams live in [`docs/architecture.md`](docs/architecture.md) (renders on GitHub). Optional SVG exports under [`docs/diagrams/`](docs/diagrams/) when present.
 
 ## License
 

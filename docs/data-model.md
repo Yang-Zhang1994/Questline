@@ -37,3 +37,5 @@ Companion to `AGENTS.md` §1.4–1.5. Vocabulary: **Goal → Milestone → Quest
 | `diary_notes`   | id, goal_id → goals, note_date, content, updated_at (one per goal per day; #19)                               |
 
 **Relationships:** User → Goals → Milestones → Quests. Several Goals allowed; one **active** per user (`goals.status = 'active'`, #18) for Today/Map.
+
+Mermaid ER diagram (from migrations): [`architecture.md`](./architecture.md#database-schema-er).

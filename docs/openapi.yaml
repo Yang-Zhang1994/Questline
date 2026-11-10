@@ -1,0 +1,1913 @@
+openapi: 3.0.3
+info:
+  title: Questline API
+  version: 0.1.0
+  description: |
+    HTTP API for **Questline** (Mochi's Quest Diary).
+
+    Vocabulary: **Goal → Milestone → Quest**. One **active** Goal drives Today / Map / Talk.
+    Mochi proposals use confirm-before-save (draft JSONB → explicit confirm writes rows).
+
+    Auth: JWT Bearer on all routes except `/api/health` and `/api/auth/*`.
+    Errors: `{ "error": { "code": string, "message": string } }`.
+  contact:
+    name: Questline
+servers:
+  - url: http://localhost:3001
+    description: Local API (`npm run dev:server`)
+  - url: http://localhost:5173
+    description: Vite dev proxy (`/api` → :3001)
+
+tags:
+  - name: Health
+  - name: Auth
+  - name: Goals
+  - name: Milestones
+  - name: Quests
+  - name: Progress
+    description: XP / level / streak / stamp card are returned on quest Today + completion responses (no separate progress resource).
+  - name: Chat
+  - name: Diary
+
+paths:
+  /api/health:
+    get:
+      tags: [Health]
+      summary: Liveness check
+      operationId: getHealth
+      security: []
+      responses:
+        '200':
+          description: API is up
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new user
+      operationId: register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterBody'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginBody'
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /api/goals:
+    get:
+      tags: [Goals]
+      summary: List selectable goals + active goal id
+      operationId: listGoals
+      responses:
+        '200':
+          description: Goals for the authenticated user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoalsListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /api/goals/new:
+    post:
+      tags: [Goals]
+      summary: Pause active goal and restart Mochi interview
+      description: Starts a fresh interview without deleting other goals (#18).
+      operationId: startNewGoal
+      responses:
+        '201':
+          description: Interview restarted; previous active goal paused if any
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartNewGoalResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /api/goals/manual-plan:
+    post:
+      tags: [Goals]
+      summary: Create goal + milestones without chat
+      description: Manual plan form fallback (#21). Submit is the confirm-before-save step.
+      operationId: createManualPlan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManualPlanBody'
+      responses:
+        '201':
+          description: Goal and milestones created; becomes active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualPlanResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /api/goals/{id}/activate:
+    patch:
+      tags: [Goals]
+      summary: Switch the active goal
+      operationId: activateGoal
+      parameters:
+        - $ref: '#/components/parameters/GoalId'
+      responses:
+        '200':
+          description: Activated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivateGoalResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /api/goals/{id}:
+    delete:
+      tags: [Goals]
+      summary: Delete a goal (cascades milestones + quests)
+      operationId: deleteGoal
+      parameters:
+        - $ref: '#/components/parameters/GoalId'
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteGoalResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /api/milestones/draft:
+    get:
+      tags: [Milestones]
+      summary: Load milestone draft / confirmed plan for active goal
+      operationId: getMilestoneDraft
+      responses:
+        '200':
+          description: Plan snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MilestonePlanResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+    post:
+      tags: [Milestones]
+      summary: Propose a 3–7 milestone draft (no row writes)
+      operationId: proposeMilestoneDraft
+      responses:
+        '200':
+          description: Existing draft / already confirmed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MilestonePlanResponse'
+        '201':
+          description: New draft stored on `goals.milestone_draft`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MilestonePlanResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '503':
+          $ref: '#/components/responses/AiUnavailableError'
+
+  /api/milestones/draft/revise:
+    post:
+      tags: [Milestones]
+      summary: Revise milestone draft with feedback
+      operationId: reviseMilestoneDraft
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeedbackBody'
+      responses:
+        '200':
+          description: Updated draft
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MilestonePlanResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '503':
+          $ref: '#/components/responses/AiUnavailableError'
+
+  /api/milestones/confirm:
+    post:
+      tags: [Milestones]
+      summary: Confirm draft — INSERTs `milestones` rows
+      operationId: confirmMilestonePlan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmMilestonePlanBody'
+      responses:
+        '201':
+          description: Milestones persisted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfirmMilestonePlanResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /api/milestones/{milestoneId}/complete:
+    post:
+      tags: [Milestones]
+      summary: Mark current stage complete and advance roadmap
+      operationId: completeMilestoneStage
+      parameters:
+        - $ref: '#/components/parameters/MilestoneId'
+      responses:
+        '200':
+          description: Stage cleared
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompleteStageResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /api/quests/today:
+    get:
+      tags: [Quests, Progress]
+      summary: Today's quests + progress HUD for the active goal
+      description: |
+        Returns greeting, today's / overdue quests, XP/level/streak (`progress`),
+        stamp card, and stage-ready flags.
+      operationId: getTodayQuests
+      parameters:
+        - $ref: '#/components/parameters/LocalDateQuery'
+      responses:
+        '200':
+          description: Today payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TodayQuestsResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /api/quests:
+    get:
+      tags: [Quests]
+      summary: List quests for one milestone (Map sheet)
+      operationId: listMilestoneQuests
+      parameters:
+        - name: milestone_id
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Milestone + quests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MilestoneQuestsResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+    post:
+      tags: [Quests]
+      summary: Manually create a quest (immediate write)
+      operationId: createQuest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateQuestBody'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateQuestResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /api/quests/draft:
+    get:
+      tags: [Quests]
+      summary: Load quest draft for the current milestone
+      operationId: getQuestDraft
+      responses:
+        '200':
+          description: Plan snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuestPlanResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+    post:
+      tags: [Quests]
+      summary: Propose quest draft (no row writes)
+      operationId: proposeQuestDraft
+      responses:
+        '200':
+          description: Existing draft / already confirmed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuestPlanResponse'
+        '201':
+          description: New draft stored on `milestones.quest_draft`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuestPlanResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '503':
+          $ref: '#/components/responses/AiUnavailableError'
+
+  /api/quests/draft/revise:
+    post:
+      tags: [Quests]
+      summary: Revise quest draft with feedback
+      operationId: reviseQuestDraft
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeedbackBody'
+      responses:
+        '200':
+          description: Updated draft
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuestPlanResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '503':
+          $ref: '#/components/responses/AiUnavailableError'
+
+  /api/quests/confirm:
+    post:
+      tags: [Quests]
+      summary: Confirm quest draft — INSERTs `quests` rows
+      operationId: confirmQuestPlan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmQuestPlanBody'
+      responses:
+        '201':
+          description: Quests persisted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfirmQuestPlanResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /api/quests/reschedule:
+    get:
+      tags: [Quests]
+      summary: Load reschedule draft + overdue list
+      operationId: getReschedulePlan
+      parameters:
+        - $ref: '#/components/parameters/LocalDateQuery'
+      responses:
+        '200':
+          description: Reschedule snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RescheduleResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+    post:
+      tags: [Quests]
+      summary: Propose reschedule draft (no due_date writes)
+      operationId: proposeReschedule
+      parameters:
+        - $ref: '#/components/parameters/LocalDateQuery'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                local_date:
+                  $ref: '#/components/schemas/IsoDate'
+      responses:
+        '200':
+          description: No new draft needed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RescheduleResponse'
+        '201':
+          description: Draft stored on `goals.reschedule_draft`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RescheduleResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '503':
+          $ref: '#/components/responses/AiUnavailableError'
+
+  /api/quests/reschedule/revise:
+    post:
+      tags: [Quests]
+      summary: Revise reschedule draft
+      operationId: reviseReschedule
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/FeedbackBody'
+                - type: object
+                  properties:
+                    local_date:
+                      $ref: '#/components/schemas/IsoDate'
+      responses:
+        '200':
+          description: Updated draft
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RescheduleResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '503':
+          $ref: '#/components/responses/AiUnavailableError'
+
+  /api/quests/reschedule/confirm:
+    post:
+      tags: [Quests]
+      summary: Confirm reschedule — UPDATEs quest due_dates
+      operationId: confirmReschedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ConfirmRescheduleBody'
+                - type: object
+                  properties:
+                    local_date:
+                      $ref: '#/components/schemas/IsoDate'
+      responses:
+        '201':
+          description: Due dates applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfirmRescheduleResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /api/quests/week-plan:
+    get:
+      tags: [Quests]
+      summary: Load week-plan draft + existing milestone quests
+      operationId: getWeekPlan
+      parameters:
+        - $ref: '#/components/parameters/LocalDateQuery'
+      responses:
+        '200':
+          description: Week plan snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeekPlanResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+    post:
+      tags: [Quests]
+      summary: Propose week-plan draft (no INSERT)
+      operationId: proposeWeekPlan
+      parameters:
+        - $ref: '#/components/parameters/LocalDateQuery'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                local_date:
+                  $ref: '#/components/schemas/IsoDate'
+      responses:
+        '200':
+          description: No new draft needed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeekPlanResponse'
+        '201':
+          description: Draft stored on `goals.week_plan_draft`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeekPlanResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '503':
+          $ref: '#/components/responses/AiUnavailableError'
+
+  /api/quests/week-plan/revise:
+    post:
+      tags: [Quests]
+      summary: Revise week-plan draft
+      operationId: reviseWeekPlan
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/FeedbackBody'
+                - type: object
+                  properties:
+                    local_date:
+                      $ref: '#/components/schemas/IsoDate'
+      responses:
+        '200':
+          description: Updated draft
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeekPlanResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '503':
+          $ref: '#/components/responses/AiUnavailableError'
+
+  /api/quests/week-plan/confirm:
+    post:
+      tags: [Quests]
+      summary: Confirm week plan — INSERTs new quest rows
+      operationId: confirmWeekPlan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ConfirmWeekPlanBody'
+                - type: object
+                  properties:
+                    local_date:
+                      $ref: '#/components/schemas/IsoDate'
+      responses:
+        '201':
+          description: New quests inserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfirmWeekPlanResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /api/quests/{questId}/completion:
+    patch:
+      tags: [Quests, Progress]
+      summary: Toggle quest completion (awards / reverses XP, streak, stamps)
+      operationId: toggleQuestCompletion
+      parameters:
+        - $ref: '#/components/parameters/QuestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ToggleQuestCompletionBody'
+      responses:
+        '200':
+          description: Updated quest + progress HUD
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToggleQuestCompletionResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /api/quests/{questId}:
+    delete:
+      tags: [Quests, Progress]
+      summary: Delete a quest (reverses XP if completed)
+      operationId: deleteQuest
+      parameters:
+        - $ref: '#/components/parameters/QuestId'
+        - $ref: '#/components/parameters/LocalDateQuery'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteQuestBody'
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteQuestResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /api/chat/messages:
+    get:
+      tags: [Chat]
+      summary: Chat history + interview state
+      operationId: listChatMessages
+      responses:
+        '200':
+          description: Messages and interview progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatHistoryResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+    post:
+      tags: [Chat]
+      summary: Send one user message (one interview topic at a time)
+      operationId: sendChatMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendChatMessageBody'
+      responses:
+        '201':
+          description: User + Mochi turns persisted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendChatMessageResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '503':
+          $ref: '#/components/responses/AiUnavailableError'
+
+  /api/chat/interview/restart:
+    post:
+      tags: [Chat]
+      summary: Restart goal interview from the beginning
+      operationId: restartInterview
+      responses:
+        '200':
+          description: Cleared history + re-seeded welcome
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatHistoryResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /api/diary-notes:
+    get:
+      tags: [Diary]
+      summary: Today's diary note for the active goal
+      operationId: getDiaryNote
+      parameters:
+        - $ref: '#/components/parameters/LocalDateQuery'
+      responses:
+        '200':
+          description: Note (empty content when none yet)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiaryNote'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+    put:
+      tags: [Diary]
+      summary: Upsert today's diary note (autosave)
+      operationId: upsertDiaryNote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertDiaryNoteBody'
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiaryNote'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "JWT from /api/auth/login or /api/auth/register. Send as Authorization: Bearer <token>."
+
+  parameters:
+    GoalId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    MilestoneId:
+      name: milestoneId
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    QuestId:
+      name: questId
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    LocalDateQuery:
+      name: local_date
+      in: query
+      required: false
+      description: Client local calendar date `YYYY-MM-DD` (streaks / stamps / overdue).
+      schema:
+        $ref: '#/components/schemas/IsoDate'
+
+  responses:
+    ValidationError:
+      description: Validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorBody'
+    UnauthorizedError:
+      description: Missing or invalid JWT
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorBody'
+    NotFoundError:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorBody'
+    ConflictError:
+      description: Conflict (e.g. email already registered)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorBody'
+    AiUnavailableError:
+      description: Claude / Mochi unavailable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorBody'
+
+  schemas:
+    IsoDate:
+      type: string
+      pattern: '^\d{4}-\d{2}-\d{2}$'
+      example: '2026-11-10'
+    IsoDateTime:
+      type: string
+      format: date-time
+      example: '2026-11-10T15:04:05.000Z'
+
+    ErrorBody:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum:
+                - VALIDATION_ERROR
+                - NOT_FOUND
+                - UNAUTHORIZED
+                - CONFLICT
+                - AI_UNAVAILABLE
+                - INTERNAL_ERROR
+            message:
+              type: string
+
+    RegisterBody:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+
+    LoginBody:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 1
+          maxLength: 128
+
+    PublicUser:
+      type: object
+      required: [id, email]
+      properties:
+        id:
+          type: integer
+          minimum: 1
+        email:
+          type: string
+          format: email
+
+    AuthResponse:
+      type: object
+      required: [user, token]
+      properties:
+        user:
+          $ref: '#/components/schemas/PublicUser'
+        token:
+          type: string
+          minLength: 1
+
+    GoalStatus:
+      type: string
+      enum: [active, paused, completed, archived]
+
+    Goal:
+      type: object
+      required:
+        - id
+        - user_id
+        - title
+        - done_definition
+        - starting_point
+        - time_budget_minutes_per_day
+        - deadline
+        - status
+        - created_at
+      properties:
+        id:
+          type: integer
+          minimum: 1
+        user_id:
+          type: integer
+          minimum: 1
+        title:
+          type: string
+          minLength: 1
+        done_definition:
+          type: string
+          nullable: true
+        starting_point:
+          type: string
+          nullable: true
+        time_budget_minutes_per_day:
+          type: integer
+          minimum: 1
+          nullable: true
+        deadline:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/GoalStatus'
+        created_at:
+          $ref: '#/components/schemas/IsoDateTime'
+
+    GoalsListResponse:
+      type: object
+      required: [goals, active_goal_id]
+      properties:
+        goals:
+          type: array
+          items:
+            $ref: '#/components/schemas/Goal'
+        active_goal_id:
+          type: integer
+          minimum: 1
+          nullable: true
+
+    StartNewGoalResponse:
+      type: object
+      required: [paused_goal_id, goals, active_goal_id]
+      properties:
+        paused_goal_id:
+          type: integer
+          minimum: 1
+          nullable: true
+        goals:
+          type: array
+          items:
+            $ref: '#/components/schemas/Goal'
+        active_goal_id:
+          type: integer
+          minimum: 1
+          nullable: true
+
+    ActivateGoalResponse:
+      type: object
+      required: [goal, goals, active_goal_id]
+      properties:
+        goal:
+          $ref: '#/components/schemas/Goal'
+        goals:
+          type: array
+          items:
+            $ref: '#/components/schemas/Goal'
+        active_goal_id:
+          type: integer
+          minimum: 1
+
+    DeleteGoalResponse:
+      type: object
+      required: [deleted_goal_id, goals, active_goal_id]
+      properties:
+        deleted_goal_id:
+          type: integer
+          minimum: 1
+        goals:
+          type: array
+          items:
+            $ref: '#/components/schemas/Goal'
+        active_goal_id:
+          type: integer
+          minimum: 1
+          nullable: true
+
+    ManualPlanBody:
+      type: object
+      required: [title, milestones]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        concrete_goal:
+          type: string
+          maxLength: 1000
+          nullable: true
+        deadline:
+          allOf:
+            - $ref: '#/components/schemas/IsoDate'
+          nullable: true
+        milestones:
+          type: array
+          minItems: 1
+          maxItems: 12
+          items:
+            type: string
+            minLength: 1
+            maxLength: 200
+
+    ManualPlanResponse:
+      type: object
+      required: [goal, milestones]
+      properties:
+        goal:
+          $ref: '#/components/schemas/Goal'
+        milestones:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Milestone'
+
+    MilestoneStatus:
+      type: string
+      enum: [upcoming, current, completed]
+
+    Milestone:
+      type: object
+      required: [id, goal_id, position, title, description, target_date, status]
+      properties:
+        id:
+          type: integer
+          minimum: 1
+        goal_id:
+          type: integer
+          minimum: 1
+        position:
+          type: integer
+          minimum: 1
+        title:
+          type: string
+          minLength: 1
+        description:
+          type: string
+          nullable: true
+        target_date:
+          allOf:
+            - $ref: '#/components/schemas/IsoDate'
+          nullable: true
+        status:
+          $ref: '#/components/schemas/MilestoneStatus'
+
+    MilestoneDraftItem:
+      type: object
+      required: [position, title, description, target_date]
+      properties:
+        position:
+          type: integer
+          minimum: 1
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        target_date:
+          $ref: '#/components/schemas/IsoDate'
+
+    MilestonePlanDraft:
+      type: object
+      required: [milestones, mochi_message]
+      properties:
+        milestones:
+          type: array
+          minItems: 3
+          maxItems: 7
+          items:
+            $ref: '#/components/schemas/MilestoneDraftItem'
+        mochi_message:
+          type: string
+          minLength: 1
+          maxLength: 1000
+
+    MilestoneGoalSummary:
+      type: object
+      required:
+        - id
+        - title
+        - done_definition
+        - starting_point
+        - time_budget_minutes_per_day
+        - deadline
+      properties:
+        id:
+          type: integer
+          minimum: 1
+        title:
+          type: string
+          minLength: 1
+        done_definition:
+          type: string
+          nullable: true
+        starting_point:
+          type: string
+          nullable: true
+        time_budget_minutes_per_day:
+          type: integer
+          minimum: 1
+          nullable: true
+        deadline:
+          type: string
+          nullable: true
+
+    MilestonePlanResponse:
+      type: object
+      required: [draft, confirmed, goal, milestones]
+      properties:
+        draft:
+          allOf:
+            - $ref: '#/components/schemas/MilestonePlanDraft'
+          nullable: true
+        confirmed:
+          type: boolean
+        goal:
+          allOf:
+            - $ref: '#/components/schemas/MilestoneGoalSummary'
+          nullable: true
+        milestones:
+          type: array
+          items:
+            $ref: '#/components/schemas/Milestone'
+
+    ConfirmMilestonePlanBody:
+      type: object
+      required: [draft]
+      properties:
+        draft:
+          $ref: '#/components/schemas/MilestonePlanDraft'
+
+    ConfirmMilestonePlanResponse:
+      type: object
+      required: [goal, milestones]
+      properties:
+        goal:
+          $ref: '#/components/schemas/MilestoneGoalSummary'
+        milestones:
+          type: array
+          items:
+            $ref: '#/components/schemas/Milestone'
+
+    CompleteStageResponse:
+      type: object
+      required:
+        - completed_milestone
+        - next_milestone
+        - goal_completed
+        - goal
+        - milestones
+        - mochi_message
+      properties:
+        completed_milestone:
+          $ref: '#/components/schemas/Milestone'
+        next_milestone:
+          allOf:
+            - $ref: '#/components/schemas/Milestone'
+          nullable: true
+        goal_completed:
+          type: boolean
+        goal:
+          $ref: '#/components/schemas/MilestoneGoalSummary'
+        milestones:
+          type: array
+          items:
+            $ref: '#/components/schemas/Milestone'
+        mochi_message:
+          type: string
+          minLength: 1
+          maxLength: 1000
+
+    FeedbackBody:
+      type: object
+      properties:
+        feedback:
+          type: string
+          minLength: 1
+          maxLength: 2000
+
+    UserProgress:
+      type: object
+      required:
+        - xp
+        - level
+        - xp_into_level
+        - xp_for_next_level
+        - current_streak
+        - best_streak
+        - last_active_date
+      properties:
+        xp:
+          type: integer
+          minimum: 0
+        level:
+          type: integer
+          minimum: 1
+        xp_into_level:
+          type: integer
+          minimum: 0
+        xp_for_next_level:
+          type: integer
+          minimum: 1
+        current_streak:
+          type: integer
+          minimum: 0
+        best_streak:
+          type: integer
+          minimum: 0
+        last_active_date:
+          allOf:
+            - $ref: '#/components/schemas/IsoDate'
+          nullable: true
+
+    StampPastCard:
+      type: object
+      required: [card_number, stamp_dates, stamp_count]
+      properties:
+        card_number:
+          type: integer
+          minimum: 1
+        stamp_dates:
+          type: array
+          items:
+            $ref: '#/components/schemas/IsoDate'
+        stamp_count:
+          type: integer
+          minimum: 0
+
+    StampCard:
+      type: object
+      required:
+        - card_number
+        - stamps_per_card
+        - stamped_dates
+        - filled_count
+        - past_cards
+      properties:
+        card_number:
+          type: integer
+          minimum: 1
+        stamps_per_card:
+          type: integer
+          minimum: 1
+        stamped_dates:
+          type: array
+          items:
+            $ref: '#/components/schemas/IsoDate'
+        filled_count:
+          type: integer
+          minimum: 0
+        past_cards:
+          type: array
+          items:
+            $ref: '#/components/schemas/StampPastCard'
+
+    StageReadySummary:
+      type: object
+      required: [milestone_id, milestone_title]
+      properties:
+        milestone_id:
+          type: integer
+          minimum: 1
+        milestone_title:
+          type: string
+          minLength: 1
+
+    Quest:
+      type: object
+      required:
+        - id
+        - milestone_id
+        - title
+        - due_date
+        - estimated_minutes
+        - completed_at
+      properties:
+        id:
+          type: integer
+          minimum: 1
+        milestone_id:
+          type: integer
+          minimum: 1
+        title:
+          type: string
+          minLength: 1
+        due_date:
+          $ref: '#/components/schemas/IsoDate'
+        estimated_minutes:
+          type: integer
+          minimum: 1
+          nullable: true
+        completed_at:
+          allOf:
+            - $ref: '#/components/schemas/IsoDateTime'
+          nullable: true
+
+    TodayQuestsResponse:
+      type: object
+      required:
+        - local_date
+        - goal_title
+        - milestone_title
+        - greeting
+        - quests
+        - overdue_quests
+        - done_count
+        - total_count
+        - progress
+        - stamp_card
+        - stage_ready
+        - stage_ready_milestone
+      properties:
+        local_date:
+          $ref: '#/components/schemas/IsoDate'
+        goal_title:
+          type: string
+          nullable: true
+        milestone_title:
+          type: string
+          nullable: true
+        greeting:
+          type: string
+        quests:
+          type: array
+          items:
+            $ref: '#/components/schemas/Quest'
+        overdue_quests:
+          type: array
+          items:
+            $ref: '#/components/schemas/Quest'
+        done_count:
+          type: integer
+          minimum: 0
+        total_count:
+          type: integer
+          minimum: 0
+        progress:
+          $ref: '#/components/schemas/UserProgress'
+        stamp_card:
+          $ref: '#/components/schemas/StampCard'
+        stage_ready:
+          type: boolean
+        stage_ready_milestone:
+          allOf:
+            - $ref: '#/components/schemas/StageReadySummary'
+          nullable: true
+
+    ToggleQuestCompletionBody:
+      type: object
+      required: [completed]
+      properties:
+        completed:
+          type: boolean
+        local_date:
+          $ref: '#/components/schemas/IsoDate'
+
+    ToggleQuestCompletionResponse:
+      type: object
+      required:
+        - quest
+        - progress
+        - leveled_up
+        - level_up_message
+        - stamp_card
+        - card_completed
+        - card_reward_message
+        - stage_ready
+        - stage_ready_milestone
+      properties:
+        quest:
+          $ref: '#/components/schemas/Quest'
+        progress:
+          $ref: '#/components/schemas/UserProgress'
+        leveled_up:
+          type: boolean
+        level_up_message:
+          type: string
+          nullable: true
+        stamp_card:
+          $ref: '#/components/schemas/StampCard'
+        card_completed:
+          type: boolean
+        card_reward_message:
+          type: string
+          nullable: true
+        stage_ready:
+          type: boolean
+        stage_ready_milestone:
+          allOf:
+            - $ref: '#/components/schemas/StageReadySummary'
+          nullable: true
+
+    CreateQuestBody:
+      type: object
+      required: [milestone_id, title, due_date]
+      properties:
+        milestone_id:
+          type: integer
+          minimum: 1
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        due_date:
+          $ref: '#/components/schemas/IsoDate'
+        estimated_minutes:
+          type: integer
+          minimum: 1
+          maximum: 120
+          nullable: true
+
+    CreateQuestResponse:
+      type: object
+      required: [quest]
+      properties:
+        quest:
+          $ref: '#/components/schemas/Quest'
+
+    DeleteQuestBody:
+      type: object
+      properties:
+        local_date:
+          $ref: '#/components/schemas/IsoDate'
+
+    DeleteQuestResponse:
+      type: object
+      required: [ok, quest, xp_reversed, progress, stamp_card]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        quest:
+          $ref: '#/components/schemas/Quest'
+        xp_reversed:
+          type: boolean
+        progress:
+          $ref: '#/components/schemas/UserProgress'
+        stamp_card:
+          $ref: '#/components/schemas/StampCard'
+
+    MilestoneQuestsResponse:
+      type: object
+      required: [milestone, quests, done_count, total_count]
+      properties:
+        milestone:
+          type: object
+          required: [id, title, description, target_date, status, position]
+          properties:
+            id:
+              type: integer
+              minimum: 1
+            title:
+              type: string
+              minLength: 1
+            description:
+              type: string
+              nullable: true
+            target_date:
+              allOf:
+                - $ref: '#/components/schemas/IsoDate'
+              nullable: true
+            status:
+              $ref: '#/components/schemas/MilestoneStatus'
+            position:
+              type: integer
+              minimum: 1
+        quests:
+          type: array
+          items:
+            $ref: '#/components/schemas/Quest'
+        done_count:
+          type: integer
+          minimum: 0
+        total_count:
+          type: integer
+          minimum: 0
+
+    QuestDraftItem:
+      type: object
+      required: [title, due_date, estimated_minutes]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        due_date:
+          $ref: '#/components/schemas/IsoDate'
+        estimated_minutes:
+          type: integer
+          minimum: 1
+          maximum: 120
+
+    QuestPlanDraft:
+      type: object
+      required: [quests, mochi_message]
+      properties:
+        quests:
+          type: array
+          minItems: 1
+          maxItems: 21
+          items:
+            $ref: '#/components/schemas/QuestDraftItem'
+        mochi_message:
+          type: string
+          minLength: 1
+          maxLength: 1000
+
+    QuestPlanResponse:
+      type: object
+      required: [draft, confirmed, goal, milestone, quests]
+      properties:
+        draft:
+          allOf:
+            - $ref: '#/components/schemas/QuestPlanDraft'
+          nullable: true
+        confirmed:
+          type: boolean
+        goal:
+          allOf:
+            - $ref: '#/components/schemas/MilestoneGoalSummary'
+          nullable: true
+        milestone:
+          allOf:
+            - $ref: '#/components/schemas/Milestone'
+          nullable: true
+        quests:
+          type: array
+          items:
+            $ref: '#/components/schemas/Quest'
+
+    ConfirmQuestPlanBody:
+      type: object
+      required: [draft]
+      properties:
+        draft:
+          $ref: '#/components/schemas/QuestPlanDraft'
+
+    ConfirmQuestPlanResponse:
+      type: object
+      required: [goal, milestone, quests]
+      properties:
+        goal:
+          $ref: '#/components/schemas/MilestoneGoalSummary'
+        milestone:
+          $ref: '#/components/schemas/Milestone'
+        quests:
+          type: array
+          items:
+            $ref: '#/components/schemas/Quest'
+
+    RescheduleMove:
+      type: object
+      required: [quest_id, title, from_date, to_date, estimated_minutes]
+      properties:
+        quest_id:
+          type: integer
+          minimum: 1
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        from_date:
+          $ref: '#/components/schemas/IsoDate'
+        to_date:
+          $ref: '#/components/schemas/IsoDate'
+        estimated_minutes:
+          type: integer
+          minimum: 1
+          maximum: 120
+          nullable: true
+
+    RescheduleDraft:
+      type: object
+      required: [moves, mochi_message]
+      properties:
+        moves:
+          type: array
+          minItems: 1
+          maxItems: 40
+          items:
+            $ref: '#/components/schemas/RescheduleMove'
+        mochi_message:
+          type: string
+          minLength: 1
+          maxLength: 1000
+
+    RescheduleResponse:
+      type: object
+      required: [draft, overdue, goal, milestone, applied]
+      properties:
+        draft:
+          allOf:
+            - $ref: '#/components/schemas/RescheduleDraft'
+          nullable: true
+        overdue:
+          type: array
+          items:
+            $ref: '#/components/schemas/Quest'
+        goal:
+          allOf:
+            - $ref: '#/components/schemas/MilestoneGoalSummary'
+          nullable: true
+        milestone:
+          allOf:
+            - $ref: '#/components/schemas/Milestone'
+          nullable: true
+        applied:
+          type: boolean
+
+    ConfirmRescheduleBody:
+      type: object
+      required: [draft]
+      properties:
+        draft:
+          $ref: '#/components/schemas/RescheduleDraft'
+
+    ConfirmRescheduleResponse:
+      type: object
+      required: [goal, milestone, quests, mochi_message]
+      properties:
+        goal:
+          $ref: '#/components/schemas/MilestoneGoalSummary'
+        milestone:
+          $ref: '#/components/schemas/Milestone'
+        quests:
+          type: array
+          items:
+            $ref: '#/components/schemas/Quest'
+        mochi_message:
+          type: string
+
+    WeekPlanDraft:
+      type: object
+      required: [week_start, week_end, quests, mochi_message]
+      properties:
+        week_start:
+          $ref: '#/components/schemas/IsoDate'
+        week_end:
+          $ref: '#/components/schemas/IsoDate'
+        quests:
+          type: array
+          minItems: 1
+          maxItems: 21
+          items:
+            $ref: '#/components/schemas/QuestDraftItem'
+        mochi_message:
+          type: string
+          minLength: 1
+          maxLength: 1000
+
+    WeekPlanResponse:
+      type: object
+      required: [draft, existing_quests, goal, milestone, applied]
+      properties:
+        draft:
+          allOf:
+            - $ref: '#/components/schemas/WeekPlanDraft'
+          nullable: true
+        existing_quests:
+          type: array
+          items:
+            $ref: '#/components/schemas/Quest'
+        goal:
+          allOf:
+            - $ref: '#/components/schemas/MilestoneGoalSummary'
+          nullable: true
+        milestone:
+          allOf:
+            - $ref: '#/components/schemas/Milestone'
+          nullable: true
+        applied:
+          type: boolean
+
+    ConfirmWeekPlanBody:
+      type: object
+      required: [draft]
+      properties:
+        draft:
+          $ref: '#/components/schemas/WeekPlanDraft'
+
+    ConfirmWeekPlanResponse:
+      type: object
+      required: [goal, milestone, quests, mochi_message]
+      properties:
+        goal:
+          $ref: '#/components/schemas/MilestoneGoalSummary'
+        milestone:
+          $ref: '#/components/schemas/Milestone'
+        quests:
+          type: array
+          items:
+            $ref: '#/components/schemas/Quest'
+        mochi_message:
+          type: string
+
+    ChatRole:
+      type: string
+      enum: [user, mochi]
+
+    InterviewTopic:
+      type: string
+      enum: [done_definition, starting_point, time_budget, deadline]
+
+    InterviewStatus:
+      type: string
+      enum: [in_progress, complete]
+
+    InterviewAnswers:
+      type: object
+      required: [done_definition, starting_point, time_budget, deadline]
+      properties:
+        done_definition:
+          type: string
+          nullable: true
+        starting_point:
+          type: string
+          nullable: true
+        time_budget:
+          type: string
+          nullable: true
+        deadline:
+          type: string
+          nullable: true
+
+    InterviewState:
+      type: object
+      required: [status, current_topic, answered_topics, answers]
+      properties:
+        status:
+          $ref: '#/components/schemas/InterviewStatus'
+        current_topic:
+          allOf:
+            - $ref: '#/components/schemas/InterviewTopic'
+          nullable: true
+        answered_topics:
+          type: array
+          items:
+            $ref: '#/components/schemas/InterviewTopic'
+        answers:
+          $ref: '#/components/schemas/InterviewAnswers'
+
+    ChatMessage:
+      type: object
+      required: [id, user_id, goal_id, role, content, created_at]
+      properties:
+        id:
+          type: integer
+          minimum: 1
+        user_id:
+          type: integer
+          minimum: 1
+        goal_id:
+          type: integer
+          minimum: 1
+          nullable: true
+        role:
+          $ref: '#/components/schemas/ChatRole'
+        content:
+          type: string
+          minLength: 1
+        created_at:
+          $ref: '#/components/schemas/IsoDateTime'
+
+    ChatHistoryResponse:
+      type: object
+      required: [messages, interview]
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+        interview:
+          $ref: '#/components/schemas/InterviewState'
+
+    SendChatMessageBody:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 2000
+
+    SendChatMessageResponse:
+      type: object
+      required: [user_message, mochi_message, interview]
+      properties:
+        user_message:
+          $ref: '#/components/schemas/ChatMessage'
+        mochi_message:
+          $ref: '#/components/schemas/ChatMessage'
+        interview:
+          $ref: '#/components/schemas/InterviewState'
+
+    DiaryNote:
+      type: object
+      required: [id, goal_id, note_date, content, updated_at]
+      properties:
+        id:
+          type: integer
+          minimum: 1
+          nullable: true
+        goal_id:
+          type: integer
+          minimum: 1
+          nullable: true
+        note_date:
+          $ref: '#/components/schemas/IsoDate'
+        content:
+          type: string
+          maxLength: 2000
+        updated_at:
+          allOf:
+            - $ref: '#/components/schemas/IsoDateTime'
+          nullable: true
+
+    UpsertDiaryNoteBody:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          maxLength: 2000
+        local_date:
+          $ref: '#/components/schemas/IsoDate'
+
+security:
+  - bearerAuth: []
