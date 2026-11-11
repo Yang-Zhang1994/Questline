@@ -25,7 +25,12 @@ import {
   type InterviewAiResponse,
   InterviewAiResponseSchema,
 } from './interviewTypes.js';
-import { ensureNoQuestion, ensureOneQuestion, parseModelJson } from './parse.js';
+import {
+  ensureNoQuestion,
+  ensureOneQuestion,
+  parseModelJson,
+  parseTimeBudgetAnswer,
+} from './parse.js';
 
 /** Roles Anthropic Messages API understands for conversation turns. */
 export type ClaudeChatRole = 'user' | 'assistant';
@@ -84,8 +89,12 @@ function extractText(content: Anthropic.Messages.ContentBlock[]): string {
   return parts.join('\n\n').trim();
 }
 
-function looksVague(answer: string): boolean {
+function looksVague(answer: string, topic?: InterviewTopic): boolean {
   const trimmed = answer.trim();
+  // Compact time answers (`10h/week`, `100`, `skip`) are valid for time_budget.
+  if (topic === 'time_budget' && parseTimeBudgetAnswer(trimmed)) {
+    return false;
+  }
   if (trimmed.length < 12) return true;
   const words = trimmed.split(/\s+/).filter(Boolean);
   if (words.length < 3) return true;
@@ -100,6 +109,18 @@ function looksVague(answer: string): boolean {
   ]);
   if (vagueExact.has(trimmed.toLowerCase())) return true;
   return false;
+}
+
+/** Deterministic accept when the time-budget answer parses, even if Claude said vague. */
+function acceptedTimeBudgetReply(
+  input: InterviewAiRequest,
+  parsed: NonNullable<ReturnType<typeof parseTimeBudgetAnswer>>,
+): InterviewAiResponse {
+  return {
+    evaluation: 'accepted',
+    extracted_answer: parsed.display,
+    mochi_message: buildAcceptedReply(input.current_topic, input.next_topic, parsed.display),
+  };
 }
 
 function buildInterviewUserPayload(input: InterviewAiRequest): string {
@@ -124,6 +145,10 @@ function normalizeInterviewResponse(
   input: InterviewAiRequest,
 ): InterviewAiResponse {
   if (raw.evaluation === 'vague') {
+    if (input.current_topic === 'time_budget') {
+      const parsed = parseTimeBudgetAnswer(input.user_answer);
+      if (parsed) return acceptedTimeBudgetReply(input, parsed);
+    }
     return {
       evaluation: 'vague',
       extracted_answer: null,
@@ -131,7 +156,12 @@ function normalizeInterviewResponse(
     };
   }
 
-  const extracted = (raw.extracted_answer ?? input.user_answer).trim();
+  let extracted = (raw.extracted_answer ?? input.user_answer).trim();
+  if (input.current_topic === 'time_budget') {
+    const parsed = parseTimeBudgetAnswer(input.user_answer);
+    if (parsed) extracted = parsed.display;
+  }
+
   if (!input.next_topic) {
     return {
       evaluation: 'accepted',
@@ -163,7 +193,11 @@ export function createEchoChatClient(): ChatAiClient {
     },
 
     async evaluateInterviewAnswer(input: InterviewAiRequest): Promise<InterviewAiResponse> {
-      if (looksVague(input.user_answer)) {
+      if (input.current_topic === 'time_budget') {
+        const parsed = parseTimeBudgetAnswer(input.user_answer);
+        if (parsed) return acceptedTimeBudgetReply(input, parsed);
+      }
+      if (looksVague(input.user_answer, input.current_topic)) {
         return {
           evaluation: 'vague',
           extracted_answer: null,
