@@ -3,6 +3,7 @@ import { useAuth } from './hooks/useAuth';
 import { LoginPage } from './pages/LoginPage';
 import { TalkPage } from './pages/TalkPage';
 import { TodayPage } from './pages/TodayPage';
+import { MapPage } from './pages/MapPage';
 
 export function App() {
   const auth = useAuth();
@@ -17,6 +18,16 @@ export function App() {
               <TodayPage userEmail={auth.user?.email ?? null} onLogout={auth.logout} />
             ) : (
               <LoginPage onLogin={auth.login} onRegister={auth.register} />
+            )
+          }
+        />
+        <Route
+          path="/map"
+          element={
+            auth.isAuthenticated ? (
+              <MapPage userEmail={auth.user?.email ?? null} onLogout={auth.logout} />
+            ) : (
+              <Navigate to="/" replace />
             )
           }
         />
