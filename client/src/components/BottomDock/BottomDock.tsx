@@ -17,13 +17,9 @@ export function BottomDock() {
       <NavLink to="/" end className={linkClass}>
         ☀️ Today
       </NavLink>
-      <span
-        className="cursor-default rounded-pill bg-transparent px-[1.1rem] py-[0.65rem] font-bold text-blue-ink/50"
-        aria-disabled="true"
-        title="Map arrives in a later issue"
-      >
+      <NavLink to="/map" className={linkClass}>
         🗺️ Map
-      </span>
+      </NavLink>
       <NavLink to="/talk" className={linkClass}>
         💌 Talk
       </NavLink>

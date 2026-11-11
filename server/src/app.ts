@@ -8,11 +8,14 @@ import type { Db } from './db/connection.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { createChatRepository } from './repositories/chatRepository.js';
 import { createInterviewRepository } from './repositories/interviewRepository.js';
+import { createRoadmapRepository } from './repositories/roadmapRepository.js';
 import { createUserRepository } from './repositories/userRepository.js';
 import { createAuthRouter } from './routes/auth.js';
 import { createChatRouter } from './routes/chat.js';
+import { createRoadmapRouter } from './routes/roadmap.js';
 import { createAuthService } from './services/authService.js';
 import { createChatService } from './services/chatService.js';
+import { createRoadmapService } from './services/roadmapService.js';
 
 export type CreateAppOptions = {
   db: Db;
@@ -26,7 +29,10 @@ export function createApp(options: CreateAppOptions) {
   const users = createUserRepository(options.db);
   const chat = createChatRepository(options.db);
   const interviews = createInterviewRepository(options.db);
+  const roadmap = createRoadmapRepository(options.db);
   const authService = createAuthService({ users });
+  const roadmapService = createRoadmapService({ roadmap });
+
   // Lazy default so auth/chat tests can createApp without ANTHROPIC_* env.
   const ai: ChatAiClient =
     options.ai ??
@@ -59,6 +65,7 @@ export function createApp(options: CreateAppOptions) {
   app.use('/api/auth', createAuthRouter(authService));
   // /api/quests (Today + check-off) removed with Issues #8 / #9 revert — re-own later.
   app.use('/api/chat', createChatRouter(chatService));
+  app.use('/api/roadmap', createRoadmapRouter(roadmapService));
 
   app.use(errorHandler);
   return app;
