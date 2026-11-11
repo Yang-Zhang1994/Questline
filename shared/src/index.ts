@@ -68,6 +68,21 @@ export {
 } from './schemas/interview.js';
 
 export {
+  ConfirmGoalBodySchema,
+  ConfirmGoalResponseSchema,
+  GoalDraftResponseSchema,
+  GoalDraftSchema,
+  GoalSchema,
+  ReviseGoalDraftBodySchema,
+  type ConfirmGoalBody,
+  type ConfirmGoalResponse,
+  type Goal,
+  type GoalDraft,
+  type GoalDraftResponse,
+  type ReviseGoalDraftBody,
+} from './schemas/goal.js';
+
+export {
   ConfirmMilestonesBodySchema,
   ConfirmMilestonesResponseSchema,
   MAX_MILESTONES,

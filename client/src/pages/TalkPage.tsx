@@ -20,6 +20,14 @@ export function TalkPage({ userEmail = null, onLogout }: TalkPageProps) {
     send,
     restart,
     appendMessages,
+    goalDraft,
+    confirmedGoal,
+    goalLoading,
+    goalBusy,
+    goalError,
+    acceptGoal,
+    reviseGoal,
+    returnToInterview,
   } = useChat();
   const milestonePlan = useMilestonePlan({ onChatMessagesAdded: appendMessages });
 
@@ -66,10 +74,24 @@ export function TalkPage({ userEmail = null, onLogout }: TalkPageProps) {
         onRestart={() => {
           void restart();
         }}
+        goalDraft={goalDraft}
+        confirmedGoal={confirmedGoal}
+        goalLoading={goalLoading}
+        goalBusy={goalBusy}
+        goalError={goalError}
+        onAcceptGoal={() => {
+          void acceptGoal();
+        }}
+        onReviseGoal={(feedback) => {
+          void reviseGoal(feedback);
+        }}
+        onReturnToInterview={() => {
+          void returnToInterview();
+        }}
       />
 
       <MilestonePlanEditor
-        goal={milestonePlan.goal}
+        goal={milestonePlan.goal ?? confirmedGoal}
         draftMilestones={milestonePlan.draftMilestones}
         savedMilestones={milestonePlan.savedMilestones}
         proposing={milestonePlan.proposing}

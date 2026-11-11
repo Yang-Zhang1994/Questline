@@ -2,10 +2,13 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import {
   INTERVIEW_TOPICS,
   type ChatMessage,
+  type Goal,
+  type GoalDraft,
   type InterviewState,
   type InterviewTopic,
 } from '@questline/shared';
 import { ChatBubble } from '../ChatBubble/ChatBubble';
+import { GoalConfirmCard } from '../GoalConfirmCard/GoalConfirmCard';
 import { MochiAvatar } from '../MochiAvatar';
 
 const TOPIC_SHORT: Record<InterviewTopic, string> = {
@@ -24,6 +27,15 @@ export type ChatWindowProps = {
   error?: string | null;
   onSend: (content: string) => void | Promise<void>;
   onRestart?: () => void | Promise<void>;
+  /** Issue #4 — proposed goal after interview complete. */
+  goalDraft?: GoalDraft | null;
+  confirmedGoal?: Goal | null;
+  goalLoading?: boolean;
+  goalBusy?: boolean;
+  goalError?: string | null;
+  onAcceptGoal?: () => void | Promise<void>;
+  onReviseGoal?: (feedback?: string) => void | Promise<void>;
+  onReturnToInterview?: () => void | Promise<void>;
 };
 
 export function ChatWindow({
@@ -35,6 +47,14 @@ export function ChatWindow({
   error = null,
   onSend,
   onRestart,
+  goalDraft = null,
+  confirmedGoal = null,
+  goalLoading = false,
+  goalBusy = false,
+  goalError = null,
+  onAcceptGoal,
+  onReviseGoal,
+  onReturnToInterview,
 }: ChatWindowProps) {
   const [draft, setDraft] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
@@ -67,7 +87,10 @@ export function ChatWindow({
   }
 
   const answered = new Set(interview?.answered_topics ?? []);
-  const busy = sending || restarting;
+  const busy = sending || restarting || goalBusy;
+  const showGoalConfirm =
+    interview?.status === 'complete' &&
+    Boolean(onAcceptGoal && onReviseGoal && onReturnToInterview);
 
   return (
     <section
@@ -167,13 +190,23 @@ export function ChatWindow({
         </p>
       ) : null}
 
-      {interview?.status === 'complete' ? (
-        <p
-          className="m-0 border-t border-pink/20 bg-purple-pale px-4 py-2 text-center text-[0.88rem] text-ink"
-          data-testid="interview-complete-banner"
-        >
-          Interview complete — goal confirm arrives in the next step ♡
-        </p>
+      {showGoalConfirm ? (
+        <GoalConfirmCard
+          draft={goalDraft}
+          confirmedGoal={confirmedGoal}
+          loading={goalLoading}
+          busy={goalBusy || restarting}
+          error={goalError}
+          onAccept={() => {
+            void onAcceptGoal?.();
+          }}
+          onRevise={(feedback) => {
+            void onReviseGoal?.(feedback);
+          }}
+          onReturnToInterview={() => {
+            void onReturnToInterview?.();
+          }}
+        />
       ) : null}
 
       <form

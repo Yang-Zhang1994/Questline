@@ -6,6 +6,12 @@ import {
   type MilestonePlanAiResponse,
 } from '@questline/shared';
 import {
+  type GoalDraft,
+  type ProposeGoalDraftRequest,
+  type ReviseGoalDraftRequest,
+  GoalDraftSchema,
+} from './goalDraftTypes.js';
+import {
   INTERVIEW_COMPLETE_STUB,
   MOCHI_INTERVIEW_SYSTEM_PROMPT,
   TOPIC_LABELS,
@@ -13,6 +19,11 @@ import {
   followUpForTopic,
   questionForTopic,
 } from './prompts/mochiInterview.js';
+import {
+  MOCHI_GOAL_DRAFT_SYSTEM_PROMPT,
+  buildEchoGoalDraft,
+  parseTimeBudgetMinutes,
+} from './prompts/mochiGoalDraft.js';
 import { MOCHI_CHAT_SYSTEM_PROMPT } from './prompts/mochiChat.js';
 import {
   MOCHI_MILESTONES_SYSTEM_PROMPT,
@@ -25,7 +36,13 @@ import {
   type InterviewAiResponse,
   InterviewAiResponseSchema,
 } from './interviewTypes.js';
-import { ensureNoQuestion, ensureOneQuestion, parseModelJson, z } from './parse.js';
+import {
+  ensureNoQuestion,
+  ensureOneQuestion,
+  parseModelJson,
+  parseTimeBudgetAnswer,
+  z,
+} from './parse.js';
 
 /** Roles Anthropic Messages API understands for conversation turns. */
 export type ClaudeChatRole = 'user' | 'assistant';
@@ -42,8 +59,24 @@ export type ClaudeChatTurn = {
 export type ChatAiClient = {
   completeChat(messages: ClaudeChatTurn[]): Promise<string>;
   evaluateInterviewAnswer(input: InterviewAiRequest): Promise<InterviewAiResponse>;
+  proposeGoalDraft(input: ProposeGoalDraftRequest): Promise<GoalDraft>;
+  reviseGoalDraft(input: ReviseGoalDraftRequest): Promise<GoalDraft>;
   proposeMilestones?(input: MilestonePlanAiRequest): Promise<MilestonePlanAiResponse>;
 };
+
+function normalizeGoalDraft(raw: GoalDraft, answers: ProposeGoalDraftRequest['answers']): GoalDraft {
+  return {
+    title: raw.title.trim(),
+    done_definition: raw.done_definition.trim() || (answers.done_definition ?? raw.title).trim(),
+    starting_point: raw.starting_point.trim() || (answers.starting_point ?? 'where I am today').trim(),
+    time_budget_minutes_per_day:
+      raw.time_budget_minutes_per_day > 0
+        ? raw.time_budget_minutes_per_day
+        : parseTimeBudgetMinutes(answers.time_budget),
+    deadline: raw.deadline.trim() || (answers.deadline ?? 'within a year').trim(),
+    mochi_message: ensureNoQuestion(raw.mochi_message),
+  };
+}
 
 export type CreateClaudeClientOptions = {
   apiKey?: string;
@@ -69,8 +102,12 @@ function extractText(content: Anthropic.Messages.ContentBlock[]): string {
   return parts.join('\n\n').trim();
 }
 
-function looksVague(answer: string): boolean {
+function looksVague(answer: string, topic?: InterviewTopic): boolean {
   const trimmed = answer.trim();
+  // Compact time answers (`10h/week`, `100`, `skip`) are valid for time_budget.
+  if (topic === 'time_budget' && parseTimeBudgetAnswer(trimmed)) {
+    return false;
+  }
   if (trimmed.length < 12) return true;
   const words = trimmed.split(/\s+/).filter(Boolean);
   if (words.length < 3) return true;
@@ -85,6 +122,18 @@ function looksVague(answer: string): boolean {
   ]);
   if (vagueExact.has(trimmed.toLowerCase())) return true;
   return false;
+}
+
+/** Deterministic accept when the time-budget answer parses, even if Claude said vague. */
+function acceptedTimeBudgetReply(
+  input: InterviewAiRequest,
+  parsed: NonNullable<ReturnType<typeof parseTimeBudgetAnswer>>,
+): InterviewAiResponse {
+  return {
+    evaluation: 'accepted',
+    extracted_answer: parsed.display,
+    mochi_message: buildAcceptedReply(input.current_topic, input.next_topic, parsed.display),
+  };
 }
 
 function buildInterviewUserPayload(input: InterviewAiRequest): string {
@@ -109,6 +158,10 @@ function normalizeInterviewResponse(
   input: InterviewAiRequest,
 ): InterviewAiResponse {
   if (raw.evaluation === 'vague') {
+    if (input.current_topic === 'time_budget') {
+      const parsed = parseTimeBudgetAnswer(input.user_answer);
+      if (parsed) return acceptedTimeBudgetReply(input, parsed);
+    }
     return {
       evaluation: 'vague',
       extracted_answer: null,
@@ -116,7 +169,12 @@ function normalizeInterviewResponse(
     };
   }
 
-  const extracted = (raw.extracted_answer ?? input.user_answer).trim();
+  let extracted = (raw.extracted_answer ?? input.user_answer).trim();
+  if (input.current_topic === 'time_budget') {
+    const parsed = parseTimeBudgetAnswer(input.user_answer);
+    if (parsed) extracted = parsed.display;
+  }
+
   if (!input.next_topic) {
     return {
       evaluation: 'accepted',
@@ -148,7 +206,11 @@ export function createEchoChatClient(): ChatAiClient {
     },
 
     async evaluateInterviewAnswer(input: InterviewAiRequest): Promise<InterviewAiResponse> {
-      if (looksVague(input.user_answer)) {
+      if (input.current_topic === 'time_budget') {
+        const parsed = parseTimeBudgetAnswer(input.user_answer);
+        if (parsed) return acceptedTimeBudgetReply(input, parsed);
+      }
+      if (looksVague(input.user_answer, input.current_topic)) {
         return {
           evaluation: 'vague',
           extracted_answer: null,
@@ -161,6 +223,14 @@ export function createEchoChatClient(): ChatAiClient {
         extracted_answer: extracted,
         mochi_message: buildAcceptedReply(input.current_topic, input.next_topic, extracted),
       };
+    },
+
+    async proposeGoalDraft(input: ProposeGoalDraftRequest): Promise<GoalDraft> {
+      return buildEchoGoalDraft(input.answers);
+    },
+
+    async reviseGoalDraft(input: ReviseGoalDraftRequest): Promise<GoalDraft> {
+      return buildEchoGoalDraft(input.answers, input.feedback);
     },
 
     async proposeMilestones(input: MilestonePlanAiRequest): Promise<MilestonePlanAiResponse> {
@@ -203,6 +273,31 @@ export function createClaudeClient(options: CreateClaudeClientOptions = {}): Cha
     return text;
   }
 
+  async function draftOnce(
+    userContent: string,
+    history: ClaudeChatTurn[] = [],
+  ): Promise<GoalDraft | null> {
+    const messages: ClaudeChatTurn[] = [
+      ...history,
+      { role: 'user', content: userContent },
+    ];
+    const first = await completeOnce(MOCHI_GOAL_DRAFT_SYSTEM_PROMPT, messages);
+    let parsed = parseModelJson(first, GoalDraftSchema);
+    if (!parsed) {
+      const retry = await completeOnce(MOCHI_GOAL_DRAFT_SYSTEM_PROMPT, [
+        ...messages,
+        { role: 'assistant', content: first },
+        {
+          role: 'user',
+          content:
+            'Your previous reply was not valid JSON matching the schema. Reply again with ONLY the JSON object.',
+        },
+      ]);
+      parsed = parseModelJson(retry, GoalDraftSchema);
+    }
+    return parsed;
+  }
+
   return {
     async completeChat(messages: ClaudeChatTurn[]): Promise<string> {
       return completeOnce(MOCHI_CHAT_SYSTEM_PROMPT, messages);
@@ -236,6 +331,38 @@ export function createClaudeClient(options: CreateClaudeClientOptions = {}): Cha
         throw new Error('Claude interview reply failed schema validation');
       }
       return normalizeInterviewResponse(parsed, input);
+    },
+
+    async proposeGoalDraft(input: ProposeGoalDraftRequest): Promise<GoalDraft> {
+      const payload = JSON.stringify({ answers: input.answers }, null, 2);
+      const parsed = await draftOnce(
+        `Propose one measurable goal from these interview answers. Reply with JSON only.\n${payload}`,
+        input.history,
+      );
+      if (!parsed) {
+        throw new Error('Claude goal draft failed schema validation');
+      }
+      return normalizeGoalDraft(parsed, input.answers);
+    },
+
+    async reviseGoalDraft(input: ReviseGoalDraftRequest): Promise<GoalDraft> {
+      const payload = JSON.stringify(
+        {
+          answers: input.answers,
+          previous_draft: input.previous,
+          feedback: input.feedback ?? null,
+        },
+        null,
+        2,
+      );
+      const parsed = await draftOnce(
+        `Revise this goal draft using the interview answers and feedback. Reply with JSON only.\n${payload}`,
+        input.history,
+      );
+      if (!parsed) {
+        throw new Error('Claude goal revise failed schema validation');
+      }
+      return normalizeGoalDraft(parsed, input.answers);
     },
 
     async proposeMilestones(input: MilestonePlanAiRequest): Promise<MilestonePlanAiResponse> {
@@ -286,6 +413,8 @@ export function createTemplateInterviewClient(
   const echo = createEchoChatClient();
   return {
     completeChat: echo.completeChat,
+    proposeGoalDraft: echo.proposeGoalDraft,
+    reviseGoalDraft: echo.reviseGoalDraft,
     proposeMilestones: echo.proposeMilestones,
     async evaluateInterviewAnswer(input) {
       const forced = decisions[i++];

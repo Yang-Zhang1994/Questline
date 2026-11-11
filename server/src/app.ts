@@ -7,16 +7,19 @@ import { systemClock } from './clock.js';
 import type { Db } from './db/connection.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { createChatRepository } from './repositories/chatRepository.js';
+import { createGoalRepository } from './repositories/goalRepository.js';
 import { createInterviewRepository } from './repositories/interviewRepository.js';
 import { createMilestoneRepository } from './repositories/milestoneRepository.js';
 import { createRoadmapRepository } from './repositories/roadmapRepository.js';
 import { createUserRepository } from './repositories/userRepository.js';
 import { createAuthRouter } from './routes/auth.js';
 import { createChatRouter } from './routes/chat.js';
+import { createGoalsRouter } from './routes/goals.js';
 import { createMilestonesRouter } from './routes/milestones.js';
 import { createRoadmapRouter } from './routes/roadmap.js';
 import { createAuthService } from './services/authService.js';
 import { createChatService } from './services/chatService.js';
+import { createGoalService } from './services/goalService.js';
 import { createMilestoneService } from './services/milestoneService.js';
 import { createRoadmapService } from './services/roadmapService.js';
 
@@ -34,6 +37,7 @@ export function createApp(options: CreateAppOptions) {
   const interviews = createInterviewRepository(options.db);
   const milestones = createMilestoneRepository(options.db);
   const roadmap = createRoadmapRepository(options.db);
+  const goals = createGoalRepository(options.db);
   const authService = createAuthService({ users });
   const roadmapService = createRoadmapService({ roadmap });
 
@@ -51,6 +55,14 @@ export function createApp(options: CreateAppOptions) {
           cached ??= createClaudeClient();
           return cached.evaluateInterviewAnswer(input);
         },
+        async proposeGoalDraft(input) {
+          cached ??= createClaudeClient();
+          return cached.proposeGoalDraft(input);
+        },
+        async reviseGoalDraft(input) {
+          cached ??= createClaudeClient();
+          return cached.reviseGoalDraft(input);
+        },
         async proposeMilestones(input) {
           cached ??= createClaudeClient();
           if (!cached.proposeMilestones) {
@@ -61,6 +73,7 @@ export function createApp(options: CreateAppOptions) {
       };
     })();
   const chatService = createChatService({ chat, interviews, ai, clock });
+  const goalService = createGoalService({ goals, interviews, ai, clock });
   const milestoneService = createMilestoneService({ milestones, chat, ai, clock });
 
   const app = express();
@@ -79,6 +92,7 @@ export function createApp(options: CreateAppOptions) {
   app.use('/api/chat', createChatRouter(chatService));
   app.use('/api/milestones', createMilestonesRouter(milestoneService));
   app.use('/api/roadmap', createRoadmapRouter(roadmapService));
+  app.use('/api/goals', createGoalsRouter(goalService));
 
   app.use(errorHandler);
   return app;

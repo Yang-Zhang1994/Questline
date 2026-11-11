@@ -74,6 +74,8 @@ describe('GET/POST /api/milestones (Issue #5)', () => {
       ai: ai ?? {
         completeChat: vi.fn(async () => 'Chat reply ♡'),
         evaluateInterviewAnswer: vi.fn(),
+        proposeGoalDraft: vi.fn(),
+        reviseGoalDraft: vi.fn(),
         proposeMilestones,
       },
     });

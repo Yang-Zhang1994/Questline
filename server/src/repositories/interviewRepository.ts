@@ -1,5 +1,7 @@
 import {
+  GoalDraftSchema,
   INTERVIEW_TOPICS,
+  type GoalDraft,
   type InterviewAnswers,
   type InterviewState,
   type InterviewStatus,
@@ -17,6 +19,7 @@ type InterviewRow = {
   starting_point: string | null;
   time_budget: string | null;
   deadline: string | null;
+  goal_draft: unknown | null;
   created_at: Date | string;
   updated_at: Date | string;
 };
@@ -27,9 +30,16 @@ export type InterviewRecord = {
   status: InterviewStatus;
   current_topic: InterviewTopic;
   answers: InterviewAnswers;
+  goal_draft: GoalDraft | null;
   created_at: string;
   updated_at: string;
 };
+
+function parseGoalDraft(value: unknown): GoalDraft | null {
+  if (value == null) return null;
+  const parsed = GoalDraftSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
 
 function mapCreatedAt(value: Date | string): string {
   if (value instanceof Date) return toIsoDateTime(value);
@@ -54,6 +64,7 @@ function mapRecord(row: InterviewRow): InterviewRecord {
     status: row.status,
     current_topic: row.current_topic,
     answers: answersFromRow(row),
+    goal_draft: parseGoalDraft(row.goal_draft),
     created_at: mapCreatedAt(row.created_at),
     updated_at: mapCreatedAt(row.updated_at),
   };
@@ -79,7 +90,7 @@ export function createInterviewRepository(db: Db) {
       const result = await db.query<InterviewRow>(
         `SELECT id, user_id, status, current_topic,
                 done_definition, starting_point, time_budget, deadline,
-                created_at, updated_at
+                goal_draft, created_at, updated_at
          FROM goal_interviews
          WHERE user_id = $1`,
         [userId],
@@ -98,7 +109,7 @@ export function createInterviewRepository(db: Db) {
          ON CONFLICT (user_id) DO UPDATE SET user_id = EXCLUDED.user_id
          RETURNING id, user_id, status, current_topic,
                    done_definition, starting_point, time_budget, deadline,
-                   created_at, updated_at`,
+                   goal_draft, created_at, updated_at`,
         [userId],
       );
       return mapRecord(result.rows[0]);
@@ -125,7 +136,7 @@ export function createInterviewRepository(db: Db) {
          WHERE user_id = $1
          RETURNING id, user_id, status, current_topic,
                    done_definition, starting_point, time_budget, deadline,
-                   created_at, updated_at`,
+                   goal_draft, created_at, updated_at`,
         [
           userId,
           patch.status,
@@ -140,6 +151,46 @@ export function createInterviewRepository(db: Db) {
       return mapRecord(result.rows[0]);
     },
 
+    async saveGoalDraft(
+      userId: number,
+      draft: GoalDraft | null,
+      updatedAt: string,
+    ): Promise<InterviewRecord> {
+      await this.ensureForUser(userId);
+      const result = await db.query<InterviewRow>(
+        `UPDATE goal_interviews
+         SET goal_draft = $2::jsonb,
+             updated_at = $3
+         WHERE user_id = $1
+         RETURNING id, user_id, status, current_topic,
+                   done_definition, starting_point, time_budget, deadline,
+                   goal_draft, created_at, updated_at`,
+        [userId, draft ? JSON.stringify(draft) : null, updatedAt],
+      );
+      return mapRecord(result.rows[0]);
+    },
+
+    /**
+     * Return to the interview after Revise: keep answers, clear draft, reopen topics.
+     * User can tweak answers with Mochi, then complete again for a fresh proposal.
+     */
+    async reopenForRevise(userId: number, updatedAt: string): Promise<InterviewRecord> {
+      await this.ensureForUser(userId);
+      const result = await db.query<InterviewRow>(
+        `UPDATE goal_interviews
+         SET status = 'in_progress',
+             current_topic = 'done_definition',
+             goal_draft = NULL,
+             updated_at = $2
+         WHERE user_id = $1
+         RETURNING id, user_id, status, current_topic,
+                   done_definition, starting_point, time_budget, deadline,
+                   goal_draft, created_at, updated_at`,
+        [userId, updatedAt],
+      );
+      return mapRecord(result.rows[0]);
+    },
+
     async resetForUser(userId: number, updatedAt: string): Promise<InterviewRecord> {
       await this.ensureForUser(userId);
       const result = await db.query<InterviewRow>(
@@ -150,11 +201,12 @@ export function createInterviewRepository(db: Db) {
              starting_point = NULL,
              time_budget = NULL,
              deadline = NULL,
+             goal_draft = NULL,
              updated_at = $2
          WHERE user_id = $1
          RETURNING id, user_id, status, current_topic,
                    done_definition, starting_point, time_budget, deadline,
-                   created_at, updated_at`,
+                   goal_draft, created_at, updated_at`,
         [userId, updatedAt],
       );
       return mapRecord(result.rows[0]);

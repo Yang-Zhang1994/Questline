@@ -147,6 +147,8 @@ describe('milestoneService (Issue #5)', () => {
     const ai: ChatAiClient = {
       completeChat: vi.fn(),
       evaluateInterviewAnswer: vi.fn(),
+      proposeGoalDraft: vi.fn(),
+      reviseGoalDraft: vi.fn(),
       proposeMilestones,
     };
 
@@ -188,6 +190,8 @@ describe('milestoneService (Issue #5)', () => {
     const ai: ChatAiClient = {
       completeChat: vi.fn(),
       evaluateInterviewAnswer: vi.fn(),
+      proposeGoalDraft: vi.fn(),
+      reviseGoalDraft: vi.fn(),
       proposeMilestones,
     };
 
@@ -217,6 +221,8 @@ describe('milestoneService (Issue #5)', () => {
     const tooFewAi: ChatAiClient = {
       completeChat: vi.fn(),
       evaluateInterviewAnswer: vi.fn(),
+      proposeGoalDraft: vi.fn(),
+      reviseGoalDraft: vi.fn(),
       proposeMilestones: vi.fn(async () => ({
         mochi_message: 'Only 2 stages',
         milestones: validDraft.slice(0, 2),
@@ -237,6 +243,8 @@ describe('milestoneService (Issue #5)', () => {
     const pastDeadlineAi: ChatAiClient = {
       completeChat: vi.fn(),
       evaluateInterviewAnswer: vi.fn(),
+      proposeGoalDraft: vi.fn(),
+      reviseGoalDraft: vi.fn(),
       proposeMilestones: vi.fn(async () => ({
         mochi_message: 'Stage past deadline',
         milestones: [
@@ -270,6 +278,8 @@ describe('milestoneService (Issue #5)', () => {
     const ai: ChatAiClient = {
       completeChat: vi.fn(),
       evaluateInterviewAnswer: vi.fn(),
+      proposeGoalDraft: vi.fn(),
+      reviseGoalDraft: vi.fn(),
     };
 
     const service = createMilestoneService({ milestones: milestonesRepo, chat, ai, clock });
@@ -293,6 +303,8 @@ describe('milestoneService (Issue #5)', () => {
     const ai: ChatAiClient = {
       completeChat: vi.fn(),
       evaluateInterviewAnswer: vi.fn(),
+      proposeGoalDraft: vi.fn(),
+      reviseGoalDraft: vi.fn(),
     };
 
     const service = createMilestoneService({ milestones: milestonesRepo, chat, ai, clock });
@@ -312,6 +324,8 @@ describe('milestoneService (Issue #5)', () => {
     const ai: ChatAiClient = {
       completeChat: vi.fn(),
       evaluateInterviewAnswer: vi.fn(),
+      proposeGoalDraft: vi.fn(),
+      reviseGoalDraft: vi.fn(),
     };
 
     const service = createMilestoneService({ milestones: milestonesRepo, chat, ai, clock });
@@ -369,6 +383,8 @@ describe('milestoneService (Issue #5)', () => {
     const ai: ChatAiClient = {
       completeChat: vi.fn(),
       evaluateInterviewAnswer: vi.fn(),
+      proposeGoalDraft: vi.fn(),
+      reviseGoalDraft: vi.fn(),
     };
 
     const service = createMilestoneService({ milestones: milestonesRepo, chat, ai, clock });
