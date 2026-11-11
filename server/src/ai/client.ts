@@ -1,5 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { InterviewTopic } from '@questline/shared';
+import {
+  MilestonePlanAiResponseSchema,
+  createMilestoneProposalListSchema,
+  type InterviewTopic,
+  type MilestonePlanAiResponse,
+} from '@questline/shared';
 import {
   INTERVIEW_COMPLETE_STUB,
   MOCHI_INTERVIEW_SYSTEM_PROMPT,
@@ -10,11 +15,17 @@ import {
 } from './prompts/mochiInterview.js';
 import { MOCHI_CHAT_SYSTEM_PROMPT } from './prompts/mochiChat.js';
 import {
+  MOCHI_MILESTONES_SYSTEM_PROMPT,
+  buildDefaultMilestoneProposal,
+  buildMilestoneUserPayload,
+  type MilestonePlanAiRequest,
+} from './prompts/mochiMilestones.js';
+import {
   type InterviewAiRequest,
   type InterviewAiResponse,
   InterviewAiResponseSchema,
 } from './interviewTypes.js';
-import { ensureNoQuestion, ensureOneQuestion, parseModelJson } from './parse.js';
+import { ensureNoQuestion, ensureOneQuestion, parseModelJson, z } from './parse.js';
 
 /** Roles Anthropic Messages API understands for conversation turns. */
 export type ClaudeChatRole = 'user' | 'assistant';
@@ -31,6 +42,7 @@ export type ClaudeChatTurn = {
 export type ChatAiClient = {
   completeChat(messages: ClaudeChatTurn[]): Promise<string>;
   evaluateInterviewAnswer(input: InterviewAiRequest): Promise<InterviewAiResponse>;
+  proposeMilestones?(input: MilestonePlanAiRequest): Promise<MilestonePlanAiResponse>;
 };
 
 export type CreateClaudeClientOptions = {
@@ -150,6 +162,10 @@ export function createEchoChatClient(): ChatAiClient {
         mochi_message: buildAcceptedReply(input.current_topic, input.next_topic, extracted),
       };
     },
+
+    async proposeMilestones(input: MilestonePlanAiRequest): Promise<MilestonePlanAiResponse> {
+      return buildDefaultMilestoneProposal(input);
+    },
   };
 }
 
@@ -165,10 +181,14 @@ export function createClaudeClient(options: CreateClaudeClientOptions = {}): Cha
   const anthropic = options.anthropic ?? new Anthropic({ apiKey: requireEnv('ANTHROPIC_API_KEY', apiKey) });
   const modelName = requireEnv('ANTHROPIC_MODEL', model);
 
-  async function completeOnce(system: string, messages: ClaudeChatTurn[]): Promise<string> {
+  async function completeOnce(
+    system: string,
+    messages: ClaudeChatTurn[],
+    maxTokens = 512,
+  ): Promise<string> {
     const response = await anthropic.messages.create({
       model: modelName,
-      max_tokens: 512,
+      max_tokens: maxTokens,
       system,
       messages: messages.map((m) => ({
         role: m.role,
@@ -217,6 +237,44 @@ export function createClaudeClient(options: CreateClaudeClientOptions = {}): Cha
       }
       return normalizeInterviewResponse(parsed, input);
     },
+
+    async proposeMilestones(input: MilestonePlanAiRequest): Promise<MilestonePlanAiResponse> {
+      const payload = buildMilestoneUserPayload(input);
+      const messages: ClaudeChatTurn[] = [
+        ...(input.history ?? []),
+        {
+          role: 'user',
+          content: `Propose or adjust the milestone plan and reply with JSON only.\n${payload}`,
+        },
+      ];
+
+      const schema = MilestonePlanAiResponseSchema.extend({
+        milestones: createMilestoneProposalListSchema(input.goal.deadline),
+      }) satisfies z.ZodType<MilestonePlanAiResponse>;
+
+      const first = await completeOnce(MOCHI_MILESTONES_SYSTEM_PROMPT, messages, 1024);
+      let parsed = parseModelJson(first, schema);
+      if (!parsed) {
+        const retry = await completeOnce(
+          MOCHI_MILESTONES_SYSTEM_PROMPT,
+          [
+            ...messages,
+            { role: 'assistant', content: first },
+            {
+              role: 'user',
+              content:
+                'Your previous reply was not valid JSON matching the milestone schema (3–7 ordered milestones with target_date before the goal deadline). Reply again with ONLY the JSON object.',
+            },
+          ],
+          1024,
+        );
+        parsed = parseModelJson(retry, schema);
+      }
+      if (!parsed) {
+        throw new Error('Claude milestone proposal failed schema validation');
+      }
+      return parsed;
+    },
   };
 }
 
@@ -228,6 +286,7 @@ export function createTemplateInterviewClient(
   const echo = createEchoChatClient();
   return {
     completeChat: echo.completeChat,
+    proposeMilestones: echo.proposeMilestones,
     async evaluateInterviewAnswer(input) {
       const forced = decisions[i++];
       if (forced === 'vague') {
@@ -250,4 +309,4 @@ export function createTemplateInterviewClient(
   };
 }
 
-export type { InterviewTopic };
+export type { InterviewTopic, MilestonePlanAiRequest, MilestonePlanAiResponse };

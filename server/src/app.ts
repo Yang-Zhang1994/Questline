@@ -8,13 +8,16 @@ import type { Db } from './db/connection.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { createChatRepository } from './repositories/chatRepository.js';
 import { createInterviewRepository } from './repositories/interviewRepository.js';
+import { createMilestoneRepository } from './repositories/milestoneRepository.js';
 import { createRoadmapRepository } from './repositories/roadmapRepository.js';
 import { createUserRepository } from './repositories/userRepository.js';
 import { createAuthRouter } from './routes/auth.js';
 import { createChatRouter } from './routes/chat.js';
+import { createMilestonesRouter } from './routes/milestones.js';
 import { createRoadmapRouter } from './routes/roadmap.js';
 import { createAuthService } from './services/authService.js';
 import { createChatService } from './services/chatService.js';
+import { createMilestoneService } from './services/milestoneService.js';
 import { createRoadmapService } from './services/roadmapService.js';
 
 export type CreateAppOptions = {
@@ -29,6 +32,7 @@ export function createApp(options: CreateAppOptions) {
   const users = createUserRepository(options.db);
   const chat = createChatRepository(options.db);
   const interviews = createInterviewRepository(options.db);
+  const milestones = createMilestoneRepository(options.db);
   const roadmap = createRoadmapRepository(options.db);
   const authService = createAuthService({ users });
   const roadmapService = createRoadmapService({ roadmap });
@@ -47,9 +51,17 @@ export function createApp(options: CreateAppOptions) {
           cached ??= createClaudeClient();
           return cached.evaluateInterviewAnswer(input);
         },
+        async proposeMilestones(input) {
+          cached ??= createClaudeClient();
+          if (!cached.proposeMilestones) {
+            throw new Error('Milestone proposal is not configured on AI client');
+          }
+          return cached.proposeMilestones(input);
+        },
       };
     })();
   const chatService = createChatService({ chat, interviews, ai, clock });
+  const milestoneService = createMilestoneService({ milestones, chat, ai, clock });
 
   const app = express();
   // express-rate-limit needs a stable IP behind proxies / Vitest.
@@ -65,6 +77,7 @@ export function createApp(options: CreateAppOptions) {
   app.use('/api/auth', createAuthRouter(authService));
   // /api/quests (Today + check-off) removed with Issues #8 / #9 revert — re-own later.
   app.use('/api/chat', createChatRouter(chatService));
+  app.use('/api/milestones', createMilestonesRouter(milestoneService));
   app.use('/api/roadmap', createRoadmapRouter(roadmapService));
 
   app.use(errorHandler);

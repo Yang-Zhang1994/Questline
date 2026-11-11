@@ -1,6 +1,8 @@
 import { ChatWindow } from '../components/ChatWindow/ChatWindow';
+import { MilestonePlanEditor } from '../components/MilestonePlanEditor/MilestonePlanEditor';
 import { BottomDock } from '../components/BottomDock/BottomDock';
 import { useChat } from '../hooks/useChat';
+import { useMilestonePlan } from '../hooks/useMilestonePlan';
 
 export type TalkPageProps = {
   userEmail?: string | null;
@@ -8,7 +10,18 @@ export type TalkPageProps = {
 };
 
 export function TalkPage({ userEmail = null, onLogout }: TalkPageProps) {
-  const { messages, interview, loading, sending, restarting, error, send, restart } = useChat();
+  const {
+    messages,
+    interview,
+    loading,
+    sending,
+    restarting,
+    error,
+    send,
+    restart,
+    appendMessages,
+  } = useChat();
+  const milestonePlan = useMilestonePlan({ onChatMessagesAdded: appendMessages });
 
   return (
     <div className="flex min-h-screen flex-col items-center px-4 pb-24 pt-6">
@@ -53,6 +66,19 @@ export function TalkPage({ userEmail = null, onLogout }: TalkPageProps) {
         onRestart={() => {
           void restart();
         }}
+      />
+
+      <MilestonePlanEditor
+        goal={milestonePlan.goal}
+        draftMilestones={milestonePlan.draftMilestones}
+        savedMilestones={milestonePlan.savedMilestones}
+        proposing={milestonePlan.proposing}
+        confirming={milestonePlan.confirming}
+        confirmed={milestonePlan.confirmed}
+        error={milestonePlan.error}
+        onPropose={milestonePlan.propose}
+        onAdjust={milestonePlan.adjust}
+        onConfirm={milestonePlan.confirm}
       />
 
       <BottomDock />

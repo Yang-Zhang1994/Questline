@@ -66,3 +66,25 @@ export {
   type InterviewStatus,
   type InterviewTopic,
 } from './schemas/interview.js';
+
+export {
+  ConfirmMilestonesBodySchema,
+  ConfirmMilestonesResponseSchema,
+  MAX_MILESTONES,
+  MIN_MILESTONES,
+  MilestonePlanAiResponseSchema,
+  MilestonePlanStateResponseSchema,
+  ProposeMilestonesBodySchema,
+  ProposeMilestonesResponseSchema,
+  ProposedMilestoneListSchema,
+  ProposedMilestoneSchema,
+  createMilestoneProposalListSchema,
+  type ConfirmMilestonesBody,
+  type ConfirmMilestonesResponse,
+  type MilestonePlanAiResponse,
+  type MilestonePlanStateResponse,
+  type ProposeMilestonesBody,
+  type ProposeMilestonesResponse,
+  type ProposedMilestone,
+  type ProposedMilestoneList,
+} from './schemas/milestonePlan.js';
