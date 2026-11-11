@@ -8,6 +8,8 @@ When this file and a GitHub Issue disagree, the Issue's acceptance criteria win;
 | Detail | Doc |
 | ------ | --- |
 | Product / user stories | [`docs/PRD.md`](docs/PRD.md) |
+| HTTP API (OpenAPI 3) | [`docs/openapi.yaml`](docs/openapi.yaml) |
+| Architecture + DB ER diagrams | [`docs/architecture.md`](docs/architecture.md) |
 | Schema, naming, Postgres | [`docs/data-model.md`](docs/data-model.md) |
 | UI look, components, flows, a11y | [`docs/design/README.md`](docs/design/README.md) |
 | TDD, coverage, CI | [`docs/tdd-and-ci.md`](docs/tdd-and-ci.md) |
