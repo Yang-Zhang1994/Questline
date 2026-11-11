@@ -1,5 +1,8 @@
 import { z } from 'zod';
 import { IsoDateTimeSchema } from './quest.js';
+import { GoalStatusSchema } from './roadmap.js';
+
+export type { GoalStatus } from './roadmap.js';
 
 /** Proposed / persisted measurable goal shape (Issue #4). */
 export const GoalDraftSchema = z.object({
@@ -13,10 +16,6 @@ export const GoalDraftSchema = z.object({
 });
 
 export type GoalDraft = z.infer<typeof GoalDraftSchema>;
-
-export const GoalStatusSchema = z.enum(['active', 'paused', 'completed', 'archived']);
-
-export type GoalStatus = z.infer<typeof GoalStatusSchema>;
 
 export const GoalSchema = z.object({
   id: z.number().int().positive(),

@@ -73,13 +73,11 @@ export {
   GoalDraftResponseSchema,
   GoalDraftSchema,
   GoalSchema,
-  GoalStatusSchema,
   ReviseGoalDraftBodySchema,
   type ConfirmGoalBody,
   type ConfirmGoalResponse,
   type Goal,
   type GoalDraft,
   type GoalDraftResponse,
-  type GoalStatus,
   type ReviseGoalDraftBody,
 } from './schemas/goal.js';
