@@ -8,7 +8,24 @@ export type TalkPageProps = {
 };
 
 export function TalkPage({ userEmail = null, onLogout }: TalkPageProps) {
-  const { messages, interview, loading, sending, restarting, error, send, restart } = useChat();
+  const {
+    messages,
+    interview,
+    loading,
+    sending,
+    restarting,
+    error,
+    send,
+    restart,
+    goalDraft,
+    confirmedGoal,
+    goalLoading,
+    goalBusy,
+    goalError,
+    acceptGoal,
+    reviseGoal,
+    returnToInterview,
+  } = useChat();
 
   return (
     <div className="flex min-h-screen flex-col items-center px-4 pb-24 pt-6">
@@ -52,6 +69,20 @@ export function TalkPage({ userEmail = null, onLogout }: TalkPageProps) {
         }}
         onRestart={() => {
           void restart();
+        }}
+        goalDraft={goalDraft}
+        confirmedGoal={confirmedGoal}
+        goalLoading={goalLoading}
+        goalBusy={goalBusy}
+        goalError={goalError}
+        onAcceptGoal={() => {
+          void acceptGoal();
+        }}
+        onReviseGoal={(feedback) => {
+          void reviseGoal(feedback);
+        }}
+        onReturnToInterview={() => {
+          void returnToInterview();
         }}
       />
 

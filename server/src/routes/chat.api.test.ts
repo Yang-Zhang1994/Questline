@@ -53,7 +53,12 @@ describe('GET/POST /api/chat interview (Issue #3)', () => {
     return createApp({
       db,
       clock,
-      ai: ai ?? { completeChat, evaluateInterviewAnswer },
+      ai: ai ?? {
+        completeChat,
+        evaluateInterviewAnswer,
+        proposeGoalDraft: vi.fn(),
+        reviseGoalDraft: vi.fn(),
+      },
     });
   }
 
@@ -204,6 +209,8 @@ describe('GET/POST /api/chat interview (Issue #3)', () => {
   it('returns friendly AI_UNAVAILABLE when the interview mock throws', async () => {
     const app = buildApp({
       completeChat: vi.fn(),
+      proposeGoalDraft: vi.fn(),
+      reviseGoalDraft: vi.fn(),
       evaluateInterviewAnswer: vi.fn(async () => {
         throw new Error('network');
       }),

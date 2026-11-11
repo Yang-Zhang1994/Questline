@@ -98,6 +98,7 @@ describe('chatService interview (Issue #3)', () => {
             status: 'in_progress',
             current_topic: 'done_definition',
             answers: emptyAnswers(),
+            goal_draft: null,
             created_at: '2026-11-09T15:00:00Z',
             updated_at: '2026-11-09T15:00:00Z',
           };
@@ -119,6 +120,7 @@ describe('chatService interview (Issue #3)', () => {
           status: patch.status,
           current_topic: patch.current_topic,
           answers: patch.answers,
+          goal_draft: record?.goal_draft ?? null,
           created_at: record?.created_at ?? patch.updatedAt,
           updated_at: patch.updatedAt,
         };
@@ -131,7 +133,26 @@ describe('chatService interview (Issue #3)', () => {
           status: 'in_progress',
           current_topic: 'done_definition',
           answers: emptyAnswers(),
+          goal_draft: null,
           created_at: record?.created_at ?? updatedAt,
+          updated_at: updatedAt,
+        };
+        return record;
+      },
+      async saveGoalDraft(userId: number, draft: InterviewRecord['goal_draft'], updatedAt: string) {
+        record = {
+          ...(await this.ensureForUser(userId)),
+          goal_draft: draft,
+          updated_at: updatedAt,
+        };
+        return record;
+      },
+      async reopenForRevise(userId: number, updatedAt: string) {
+        record = {
+          ...(await this.ensureForUser(userId)),
+          status: 'in_progress',
+          current_topic: 'done_definition',
+          goal_draft: null,
           updated_at: updatedAt,
         };
         return record;
@@ -144,6 +165,8 @@ describe('chatService interview (Issue #3)', () => {
     const interviews = buildInterviewRepo();
     const ai: ChatAiClient = {
       completeChat: vi.fn(),
+      proposeGoalDraft: vi.fn(),
+      reviseGoalDraft: vi.fn(),
       evaluateInterviewAnswer: vi.fn(),
     };
     const service = createChatService({ chat, interviews, ai, clock });
@@ -169,7 +192,7 @@ describe('chatService interview (Issue #3)', () => {
       extracted_answer: 'Read one Japanese novel without a dictionary',
       mochi_message: `Nice! ${TOPIC_QUESTIONS.starting_point}`,
     }));
-    const ai: ChatAiClient = { completeChat: vi.fn(), evaluateInterviewAnswer };
+    const ai: ChatAiClient = { completeChat: vi.fn(), proposeGoalDraft: vi.fn(), reviseGoalDraft: vi.fn(), evaluateInterviewAnswer };
     const service = createChatService({ chat, interviews, ai, clock });
 
     await service.listMessages(1);
@@ -192,7 +215,7 @@ describe('chatService interview (Issue #3)', () => {
       extracted_answer: null,
       mochi_message: 'Could you paint a clearer picture of "done"?',
     }));
-    const ai: ChatAiClient = { completeChat: vi.fn(), evaluateInterviewAnswer };
+    const ai: ChatAiClient = { completeChat: vi.fn(), proposeGoalDraft: vi.fn(), reviseGoalDraft: vi.fn(), evaluateInterviewAnswer };
     const service = createChatService({ chat, interviews, ai, clock });
 
     await service.listMessages(1);
@@ -228,7 +251,7 @@ describe('chatService interview (Issue #3)', () => {
           : 'All set — confirm card comes next ♡',
       }),
     );
-    const ai: ChatAiClient = { completeChat: vi.fn(), evaluateInterviewAnswer };
+    const ai: ChatAiClient = { completeChat: vi.fn(), proposeGoalDraft: vi.fn(), reviseGoalDraft: vi.fn(), evaluateInterviewAnswer };
     const service = createChatService({ chat, interviews, ai, clock });
 
     await service.listMessages(1);
@@ -265,6 +288,8 @@ describe('chatService interview (Issue #3)', () => {
     const interviews = buildInterviewRepo();
     const ai: ChatAiClient = {
       completeChat: vi.fn(),
+      proposeGoalDraft: vi.fn(),
+      reviseGoalDraft: vi.fn(),
       evaluateInterviewAnswer: vi.fn(async () => ({
         evaluation: 'accepted' as const,
         extracted_answer: 'done answer',
@@ -292,6 +317,8 @@ describe('chatService interview (Issue #3)', () => {
     const interviews = buildInterviewRepo();
     const ai: ChatAiClient = {
       completeChat: vi.fn(),
+      proposeGoalDraft: vi.fn(),
+      reviseGoalDraft: vi.fn(),
       evaluateInterviewAnswer: vi.fn(async () => {
         throw new Error('upstream boom');
       }),
