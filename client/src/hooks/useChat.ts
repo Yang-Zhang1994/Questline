@@ -80,6 +80,11 @@ export function useChat() {
     }
   }, [resetGoal]);
 
+  const appendMessages = useCallback((added: ChatMessage[]) => {
+    if (added.length === 0) return;
+    setMessages((prev) => [...prev, ...added]);
+  }, []);
+
   return {
     messages,
     interview,
@@ -90,6 +95,7 @@ export function useChat() {
     send,
     restart,
     reload,
+    appendMessages,
     goalDraft: goal.draft,
     confirmedGoal: goal.confirmedGoal,
     goalLoading: goal.loading,

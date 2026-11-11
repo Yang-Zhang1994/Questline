@@ -1,5 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { InterviewTopic } from '@questline/shared';
+import {
+  MilestonePlanAiResponseSchema,
+  createMilestoneProposalListSchema,
+  type InterviewTopic,
+  type MilestonePlanAiResponse,
+} from '@questline/shared';
 import {
   type GoalDraft,
   type ProposeGoalDraftRequest,
@@ -21,6 +26,12 @@ import {
 } from './prompts/mochiGoalDraft.js';
 import { MOCHI_CHAT_SYSTEM_PROMPT } from './prompts/mochiChat.js';
 import {
+  MOCHI_MILESTONES_SYSTEM_PROMPT,
+  buildDefaultMilestoneProposal,
+  buildMilestoneUserPayload,
+  type MilestonePlanAiRequest,
+} from './prompts/mochiMilestones.js';
+import {
   type InterviewAiRequest,
   type InterviewAiResponse,
   InterviewAiResponseSchema,
@@ -30,6 +41,7 @@ import {
   ensureOneQuestion,
   parseModelJson,
   parseTimeBudgetAnswer,
+  z,
 } from './parse.js';
 
 /** Roles Anthropic Messages API understands for conversation turns. */
@@ -49,6 +61,7 @@ export type ChatAiClient = {
   evaluateInterviewAnswer(input: InterviewAiRequest): Promise<InterviewAiResponse>;
   proposeGoalDraft(input: ProposeGoalDraftRequest): Promise<GoalDraft>;
   reviseGoalDraft(input: ReviseGoalDraftRequest): Promise<GoalDraft>;
+  proposeMilestones?(input: MilestonePlanAiRequest): Promise<MilestonePlanAiResponse>;
 };
 
 function normalizeGoalDraft(raw: GoalDraft, answers: ProposeGoalDraftRequest['answers']): GoalDraft {
@@ -219,6 +232,10 @@ export function createEchoChatClient(): ChatAiClient {
     async reviseGoalDraft(input: ReviseGoalDraftRequest): Promise<GoalDraft> {
       return buildEchoGoalDraft(input.answers, input.feedback);
     },
+
+    async proposeMilestones(input: MilestonePlanAiRequest): Promise<MilestonePlanAiResponse> {
+      return buildDefaultMilestoneProposal(input);
+    },
   };
 }
 
@@ -234,10 +251,14 @@ export function createClaudeClient(options: CreateClaudeClientOptions = {}): Cha
   const anthropic = options.anthropic ?? new Anthropic({ apiKey: requireEnv('ANTHROPIC_API_KEY', apiKey) });
   const modelName = requireEnv('ANTHROPIC_MODEL', model);
 
-  async function completeOnce(system: string, messages: ClaudeChatTurn[]): Promise<string> {
+  async function completeOnce(
+    system: string,
+    messages: ClaudeChatTurn[],
+    maxTokens = 512,
+  ): Promise<string> {
     const response = await anthropic.messages.create({
       model: modelName,
-      max_tokens: 512,
+      max_tokens: maxTokens,
       system,
       messages: messages.map((m) => ({
         role: m.role,
@@ -343,6 +364,44 @@ export function createClaudeClient(options: CreateClaudeClientOptions = {}): Cha
       }
       return normalizeGoalDraft(parsed, input.answers);
     },
+
+    async proposeMilestones(input: MilestonePlanAiRequest): Promise<MilestonePlanAiResponse> {
+      const payload = buildMilestoneUserPayload(input);
+      const messages: ClaudeChatTurn[] = [
+        ...(input.history ?? []),
+        {
+          role: 'user',
+          content: `Propose or adjust the milestone plan and reply with JSON only.\n${payload}`,
+        },
+      ];
+
+      const schema = MilestonePlanAiResponseSchema.extend({
+        milestones: createMilestoneProposalListSchema(input.goal.deadline),
+      }) satisfies z.ZodType<MilestonePlanAiResponse>;
+
+      const first = await completeOnce(MOCHI_MILESTONES_SYSTEM_PROMPT, messages, 1024);
+      let parsed = parseModelJson(first, schema);
+      if (!parsed) {
+        const retry = await completeOnce(
+          MOCHI_MILESTONES_SYSTEM_PROMPT,
+          [
+            ...messages,
+            { role: 'assistant', content: first },
+            {
+              role: 'user',
+              content:
+                'Your previous reply was not valid JSON matching the milestone schema (3–7 ordered milestones with target_date before the goal deadline). Reply again with ONLY the JSON object.',
+            },
+          ],
+          1024,
+        );
+        parsed = parseModelJson(retry, schema);
+      }
+      if (!parsed) {
+        throw new Error('Claude milestone proposal failed schema validation');
+      }
+      return parsed;
+    },
   };
 }
 
@@ -356,6 +415,7 @@ export function createTemplateInterviewClient(
     completeChat: echo.completeChat,
     proposeGoalDraft: echo.proposeGoalDraft,
     reviseGoalDraft: echo.reviseGoalDraft,
+    proposeMilestones: echo.proposeMilestones,
     async evaluateInterviewAnswer(input) {
       const forced = decisions[i++];
       if (forced === 'vague') {
@@ -378,4 +438,4 @@ export function createTemplateInterviewClient(
   };
 }
 
-export type { InterviewTopic };
+export type { InterviewTopic, MilestonePlanAiRequest, MilestonePlanAiResponse };
