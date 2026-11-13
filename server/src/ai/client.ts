@@ -1,9 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk';
 import {
   MilestonePlanAiResponseSchema,
+  QuestGenerationAiResponseSchema,
   createMilestoneProposalListSchema,
+  createQuestProposalListSchema,
   type InterviewTopic,
   type MilestonePlanAiResponse,
+  type QuestGenerationAiResponse,
 } from '@questline/shared';
 import {
   type GoalDraft,
@@ -31,6 +34,12 @@ import {
   buildMilestoneUserPayload,
   type MilestonePlanAiRequest,
 } from './prompts/mochiMilestones.js';
+import {
+  MOCHI_QUESTS_SYSTEM_PROMPT,
+  buildDefaultQuestProposal,
+  buildQuestGenerationUserPayload,
+  type QuestGenerationAiRequest,
+} from './prompts/mochiQuests.js';
 import {
   type InterviewAiRequest,
   type InterviewAiResponse,
@@ -62,6 +71,7 @@ export type ChatAiClient = {
   proposeGoalDraft(input: ProposeGoalDraftRequest): Promise<GoalDraft>;
   reviseGoalDraft(input: ReviseGoalDraftRequest): Promise<GoalDraft>;
   proposeMilestones?(input: MilestonePlanAiRequest): Promise<MilestonePlanAiResponse>;
+  generateDailyQuests?(input: QuestGenerationAiRequest): Promise<QuestGenerationAiResponse>;
 };
 
 function normalizeGoalDraft(raw: GoalDraft, answers: ProposeGoalDraftRequest['answers']): GoalDraft {
@@ -236,6 +246,10 @@ export function createEchoChatClient(): ChatAiClient {
     async proposeMilestones(input: MilestonePlanAiRequest): Promise<MilestonePlanAiResponse> {
       return buildDefaultMilestoneProposal(input);
     },
+
+    async generateDailyQuests(input: QuestGenerationAiRequest): Promise<QuestGenerationAiResponse> {
+      return buildDefaultQuestProposal(input);
+    },
   };
 }
 
@@ -402,6 +416,48 @@ export function createClaudeClient(options: CreateClaudeClientOptions = {}): Cha
       }
       return parsed;
     },
+
+    async generateDailyQuests(input: QuestGenerationAiRequest): Promise<QuestGenerationAiResponse> {
+      const payload = buildQuestGenerationUserPayload(input);
+      const messages: ClaudeChatTurn[] = [
+        {
+          role: 'user',
+          content: `Generate small daily quests for the current milestone and reply with JSON only.\n${payload}`,
+        },
+      ];
+
+      const schema = QuestGenerationAiResponseSchema.extend({
+        quests: createQuestProposalListSchema({
+          windowStart: input.windowStart,
+          windowEnd: input.windowEnd,
+          milestoneTargetDate: input.milestone.target_date,
+          timeBudgetMinutesPerDay: input.timeBudgetMinutesPerDay,
+        }),
+      }) satisfies z.ZodType<QuestGenerationAiResponse>;
+
+      const first = await completeOnce(MOCHI_QUESTS_SYSTEM_PROMPT, messages, 1024);
+      let parsed = parseModelJson(first, schema);
+      if (!parsed) {
+        const retry = await completeOnce(
+          MOCHI_QUESTS_SYSTEM_PROMPT,
+          [
+            ...messages,
+            { role: 'assistant', content: first },
+            {
+              role: 'user',
+              content:
+                'Your previous reply was not valid JSON matching the quest schema (non-empty title, positive integer estimated_minutes, due_date within the window and not after milestone target_date, and daily total minutes within time_budget_minutes_per_day). Reply again with ONLY the JSON object.',
+            },
+          ],
+          1024,
+        );
+        parsed = parseModelJson(retry, schema);
+      }
+      if (!parsed) {
+        throw new Error('Claude daily quest generation failed schema validation');
+      }
+      return parsed;
+    },
   };
 }
 
@@ -416,6 +472,7 @@ export function createTemplateInterviewClient(
     proposeGoalDraft: echo.proposeGoalDraft,
     reviseGoalDraft: echo.reviseGoalDraft,
     proposeMilestones: echo.proposeMilestones,
+    generateDailyQuests: echo.generateDailyQuests,
     async evaluateInterviewAnswer(input) {
       const forced = decisions[i++];
       if (forced === 'vague') {
@@ -438,4 +495,10 @@ export function createTemplateInterviewClient(
   };
 }
 
-export type { InterviewTopic, MilestonePlanAiRequest, MilestonePlanAiResponse };
+export type {
+  InterviewTopic,
+  MilestonePlanAiRequest,
+  MilestonePlanAiResponse,
+  QuestGenerationAiRequest,
+  QuestGenerationAiResponse,
+};
