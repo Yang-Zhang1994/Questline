@@ -57,11 +57,14 @@ export function createQuestService(deps: QuestServiceDeps) {
    * Read-only: returns saved quests for the logged-in user's active goal and its
    * `status = 'current'` milestone without invoking the AI client.
    */
-  async function getCurrentMilestoneQuests(userId: number): Promise<CurrentMilestoneQuestsResponse> {
-    const today = formatLocalDate(deps.clock.now());
+  async function getCurrentMilestoneQuests(
+    userId: number,
+    localDate?: string,
+  ): Promise<CurrentMilestoneQuestsResponse> {
+    const today = localDate ?? formatLocalDate(deps.clock.now());
     const { goal: rawGoal, milestone } = await deps.quests.getCurrentMilestoneContextForUser(userId);
     const goal = normalizeGoal(rawGoal);
-    const progress = await deps.progress.getOrCreate(userId);
+    const progress = await deps.progress.getOrCreate(userId, today);
 
     const { windowStart, windowEnd } = computeQuestGenerationWindow(
       today,
@@ -96,11 +99,12 @@ export function createQuestService(deps: QuestServiceDeps) {
    */
   async function generateCurrentMilestoneQuests(
     userId: number,
+    localDate?: string,
   ): Promise<CurrentMilestoneQuestsResponse> {
-    const today = formatLocalDate(deps.clock.now());
+    const today = localDate ?? formatLocalDate(deps.clock.now());
     const { goal: rawGoal, milestone } = await deps.quests.getCurrentMilestoneContextForUser(userId);
     const goal = normalizeGoal(rawGoal);
-    const progress = await deps.progress.getOrCreate(userId);
+    const progress = await deps.progress.getOrCreate(userId, today);
 
     if (!goal) {
       throw notFound('Confirm a goal first before generating quests.');
@@ -198,25 +202,28 @@ export function createQuestService(deps: QuestServiceDeps) {
 
   /**
    * Toggles quest completion for a quest owned by `userId`.
-   * Checking awards XP; undoing reverses it — same transaction (Issue #11).
+   * Checking awards XP + streak; undoing reverses both — same transaction (#11 / #12).
    */
   async function toggleQuestCompletion(
     userId: number,
     questId: number,
     completed: boolean,
+    localDate?: string,
   ): Promise<ToggleQuestCompletionResponse> {
     const existing = await deps.quests.findByIdForUser(userId, questId);
     if (!existing) {
       throw notFound('Quest not found.');
     }
 
+    const date = localDate ?? formatLocalDate(deps.clock.now());
+
     // Idempotent no-ops: still return current progress for the HUD.
     if (completed && existing.completed_at !== null) {
-      const progress = await deps.progress.getOrCreate(userId);
+      const progress = await deps.progress.getOrCreate(userId, date);
       return completionPayload(existing, progress, false);
     }
     if (!completed && existing.completed_at === null) {
-      const progress = await deps.progress.getOrCreate(userId);
+      const progress = await deps.progress.getOrCreate(userId, date);
       return completionPayload(existing, progress, false);
     }
 
@@ -225,6 +232,7 @@ export function createQuestService(deps: QuestServiceDeps) {
       questId,
       completed ? toIsoDateTime(deps.clock.now()) : null,
       completed ? XP_PER_QUEST : -XP_PER_QUEST,
+      date,
     );
     if (!result) {
       throw notFound('Quest not found.');

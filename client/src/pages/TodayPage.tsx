@@ -1,6 +1,7 @@
 import { BottomDock } from '../components/BottomDock/BottomDock';
 import { DailyNote } from '../components/DailyNote/DailyNote';
 import { LevelUpToast } from '../components/LevelUpToast/LevelUpToast';
+import { StreakCounter } from '../components/StreakCounter/StreakCounter';
 import { XpBar } from '../components/XpBar/XpBar';
 import { useTodayQuests } from '../hooks/useTodayQuests';
 
@@ -63,7 +64,12 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
       </header>
 
       <main className="flex w-full flex-col items-center gap-3">
-        {progress ? <XpBar progress={progress} /> : null}
+        {progress ? (
+          <div className="relative z-[1] flex w-full max-w-[640px] flex-col gap-2">
+            <XpBar progress={progress} />
+            <StreakCounter progress={progress} />
+          </div>
+        ) : null}
         <DailyNote
           status={status}
           goal={goal}

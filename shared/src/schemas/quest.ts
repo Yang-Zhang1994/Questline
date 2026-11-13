@@ -128,6 +128,8 @@ export type TodayQuestsResponse = z.infer<typeof TodayQuestsResponseSchema>;
 
 export const ToggleQuestCompletionBodySchema = z.object({
   completed: z.boolean(),
+  /** User's local calendar date — drives streak (#12); falls back to injectable clock. */
+  local_date: IsoDateSchema.optional(),
 });
 
 export type ToggleQuestCompletionBody = z.infer<typeof ToggleQuestCompletionBodySchema>;

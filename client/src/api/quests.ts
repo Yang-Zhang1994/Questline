@@ -47,8 +47,11 @@ function parseQuestsResponse(body: unknown): CurrentMilestoneQuestsResponse {
   return parsed.data;
 }
 
-export async function fetchCurrentMilestoneQuests(): Promise<CurrentMilestoneQuestsResponse> {
-  const res = await fetch('/api/quests', {
+export async function fetchCurrentMilestoneQuests(
+  localDate?: string,
+): Promise<CurrentMilestoneQuestsResponse> {
+  const qs = localDate ? `?local_date=${encodeURIComponent(localDate)}` : '';
+  const res = await fetch(`/api/quests${qs}`, {
     headers: authHeaders(),
   });
   const body = await parseJson(res);
@@ -58,11 +61,13 @@ export async function fetchCurrentMilestoneQuests(): Promise<CurrentMilestoneQue
   return parseQuestsResponse(body);
 }
 
-export async function generateCurrentMilestoneQuests(): Promise<CurrentMilestoneQuestsResponse> {
+export async function generateCurrentMilestoneQuests(
+  localDate?: string,
+): Promise<CurrentMilestoneQuestsResponse> {
   const res = await fetch('/api/quests/generate', {
     method: 'POST',
     headers: authHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({}),
+    body: JSON.stringify(localDate ? { local_date: localDate } : {}),
   });
   const body = await parseJson(res);
   if (!res.ok) {
@@ -74,11 +79,15 @@ export async function generateCurrentMilestoneQuests(): Promise<CurrentMilestone
 export async function toggleQuestCompletion(
   questId: number,
   completed: boolean,
+  localDate?: string,
 ): Promise<ToggleQuestCompletionResponse> {
   const res = await fetch(`/api/quests/${questId}/completion`, {
     method: 'PATCH',
     headers: authHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ completed }),
+    body: JSON.stringify({
+      completed,
+      ...(localDate ? { local_date: localDate } : {}),
+    }),
   });
   let body: unknown;
   try {
