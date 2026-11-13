@@ -57,3 +57,36 @@ export const ConfirmGoalResponseSchema = z.object({
 });
 
 export type ConfirmGoalResponse = z.infer<typeof ConfirmGoalResponseSchema>;
+
+/** Selector list — excludes soft-archived rows (Issue #18). */
+export const GoalsListResponseSchema = z.object({
+  goals: z.array(GoalSchema),
+  active_goal_id: z.number().int().positive().nullable(),
+});
+
+export type GoalsListResponse = z.infer<typeof GoalsListResponseSchema>;
+
+export const ActivateGoalResponseSchema = z.object({
+  goal: GoalSchema,
+  goals: z.array(GoalSchema),
+  active_goal_id: z.number().int().positive(),
+});
+
+export type ActivateGoalResponse = z.infer<typeof ActivateGoalResponseSchema>;
+
+/** Pause current active + restart Mochi interview for a fresh goal (#18). */
+export const StartNewGoalResponseSchema = z.object({
+  paused_goal_id: z.number().int().positive().nullable(),
+  goals: z.array(GoalSchema),
+  active_goal_id: z.number().int().positive().nullable(),
+});
+
+export type StartNewGoalResponse = z.infer<typeof StartNewGoalResponseSchema>;
+
+export const DeleteGoalResponseSchema = z.object({
+  deleted_goal_id: z.number().int().positive(),
+  goals: z.array(GoalSchema),
+  active_goal_id: z.number().int().positive().nullable(),
+});
+
+export type DeleteGoalResponse = z.infer<typeof DeleteGoalResponseSchema>;

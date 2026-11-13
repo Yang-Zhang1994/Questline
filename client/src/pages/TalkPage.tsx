@@ -2,6 +2,7 @@ import { ChatWindow } from '../components/ChatWindow/ChatWindow';
 import { MilestonePlanEditor } from '../components/MilestonePlanEditor/MilestonePlanEditor';
 import { BottomDock } from '../components/BottomDock/BottomDock';
 import { useChat } from '../hooks/useChat';
+import { useGoals } from '../hooks/useGoals';
 import { useMilestonePlan } from '../hooks/useMilestonePlan';
 
 export type TalkPageProps = {
@@ -19,6 +20,7 @@ export function TalkPage({ userEmail = null, onLogout }: TalkPageProps) {
     error,
     send,
     restart,
+    reload,
     appendMessages,
     goalDraft,
     confirmedGoal,
@@ -29,6 +31,7 @@ export function TalkPage({ userEmail = null, onLogout }: TalkPageProps) {
     reviseGoal,
     returnToInterview,
   } = useChat();
+  const { beginNewGoal, busy: goalsBusy } = useGoals();
   const milestonePlan = useMilestonePlan({ onChatMessagesAdded: appendMessages });
 
   return (
@@ -60,6 +63,23 @@ export function TalkPage({ userEmail = null, onLogout }: TalkPageProps) {
           ) : null}
         </div>
       </header>
+
+      <div className="relative z-[1] mb-3 flex w-full max-w-[640px] justify-end">
+        <button
+          type="button"
+          data-testid="talk-new-goal"
+          disabled={goalsBusy || restarting || sending || loading}
+          onClick={() => {
+            void (async () => {
+              await beginNewGoal();
+              await reload();
+            })();
+          }}
+          className="rounded-pill bg-gel-pink px-3.5 py-2 text-[0.82rem] font-bold text-white shadow-[inset_0_2px_0_rgba(255,255,255,0.45)] hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-55"
+        >
+          ＋ New goal
+        </button>
+      </div>
 
       <ChatWindow
         messages={messages}

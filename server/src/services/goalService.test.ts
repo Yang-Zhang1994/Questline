@@ -108,7 +108,16 @@ describe('goalService (Issue #4)', () => {
       async findActiveForUser() {
         return inserted.find((g) => g.status === 'active') ?? null;
       },
+      async findByIdForUser(goalId: number) {
+        return inserted.find((g) => g.id === goalId) ?? null;
+      },
+      async listSelectableForUser() {
+        return inserted.filter((g) => g.status !== 'archived');
+      },
       async insertActiveFromDraft(userId: number, draft: typeof sampleDraft, createdAt: string) {
+        for (const g of inserted) {
+          if (g.status === 'active') g.status = 'paused';
+        }
         const goal: Goal = {
           id: inserted.length + 1,
           user_id: userId,
@@ -123,8 +132,52 @@ describe('goalService (Issue #4)', () => {
         inserted.push(goal);
         return goal;
       },
+      async activateForUser(goalId: number) {
+        const goal = inserted.find((g) => g.id === goalId);
+        if (!goal) throw new Error('GOAL_NOT_FOUND');
+        if (goal.status === 'archived') throw new Error('GOAL_ARCHIVED');
+        for (const g of inserted) {
+          if (g.status === 'active' && g.id !== goalId) g.status = 'paused';
+        }
+        goal.status = 'active';
+        return goal;
+      },
+      async pauseActiveForUser() {
+        const active = inserted.find((g) => g.status === 'active') ?? null;
+        if (active) active.status = 'paused';
+        return active;
+      },
+      async deleteForUser(goalId: number) {
+        const idx = inserted.findIndex((g) => g.id === goalId);
+        if (idx < 0) throw new Error('GOAL_NOT_FOUND');
+        const [deleted] = inserted.splice(idx, 1);
+        let active = inserted.find((g) => g.status === 'active') ?? null;
+        if (deleted.status === 'active' && !active) {
+          const next = inserted.find((g) => g.status === 'paused' || g.status === 'completed');
+          if (next) {
+            next.status = 'active';
+            active = next;
+          }
+        }
+        return { deleted, active };
+      },
     };
   }
+
+  const restartInterview = vi.fn(async () => ({
+    messages: [],
+    interview: {
+      status: 'in_progress' as const,
+      current_topic: 'done_definition' as const,
+      answered_topics: [] as [],
+      answers: {
+        done_definition: null,
+        starting_point: null,
+        time_budget: null,
+        deadline: null,
+      },
+    },
+  }));
 
   it('proposes a draft from interview answers without inserting a goal', async () => {
     const interviews = buildInterviewRepo();
@@ -136,7 +189,7 @@ describe('goalService (Issue #4)', () => {
       proposeGoalDraft,
       reviseGoalDraft: vi.fn(),
     } satisfies ChatAiClient;
-    const service = createGoalService({ goals, interviews, ai, clock });
+    const service = createGoalService({ goals, interviews, ai, clock, restartInterview });
 
     const result = await service.proposeDraft(1);
 
@@ -158,7 +211,7 @@ describe('goalService (Issue #4)', () => {
       proposeGoalDraft: vi.fn(),
       reviseGoalDraft,
     } satisfies ChatAiClient;
-    const service = createGoalService({ goals, interviews, ai, clock });
+    const service = createGoalService({ goals, interviews, ai, clock, restartInterview });
 
     const result = await service.reviseDraft(1, 'Make the deadline clearer');
 
@@ -177,7 +230,7 @@ describe('goalService (Issue #4)', () => {
       proposeGoalDraft: vi.fn(),
       reviseGoalDraft: vi.fn(),
     } satisfies ChatAiClient;
-    const service = createGoalService({ goals, interviews, ai, clock });
+    const service = createGoalService({ goals, interviews, ai, clock, restartInterview });
 
     const result = await service.confirmDraft(1, sampleDraft);
 
@@ -198,7 +251,7 @@ describe('goalService (Issue #4)', () => {
       proposeGoalDraft: vi.fn(),
       reviseGoalDraft: vi.fn(),
     } satisfies ChatAiClient;
-    const service = createGoalService({ goals, interviews, ai, clock });
+    const service = createGoalService({ goals, interviews, ai, clock, restartInterview });
 
     const result = await service.returnToInterview(1);
 
@@ -226,7 +279,7 @@ describe('goalService (Issue #4)', () => {
       proposeGoalDraft: vi.fn(),
       reviseGoalDraft: vi.fn(),
     } satisfies ChatAiClient;
-    const service = createGoalService({ goals, interviews, ai, clock });
+    const service = createGoalService({ goals, interviews, ai, clock, restartInterview });
 
     await expect(service.proposeDraft(1)).rejects.toBeInstanceOf(AppError);
     expect(ai.proposeGoalDraft).not.toHaveBeenCalled();

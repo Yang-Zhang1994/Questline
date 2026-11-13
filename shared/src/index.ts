@@ -83,20 +83,27 @@ export {
 } from './schemas/interview.js';
 
 export {
+  ActivateGoalResponseSchema,
   ConfirmGoalBodySchema,
   ConfirmGoalResponseSchema,
+  DeleteGoalResponseSchema,
   GoalDraftResponseSchema,
   GoalDraftSchema,
   GoalSchema,
+  GoalsListResponseSchema,
   ReviseGoalDraftBodySchema,
+  StartNewGoalResponseSchema,
+  type ActivateGoalResponse,
   type ConfirmGoalBody,
   type ConfirmGoalResponse,
+  type DeleteGoalResponse,
   type Goal,
   type GoalDraft,
   type GoalDraftResponse,
+  type GoalsListResponse,
   type ReviseGoalDraftBody,
+  type StartNewGoalResponse,
 } from './schemas/goal.js';
-
 export {
   CompleteStageResponseSchema,
   ConfirmMilestonesBodySchema,
