@@ -10,6 +10,7 @@ import { createChatRepository } from './repositories/chatRepository.js';
 import { createGoalRepository } from './repositories/goalRepository.js';
 import { createInterviewRepository } from './repositories/interviewRepository.js';
 import { createMilestoneRepository } from './repositories/milestoneRepository.js';
+import { createProgressRepository } from './repositories/progressRepository.js';
 import { createQuestRepository } from './repositories/questRepository.js';
 import { createRoadmapRepository } from './repositories/roadmapRepository.js';
 import { createUserRepository } from './repositories/userRepository.js';
@@ -40,6 +41,7 @@ export function createApp(options: CreateAppOptions) {
   const interviews = createInterviewRepository(options.db);
   const milestones = createMilestoneRepository(options.db);
   const quests = createQuestRepository(options.db);
+  const progress = createProgressRepository(options.db);
   const roadmap = createRoadmapRepository(options.db);
   const goals = createGoalRepository(options.db);
   const authService = createAuthService({ users });
@@ -86,7 +88,7 @@ export function createApp(options: CreateAppOptions) {
   const chatService = createChatService({ chat, interviews, ai, clock });
   const goalService = createGoalService({ goals, interviews, ai, clock });
   const milestoneService = createMilestoneService({ milestones, chat, ai, clock });
-  const questService = createQuestService({ quests, ai, clock });
+  const questService = createQuestService({ quests, progress, ai, clock });
 
   const app = express();
   // express-rate-limit needs a stable IP behind proxies / Vitest.

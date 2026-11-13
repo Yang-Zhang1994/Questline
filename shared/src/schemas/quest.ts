@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { UserProgressSchema } from './progress.js';
 import { MilestoneSchema, RoadmapGoalSchema } from './roadmap.js';
 
 export const IsoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD');
@@ -107,6 +108,8 @@ export const CurrentMilestoneQuestsResponseSchema = z.object({
   window_start: IsoDateSchema,
   window_end: IsoDateSchema,
   quests: z.array(QuestSchema),
+  /** XP / level HUD snapshot (Issue #11). */
+  progress: UserProgressSchema,
 });
 
 export type CurrentMilestoneQuestsResponse = z.infer<typeof CurrentMilestoneQuestsResponseSchema>;
@@ -131,6 +134,9 @@ export type ToggleQuestCompletionBody = z.infer<typeof ToggleQuestCompletionBody
 
 export const ToggleQuestCompletionResponseSchema = z.object({
   quest: QuestSchema,
+  progress: UserProgressSchema,
+  leveled_up: z.boolean(),
+  level_up_message: z.string().nullable(),
 });
 
 export type ToggleQuestCompletionResponse = z.infer<typeof ToggleQuestCompletionResponseSchema>;
