@@ -5,6 +5,7 @@ import type {
   ProposedMilestone,
   RoadmapGoal,
 } from '@questline/shared';
+import { isAiUnavailableError } from '../api/apiError';
 import {
   confirmMilestones as confirmMilestonesApi,
   fetchMilestonePlanState,
@@ -25,17 +26,20 @@ export function useMilestonePlan(options: UseMilestonePlanOptions = {}) {
   const [confirming, setConfirming] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [aiUnavailable, setAiUnavailable] = useState(false);
 
   const reload = useCallback(async () => {
     setLoading(true);
+    setAiUnavailable(false);
     try {
       const payload = await fetchMilestonePlanState();
       setGoal(payload.goal);
       setSavedMilestones(payload.milestones);
-    } catch {
+    } catch (err) {
       // Keep goal null when no active goal or endpoint is unavailable in isolated tests
       setGoal(null);
       setSavedMilestones([]);
+      setAiUnavailable(isAiUnavailableError(err));
     } finally {
       setLoading(false);
     }
@@ -48,6 +52,7 @@ export function useMilestonePlan(options: UseMilestonePlanOptions = {}) {
   const propose = useCallback(async () => {
     setProposing(true);
     setError(null);
+    setAiUnavailable(false);
     setConfirmed(false);
     try {
       const payload = await proposeMilestonesApi({});
@@ -56,6 +61,7 @@ export function useMilestonePlan(options: UseMilestonePlanOptions = {}) {
       onChatMessagesAdded?.([payload.mochi_message]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not propose milestones');
+      setAiUnavailable(isAiUnavailableError(err));
     } finally {
       setProposing(false);
     }
@@ -67,6 +73,7 @@ export function useMilestonePlan(options: UseMilestonePlanOptions = {}) {
       if (!trimmed) return;
       setProposing(true);
       setError(null);
+      setAiUnavailable(false);
       setConfirmed(false);
       try {
         const payload = await proposeMilestonesApi({
@@ -81,12 +88,20 @@ export function useMilestonePlan(options: UseMilestonePlanOptions = {}) {
         onChatMessagesAdded?.(added);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Could not adjust milestones');
+        setAiUnavailable(isAiUnavailableError(err));
       } finally {
         setProposing(false);
       }
     },
     [draftMilestones, onChatMessagesAdded],
   );
+
+  const reset = useCallback(() => {
+    setDraftMilestones(null);
+    setConfirmed(false);
+    setError(null);
+    setAiUnavailable(false);
+  }, []);
 
   const confirm = useCallback(async () => {
     if (!draftMilestones || draftMilestones.length === 0) return;
@@ -114,9 +129,11 @@ export function useMilestonePlan(options: UseMilestonePlanOptions = {}) {
     confirming,
     confirmed,
     error,
+    aiUnavailable,
     propose,
     adjust,
     confirm,
     reload,
+    reset,
   };
 }

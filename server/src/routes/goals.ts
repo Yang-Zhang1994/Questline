@@ -1,5 +1,6 @@
 import {
   ConfirmGoalBodySchema,
+  ManualPlanBodySchema,
   ReviseGoalDraftBodySchema,
 } from '@questline/shared';
 import { Router } from 'express';
@@ -122,6 +123,27 @@ export function createGoalsRouter(goalService: GoalService): Router {
       if (!user) throw unauthorized();
       const body = ConfirmGoalBodySchema.parse(req.body);
       const payload = await goalService.confirmDraft(user.id, body.draft);
+      res.status(201).json(payload);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * Manual plan form fallback (#21): create goal + milestones without chatting.
+   * Submit is the confirm-before-save step.
+   */
+  router.post('/manual-plan', goalWriteLimiter, async (req, res, next) => {
+    try {
+      const user = getRequestUser(req);
+      if (!user) throw unauthorized();
+      const parsed = ManualPlanBodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw validationError(
+          'Give your goal a little name and at least one milestone (one per line) ♡',
+        );
+      }
+      const payload = await goalService.createManualPlan(user.id, parsed.data);
       res.status(201).json(payload);
     } catch (err) {
       next(err);

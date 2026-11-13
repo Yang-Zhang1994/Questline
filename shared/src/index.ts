@@ -130,3 +130,10 @@ export {
   type ProposedMilestone,
   type ProposedMilestoneList,
 } from './schemas/milestonePlan.js';
+
+export {
+  ManualPlanBodySchema,
+  ManualPlanResponseSchema,
+  type ManualPlanBody,
+  type ManualPlanResponse,
+} from './schemas/manualPlan.js';
