@@ -131,9 +131,7 @@ export function createMilestoneProposalListSchema(
   });
 }
 
-export const MilestoneGoalSchema = RoadmapGoalSchema.extend({
-  deadline: z.string().nullable(),
-});
+export const MilestoneGoalSchema = RoadmapGoalSchema;
 
 export const MilestonePlanAiResponseSchema = z.object({
   mochi_message: z.string().trim().min(1, 'Mochi message is required'),

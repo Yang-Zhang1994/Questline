@@ -1,20 +1,6 @@
-import {
-  extractGoalDeadlineDate,
-  type Milestone,
-  type RoadmapGoal,
-  type RoadmapResponse,
-} from '@questline/shared';
+import type { Milestone, RoadmapResponse } from '@questline/shared';
 import type { Db } from '../db/connection.js';
-
-type GoalRow = {
-  id: number;
-  title: string;
-  done_definition: string | null;
-  starting_point: string | null;
-  time_budget_minutes_per_day: number | null;
-  deadline: string | null;
-  status: 'active' | 'paused' | 'completed' | 'archived';
-};
+import { mapGoalRowToRoadmapGoal, type RoadmapGoalRow } from './goalRepository.js';
 
 type MilestoneRow = {
   id: number;
@@ -31,7 +17,7 @@ type MilestoneRow = {
 export function createRoadmapRepository(db: Db) {
   return {
     async getActiveGoalRoadmapForUser(userId: number): Promise<RoadmapResponse> {
-      const goalResult = await db.query<GoalRow>(
+      const goalResult = await db.query<RoadmapGoalRow>(
         `SELECT id, title, done_definition, starting_point, time_budget_minutes_per_day, deadline, status
          FROM goals
          WHERE user_id = $1 AND status = 'active'
@@ -44,15 +30,7 @@ export function createRoadmapRepository(db: Db) {
         return { goal: null, milestones: [] };
       }
 
-      const goal: RoadmapGoal = {
-        id: goalRow.id,
-        title: goalRow.title,
-        done_definition: goalRow.done_definition,
-        starting_point: goalRow.starting_point,
-        time_budget_minutes_per_day: goalRow.time_budget_minutes_per_day,
-        deadline: extractGoalDeadlineDate(goalRow.deadline),
-        status: goalRow.status,
-      };
+      const goal = mapGoalRowToRoadmapGoal(goalRow);
 
       const milestoneResult = await db.query<MilestoneRow>(
         `SELECT

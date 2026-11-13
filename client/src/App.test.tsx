@@ -16,8 +16,8 @@ beforeEach(() => {
   clearAuthToken();
 });
 
-describe('App auth gate (after #8/#9 revert)', () => {
-  it('shows login first, then Today shell after demo login (no quest check-off)', async () => {
+describe('App auth gate & Today greeting note (Issue #8)', () => {
+  it('shows login first, then Mochi greeting note on Today after demo login (no quest check-off)', async () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -28,6 +28,43 @@ describe('App auth gate (after #8/#9 revert)', () => {
             JSON.stringify({
               user: { id: 1, email: 'demo@questline.local' },
               token: 'demo-jwt-token',
+            }),
+        };
+      }
+      if (url === '/api/quests') {
+        return {
+          ok: true,
+          text: async () =>
+            JSON.stringify({
+              goal: {
+                id: 1,
+                title: 'Read a Japanese novel on my own',
+                deadline: '2027-06-30',
+                status: 'active',
+              },
+              milestone: {
+                id: 10,
+                goal_id: 1,
+                position: 1,
+                title: 'Build a tiny daily reading habit',
+                description: 'Read 15 minutes every day.',
+                target_date: '2026-12-01',
+                status: 'current',
+                total_quests: 1,
+                done_quests: 0,
+              },
+              window_start: '2026-11-10',
+              window_end: '2026-11-12',
+              quests: [
+                {
+                  id: 101,
+                  milestone_id: 10,
+                  title: 'Read 2 pages of your graded reader slowly',
+                  due_date: '2026-11-10',
+                  estimated_minutes: 15,
+                  completed_at: null,
+                },
+              ],
             }),
         };
       }
@@ -44,8 +81,8 @@ describe('App auth gate (after #8/#9 revert)', () => {
     await user.click(screen.getByRole('button', { name: /^log in$/i }));
 
     expect(await screen.findByRole('heading', { name: /questline/i })).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: /today placeholder/i })).toBeInTheDocument();
-    expect(screen.queryByRole('region', { name: /a note from mochi/i })).not.toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: /a note from mochi/i })).toBeInTheDocument();
+    expect(await screen.findByText(/Read 2 pages of your graded reader slowly/)).toBeInTheDocument();
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
   });
 
@@ -60,6 +97,19 @@ describe('App auth gate (after #8/#9 revert)', () => {
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (url === '/api/quests') {
+        return {
+          ok: true,
+          text: async () =>
+            JSON.stringify({
+              goal: null,
+              milestone: null,
+              window_start: '2026-11-10',
+              window_end: '2026-11-12',
+              quests: [],
+            }),
+        };
+      }
       if (url.includes('/api/chat/messages') && (!init?.method || init.method === 'GET')) {
         const headers = new Headers(init?.headers);
         expect(headers.get('Authorization')).toBe('Bearer demo-jwt-token');
@@ -97,7 +147,7 @@ describe('App auth gate (after #8/#9 revert)', () => {
 
     render(<App />);
 
-    expect(await screen.findByRole('region', { name: /today placeholder/i })).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: /a note from mochi/i })).toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: /talk/i }));
 
     expect(await screen.findByRole('region', { name: /mochi messenger/i })).toBeInTheDocument();

@@ -12,6 +12,7 @@ import {
 import type { Clock } from '../clock.js';
 import { formatLocalDate } from '../clock.js';
 import { DEFAULT_TIME_BUDGET_MINUTES } from '../config/game.js';
+import { mapGoalRowToRoadmapGoal } from '../repositories/goalRepository.js';
 import type { QuestRepository } from '../repositories/questRepository.js';
 import { aiUnavailable, notFound } from './errors.js';
 
@@ -22,13 +23,27 @@ export type QuestServiceDeps = {
 };
 
 export function createQuestService(deps: QuestServiceDeps) {
+  function normalizeGoal(goal: CurrentMilestoneQuestsResponse['goal']) {
+    if (!goal) return null;
+    return mapGoalRowToRoadmapGoal({
+      id: goal.id,
+      title: goal.title,
+      done_definition: goal.done_definition ?? null,
+      starting_point: goal.starting_point ?? null,
+      time_budget_minutes_per_day: goal.time_budget_minutes_per_day ?? null,
+      deadline: goal.deadline,
+      status: goal.status,
+    });
+  }
+
   /**
    * Read-only: returns saved quests for the logged-in user's active goal and its
    * `status = 'current'` milestone without invoking the AI client.
    */
   async function getCurrentMilestoneQuests(userId: number): Promise<CurrentMilestoneQuestsResponse> {
     const today = formatLocalDate(deps.clock.now());
-    const { goal, milestone } = await deps.quests.getCurrentMilestoneContextForUser(userId);
+    const { goal: rawGoal, milestone } = await deps.quests.getCurrentMilestoneContextForUser(userId);
+    const goal = normalizeGoal(rawGoal);
 
     const { windowStart, windowEnd } = computeQuestGenerationWindow(
       today,
@@ -63,7 +78,8 @@ export function createQuestService(deps: QuestServiceDeps) {
     userId: number,
   ): Promise<CurrentMilestoneQuestsResponse> {
     const today = formatLocalDate(deps.clock.now());
-    const { goal, milestone } = await deps.quests.getCurrentMilestoneContextForUser(userId);
+    const { goal: rawGoal, milestone } = await deps.quests.getCurrentMilestoneContextForUser(userId);
+    const goal = normalizeGoal(rawGoal);
 
     if (!goal) {
       throw notFound('Confirm a goal first before generating quests.');

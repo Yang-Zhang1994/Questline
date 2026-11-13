@@ -1,16 +1,7 @@
 import type { Milestone, ProposedMilestone, RoadmapGoal } from '@questline/shared';
 import type { Db } from '../db/connection.js';
 import { conflict, notFound } from '../services/errors.js';
-
-type GoalRow = {
-  id: number;
-  title: string;
-  done_definition: string | null;
-  starting_point: string | null;
-  time_budget_minutes_per_day: number | null;
-  deadline: string | null;
-  status: 'active' | 'paused' | 'completed' | 'archived';
-};
+import { mapGoalRowToRoadmapGoal, type RoadmapGoalRow } from './goalRepository.js';
 
 type MilestoneRow = {
   id: number;
@@ -23,18 +14,6 @@ type MilestoneRow = {
   total_quests?: number | string;
   done_quests?: number | string;
 };
-
-function mapGoal(row: GoalRow): RoadmapGoal {
-  return {
-    id: row.id,
-    title: row.title,
-    done_definition: row.done_definition,
-    starting_point: row.starting_point,
-    time_budget_minutes_per_day: row.time_budget_minutes_per_day,
-    deadline: row.deadline,
-    status: row.status,
-  };
-}
 
 function mapMilestone(row: MilestoneRow): Milestone {
   return {
@@ -53,7 +32,7 @@ function mapMilestone(row: MilestoneRow): Milestone {
 export function createMilestoneRepository(db: Db) {
   return {
     async getActiveGoalForUser(userId: number): Promise<RoadmapGoal | null> {
-      const result = await db.query<GoalRow>(
+      const result = await db.query<RoadmapGoalRow>(
         `SELECT id, title, done_definition, starting_point, time_budget_minutes_per_day, deadline, status
          FROM goals
          WHERE user_id = $1 AND status = 'active'
@@ -61,7 +40,7 @@ export function createMilestoneRepository(db: Db) {
         [userId],
       );
       const row = result.rows[0];
-      return row ? mapGoal(row) : null;
+      return row ? mapGoalRowToRoadmapGoal(row) : null;
     },
 
     async listMilestonesForGoal(goalId: number, userId: number): Promise<Milestone[]> {

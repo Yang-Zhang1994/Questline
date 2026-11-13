@@ -12,6 +12,7 @@ import { buildDefaultMilestoneProposal } from '../ai/prompts/mochiMilestones.js'
 import type { Clock } from '../clock.js';
 import { formatLocalDate, toIsoDateTime } from '../clock.js';
 import type { ChatRepository } from '../repositories/chatRepository.js';
+import { mapGoalRowToRoadmapGoal } from '../repositories/goalRepository.js';
 import type { MilestoneRepository } from '../repositories/milestoneRepository.js';
 import { aiUnavailable, conflict, notFound, validationError } from './errors.js';
 
@@ -37,8 +38,22 @@ function toClaudeHistory(messages: ChatMessage[]): ClaudeChatTurn[] {
 }
 
 export function createMilestoneService(deps: MilestoneServiceDeps) {
+  async function loadNormalizedActiveGoal(userId: number) {
+    const rawGoal = await deps.milestones.getActiveGoalForUser(userId);
+    if (!rawGoal) return null;
+    return mapGoalRowToRoadmapGoal({
+      id: rawGoal.id,
+      title: rawGoal.title,
+      done_definition: rawGoal.done_definition ?? null,
+      starting_point: rawGoal.starting_point ?? null,
+      time_budget_minutes_per_day: rawGoal.time_budget_minutes_per_day ?? null,
+      deadline: rawGoal.deadline,
+      status: rawGoal.status,
+    });
+  }
+
   async function getMilestonePlanState(userId: number): Promise<MilestonePlanStateResponse> {
-    const goal = await deps.milestones.getActiveGoalForUser(userId);
+    const goal = await loadNormalizedActiveGoal(userId);
     if (!goal) {
       return { goal: null, milestones: [] };
     }
@@ -50,7 +65,7 @@ export function createMilestoneService(deps: MilestoneServiceDeps) {
     userId: number,
     options: ProposeMilestonesOptions = {},
   ): Promise<ProposeMilestonesResponse> {
-    const goal = await deps.milestones.getActiveGoalForUser(userId);
+    const goal = await loadNormalizedActiveGoal(userId);
     if (!goal) {
       throw notFound('Confirm a goal first before planning milestones.');
     }
@@ -126,7 +141,7 @@ export function createMilestoneService(deps: MilestoneServiceDeps) {
     userId: number,
     proposed: ProposedMilestone[],
   ): Promise<ConfirmMilestonesResponse> {
-    const goal = await deps.milestones.getActiveGoalForUser(userId);
+    const goal = await loadNormalizedActiveGoal(userId);
     if (!goal) {
       throw notFound('No active goal found to confirm milestones for.');
     }

@@ -15,6 +15,7 @@ export {
 } from './schemas/auth.js';
 
 export {
+  CurrentMilestoneQuestsResponseSchema,
   IsoDateSchema,
   IsoDateTimeSchema,
   ProposedQuestListSchema,
