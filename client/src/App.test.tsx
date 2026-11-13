@@ -31,7 +31,7 @@ describe('App auth gate & Today greeting note (Issues #8 & #9)', () => {
             }),
         };
       }
-      if (url === '/api/quests') {
+      if (url === '/api/quests' || url.startsWith('/api/quests?')) {
         return {
           ok: true,
           text: async () =>
@@ -60,6 +60,9 @@ describe('App auth gate & Today greeting note (Issues #8 & #9)', () => {
                 level: 1,
                 xp_into_level: 0,
                 xp_for_next_level: 50,
+                current_streak: 0,
+                best_streak: 0,
+                last_active_date: null,
               },
               quests: [
                 {
@@ -103,7 +106,7 @@ describe('App auth gate & Today greeting note (Issues #8 & #9)', () => {
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url === '/api/quests') {
+      if (url === '/api/quests' || url.startsWith('/api/quests?')) {
         return {
           ok: true,
           text: async () =>
@@ -117,6 +120,9 @@ describe('App auth gate & Today greeting note (Issues #8 & #9)', () => {
                 level: 1,
                 xp_into_level: 0,
                 xp_for_next_level: 50,
+                current_streak: 0,
+                best_streak: 0,
+                last_active_date: null,
               },
               quests: [],
             }),

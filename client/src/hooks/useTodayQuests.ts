@@ -13,6 +13,7 @@ import {
   generateCurrentMilestoneQuests,
   toggleQuestCompletion,
 } from '../api/quests';
+import { todayLocalDate } from '../lib/localDate';
 
 export type TodayViewStatus =
   | 'loading'
@@ -55,9 +56,10 @@ export function useTodayQuests() {
     setError(null);
     setToggleError(null);
     try {
-      let payload = await fetchCurrentMilestoneQuests();
+      const localDate = todayLocalDate();
+      let payload = await fetchCurrentMilestoneQuests(localDate);
       if (payload.goal && payload.milestone && !hasQuestsInCurrentWindow(payload)) {
-        payload = await generateCurrentMilestoneQuests();
+        payload = await generateCurrentMilestoneQuests(localDate);
       }
       setData(payload);
     } catch (err) {
@@ -99,7 +101,7 @@ export function useTodayQuests() {
     setToggleError(null);
 
     try {
-      const result = await toggleQuestCompletion(questId, completed);
+      const result = await toggleQuestCompletion(questId, completed, todayLocalDate());
       setData((prev) => {
         if (!prev) return prev;
         return {

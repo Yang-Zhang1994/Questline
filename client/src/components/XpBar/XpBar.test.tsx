@@ -12,6 +12,9 @@ const sample: UserProgress = {
   level: 2,
   xp_into_level: 10,
   xp_for_next_level: 70,
+  current_streak: 0,
+  best_streak: 0,
+  last_active_date: null,
 };
 
 describe('XpBar (Issue #11)', () => {

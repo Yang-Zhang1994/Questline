@@ -1,4 +1,4 @@
-import { ToggleQuestCompletionBodySchema } from '@questline/shared';
+import { IsoDateSchema, ToggleQuestCompletionBodySchema } from '@questline/shared';
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
@@ -9,6 +9,10 @@ import type { QuestService } from '../services/questService.js';
 
 const QuestIdParamSchema = z.object({
   questId: z.coerce.number().int().positive('Quest id must be a positive integer'),
+});
+
+const LocalDateQuerySchema = z.object({
+  local_date: IsoDateSchema.optional(),
 });
 
 const questGenerateLimiter = rateLimit({
@@ -35,7 +39,8 @@ export function createQuestsRouter(questService: QuestService): Router {
       if (!user) {
         throw unauthorized();
       }
-      const payload = await questService.getCurrentMilestoneQuests(user.id);
+      const { local_date: localDate } = LocalDateQuerySchema.parse(req.query);
+      const payload = await questService.getCurrentMilestoneQuests(user.id, localDate);
       res.status(200).json(payload);
     } catch (err) {
       next(err);
@@ -48,7 +53,8 @@ export function createQuestsRouter(questService: QuestService): Router {
       if (!user) {
         throw unauthorized();
       }
-      const payload = await questService.generateCurrentMilestoneQuests(user.id);
+      const body = LocalDateQuerySchema.parse(req.body ?? {});
+      const payload = await questService.generateCurrentMilestoneQuests(user.id, body.local_date);
       res.status(200).json(payload);
     } catch (err) {
       next(err);
@@ -63,7 +69,12 @@ export function createQuestsRouter(questService: QuestService): Router {
       }
       const { questId } = QuestIdParamSchema.parse(req.params);
       const body = ToggleQuestCompletionBodySchema.parse(req.body);
-      const payload = await questService.toggleQuestCompletion(user.id, questId, body.completed);
+      const payload = await questService.toggleQuestCompletion(
+        user.id,
+        questId,
+        body.completed,
+        body.local_date,
+      );
       res.status(200).json(payload);
     } catch (err) {
       next(err);

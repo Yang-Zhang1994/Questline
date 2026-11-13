@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Milestone, ProposedQuest, Quest, RoadmapGoal } from '@questline/shared';
 import { createClaudeClient, createEchoChatClient, type ChatAiClient } from '../ai/client.js';
 import type { Clock } from '../clock.js';
-import { XP_PER_QUEST, XP_TO_REACH_LEVEL, progressSnapshotFromXp } from '../config/game.js';
+import { XP_PER_QUEST, XP_TO_REACH_LEVEL, applyActiveDay, progressSnapshotFromXp, revertActiveDay } from '../config/game.js';
 import type { ProgressRepository } from '../repositories/progressRepository.js';
 import type { QuestRepository } from '../repositories/questRepository.js';
 import { AppError } from './errors.js';
@@ -164,6 +164,7 @@ describe('questService (Issue #7)', () => {
         id: number,
         completedAt: string | null,
         xpDelta: number,
+        localDate: string,
       ) {
         if (userId !== 1) return null;
         const idx = savedRows.findIndex((q) => q.id === id);
@@ -173,16 +174,47 @@ describe('questService (Issue #7)', () => {
           completed_at: completedAt,
         };
         savedRows[idx] = updated;
-        // Progress is owned by the progress mock; service tests that need XP
-        // use a shared mutable store via buildProgress().
-        const store = (globalThis as unknown as { __xpStore?: { xp: number } }).__xpStore;
+        const store = (globalThis as unknown as {
+          __xpStore?: {
+            xp: number;
+            current_streak: number;
+            best_streak: number;
+            last_active_date: string | null;
+            active_day_completions: number;
+          };
+        }).__xpStore;
         const previousXp = store?.xp ?? 0;
         const previousLevel = progressSnapshotFromXp(previousXp).level;
         const nextXp = Math.max(0, previousXp + xpDelta);
-        if (store) store.xp = nextXp;
+        let streak = {
+          current_streak: store?.current_streak ?? 0,
+          best_streak: store?.best_streak ?? 0,
+          last_active_date: store?.last_active_date ?? null,
+        };
+        let activeDay = store?.active_day_completions ?? 0;
+        if (xpDelta > 0) {
+          if (streak.last_active_date === localDate) {
+            activeDay += 1;
+          } else {
+            streak = applyActiveDay(streak, localDate);
+            activeDay = 1;
+          }
+        } else if (streak.last_active_date === localDate) {
+          activeDay = Math.max(0, activeDay - 1);
+          if (activeDay === 0) {
+            streak = revertActiveDay(streak, localDate);
+          }
+        }
+        if (store) {
+          store.xp = nextXp;
+          store.current_streak = streak.current_streak;
+          store.best_streak = streak.best_streak;
+          store.last_active_date = streak.last_active_date;
+          store.active_day_completions = activeDay;
+        }
         return {
           quest: updated,
-          progress: progressSnapshotFromXp(nextXp),
+          progress: progressSnapshotFromXp(nextXp, streak),
           previousLevel,
         };
       },
@@ -190,14 +222,24 @@ describe('questService (Issue #7)', () => {
   }
 
   function buildProgress(initialXp = 0): ProgressRepository & { xp: number } {
-    const store = { xp: initialXp };
-    (globalThis as unknown as { __xpStore: { xp: number } }).__xpStore = store;
+    const store = {
+      xp: initialXp,
+      current_streak: 0,
+      best_streak: 0,
+      last_active_date: null as string | null,
+      active_day_completions: 0,
+    };
+    (globalThis as unknown as { __xpStore: typeof store }).__xpStore = store;
     return {
       get xp() {
         return store.xp;
       },
-      async getOrCreate() {
-        return progressSnapshotFromXp(store.xp);
+      async getOrCreate(_userId: number, _localDate?: string) {
+        return progressSnapshotFromXp(store.xp, {
+          current_streak: store.current_streak,
+          best_streak: store.best_streak,
+          last_active_date: store.last_active_date,
+        });
       },
     };
   }
@@ -614,13 +656,51 @@ describe('questService (Issue #7)', () => {
         clock: fixedClock('2026-11-10T18:30:00.000Z'),
       });
 
-      const checked = await service.toggleQuestCompletion(1, 1, true);
+      const checked = await service.toggleQuestCompletion(1, 1, true, '2026-11-10');
       expect(checked.progress.xp).toBe(XP_PER_QUEST);
+      expect(checked.progress.current_streak).toBe(1);
       expect(checked.leveled_up).toBe(false);
 
-      const undone = await service.toggleQuestCompletion(1, 1, false);
+      const undone = await service.toggleQuestCompletion(1, 1, false, '2026-11-10');
       expect(undone.progress.xp).toBe(0);
+      expect(undone.progress.current_streak).toBe(0);
       expect(undone.quest.completed_at).toBeNull();
+    });
+
+    it('counts several same-day completions as one streak day (Issue #12)', async () => {
+      const questsRepo = buildQuestRepo({
+        initialQuests: [
+          {
+            id: 1,
+            milestone_id: currentMilestone.id,
+            title: 'First quest',
+            due_date: '2026-11-10',
+            estimated_minutes: 15,
+            completed_at: null,
+          },
+          {
+            id: 2,
+            milestone_id: currentMilestone.id,
+            title: 'Second quest',
+            due_date: '2026-11-10',
+            estimated_minutes: 10,
+            completed_at: null,
+          },
+        ],
+      });
+      const progress = buildProgress(0);
+      const service = createQuestService({
+        quests: questsRepo,
+        progress,
+        ai: buildAi(),
+        clock: fixedClock('2026-11-10T18:30:00.000Z'),
+      });
+
+      const first = await service.toggleQuestCompletion(1, 1, true, '2026-11-10');
+      expect(first.progress.current_streak).toBe(1);
+      const second = await service.toggleQuestCompletion(1, 2, true, '2026-11-10');
+      expect(second.progress.current_streak).toBe(1);
+      expect(second.progress.xp).toBe(XP_PER_QUEST * 2);
     });
 
     it('levels up and returns a Mochi celebration when XP crosses a threshold', async () => {

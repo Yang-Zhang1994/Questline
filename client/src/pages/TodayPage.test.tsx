@@ -34,6 +34,9 @@ const basePayload: CurrentMilestoneQuestsResponse = {
     level: 1,
     xp_into_level: 0,
     xp_for_next_level: 50,
+    current_streak: 0,
+    best_streak: 0,
+    last_active_date: null,
   },
   quests: [
     {
@@ -88,7 +91,7 @@ describe('TodayPage (Issue #8)', () => {
     ).not.toBeInTheDocument();
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(fetchSpy.mock.calls[0][0]).toBe('/api/quests');
+    expect(String(fetchSpy.mock.calls[0][0])).toMatch(/^\/api\/quests(\?local_date=\d{4}-\d{2}-\d{2})?$/);
   });
 
   it('nudges the user to Talk with Mochi when there is no active goal', async () => {
@@ -106,6 +109,9 @@ describe('TodayPage (Issue #8)', () => {
     level: 1,
     xp_into_level: 0,
     xp_for_next_level: 50,
+    current_streak: 0,
+    best_streak: 0,
+    last_active_date: null,
   },
         } satisfies CurrentMilestoneQuestsResponse),
     } as Response);
@@ -141,6 +147,9 @@ describe('TodayPage (Issue #8)', () => {
     level: 1,
     xp_into_level: 0,
     xp_for_next_level: 50,
+    current_streak: 0,
+    best_streak: 0,
+    last_active_date: null,
   },
         } satisfies CurrentMilestoneQuestsResponse),
     } as Response);
@@ -182,7 +191,7 @@ describe('TodayPage (Issue #8)', () => {
 
     expect(await screen.findByText(/Read 2 pages of your graded reader slowly/)).toBeInTheDocument();
     expect(fetchSpy).toHaveBeenCalledTimes(2);
-    expect(fetchSpy.mock.calls[0][0]).toBe('/api/quests');
+    expect(String(fetchSpy.mock.calls[0][0])).toMatch(/^\/api\/quests(\?local_date=\d{4}-\d{2}-\d{2})?$/);
     expect(fetchSpy.mock.calls[1][0]).toBe('/api/quests/generate');
     expect(fetchSpy.mock.calls[1][1]?.method).toBe('POST');
   });
@@ -247,7 +256,7 @@ describe('TodayPage (Issue #8)', () => {
     expect(await screen.findByText(/Freshly generated quest for today/)).toBeInTheDocument();
     expect(screen.queryByText(/Old quest from last week/)).not.toBeInTheDocument();
     expect(fetchSpy).toHaveBeenCalledTimes(2);
-    expect(fetchSpy.mock.calls[0][0]).toBe('/api/quests');
+    expect(String(fetchSpy.mock.calls[0][0])).toMatch(/^\/api\/quests(\?local_date=\d{4}-\d{2}-\d{2})?$/);
     expect(fetchSpy.mock.calls[1][0]).toBe('/api/quests/generate');
     expect(fetchSpy.mock.calls[1][1]?.method).toBe('POST');
   });
@@ -350,6 +359,9 @@ describe('TodayPage (Issue #8)', () => {
                 level: 1,
                 xp_into_level: 10,
                 xp_for_next_level: 50,
+                current_streak: 0,
+                best_streak: 0,
+                last_active_date: null,
               },
               leveled_up: false,
               level_up_message: null
@@ -380,7 +392,9 @@ describe('TodayPage (Issue #8)', () => {
       expect(fetchSpy).toHaveBeenCalledTimes(2);
       expect(fetchSpy.mock.calls[1][0]).toBe('/api/quests/101/completion');
       expect(fetchSpy.mock.calls[1][1]?.method).toBe('PATCH');
-      expect(fetchSpy.mock.calls[1][1]?.body).toBe(JSON.stringify({ completed: true }));
+      const checkBody = JSON.parse(String(fetchSpy.mock.calls[1][1]?.body));
+      expect(checkBody.completed).toBe(true);
+      expect(checkBody.local_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 
       // Resolve server PATCH response
       resolveCheck({
@@ -396,6 +410,9 @@ describe('TodayPage (Issue #8)', () => {
                 level: 1,
                 xp_into_level: 10,
                 xp_for_next_level: 50,
+                current_streak: 0,
+                best_streak: 0,
+                last_active_date: null,
               },
               leveled_up: false,
               level_up_message: null
@@ -417,7 +434,9 @@ describe('TodayPage (Issue #8)', () => {
       expect(screen.getByTestId('today-quests-progress')).toHaveTextContent('0 of 2 done ♡');
       expect(fetchSpy).toHaveBeenCalledTimes(3);
       expect(fetchSpy.mock.calls[2][0]).toBe('/api/quests/101/completion');
-      expect(fetchSpy.mock.calls[2][1]?.body).toBe(JSON.stringify({ completed: false }));
+      const undoBody = JSON.parse(String(fetchSpy.mock.calls[2][1]?.body));
+      expect(undoBody.completed).toBe(false);
+      expect(undoBody.local_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     });
 
     it('reverts the checkbox immediately and shows a friendly message if saving fails', async () => {
