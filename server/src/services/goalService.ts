@@ -6,12 +6,14 @@ import type {
   GoalDraftResponse,
   GoalsListResponse,
   InterviewAnswers,
+  ManualPlanBody,
+  ManualPlanResponse,
   RestartInterviewResponse,
   StartNewGoalResponse,
 } from '@questline/shared';
 import type { ChatAiClient } from '../ai/client.js';
 import type { Clock } from '../clock.js';
-import { toIsoDateTime } from '../clock.js';
+import { formatLocalDate, toIsoDateTime } from '../clock.js';
 import type { GoalRepository } from '../repositories/goalRepository.js';
 import {
   toInterviewState,
@@ -35,6 +37,34 @@ function answersComplete(answers: InterviewAnswers): boolean {
     Boolean(answers.time_budget?.trim()) &&
     Boolean(answers.deadline?.trim())
   );
+}
+
+/** Spread milestone target dates from ~today toward the deadline (inclusive). */
+function targetDatesForMilestones(
+  count: number,
+  deadline: string | null,
+  todayIso: string,
+): Array<string | null> {
+  if (!deadline || deadline < todayIso) {
+    return Array.from({ length: count }, () => null);
+  }
+  if (count === 1) return [deadline];
+
+  const start = Date.parse(`${todayIso}T12:00:00Z`);
+  const end = Date.parse(`${deadline}T12:00:00Z`);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    return Array.from({ length: count }, () => deadline);
+  }
+
+  const span = end - start;
+  return Array.from({ length: count }, (_, index) => {
+    const t = start + Math.round((span * (index + 1)) / count);
+    const d = new Date(t);
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  });
 }
 
 export function createGoalService(deps: GoalServiceDeps) {
@@ -236,11 +266,51 @@ export function createGoalService(deps: GoalServiceDeps) {
     return { goal };
   }
 
+  /**
+   * Manual form fallback (#21): user types goal + milestones; submit persists
+   * both (no AI draft). Prior active goal is paused so the selector keeps it.
+   */
+  async function createManualPlan(
+    userId: number,
+    body: ManualPlanBody,
+  ): Promise<ManualPlanResponse> {
+    const title = body.title.trim();
+    const milestoneTitles = body.milestones.map((m) => m.trim()).filter((m) => m.length > 0);
+
+    if (!title) {
+      throw validationError('Give your goal a little name before we save it ♡');
+    }
+    if (milestoneTitles.length === 0) {
+      throw validationError(
+        'Add at least one milestone (one per line) so we can draw your map ♡',
+      );
+    }
+
+    const now = deps.clock.now();
+    const today = formatLocalDate(now);
+    const deadline = body.deadline ?? null;
+    const dates = targetDatesForMilestones(milestoneTitles.length, deadline, today);
+
+    return deps.goals.createManualPlan(userId, {
+      title,
+      concrete_goal: body.concrete_goal ?? null,
+      deadline,
+      createdAt: toIsoDateTime(now),
+      milestones: milestoneTitles.map((milestoneTitle, index) => ({
+        position: index + 1,
+        title: milestoneTitle,
+        description: 'You wrote this stage by hand ♡',
+        target_date: dates[index] ?? null,
+      })),
+    });
+  }
+
   return {
     listGoals,
     activateGoal,
     startNewGoal,
     deleteGoal,
+    createManualPlan,
     getDraft,
     proposeDraft,
     reviseDraft,

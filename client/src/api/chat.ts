@@ -8,6 +8,7 @@ import {
   type RestartInterviewResponse,
   type SendChatMessageResponse,
 } from '@questline/shared';
+import { throwApiError } from './apiError';
 import { authHeaders } from './authToken';
 
 async function parseJson(res: Response): Promise<unknown> {
@@ -16,25 +17,13 @@ async function parseJson(res: Response): Promise<unknown> {
   return JSON.parse(text) as unknown;
 }
 
-function errorMessage(body: unknown, fallback: string): string {
-  if (
-    typeof body === 'object' &&
-    body !== null &&
-    'error' in body &&
-    typeof (body as { error?: { message?: string } }).error?.message === 'string'
-  ) {
-    return (body as { error: { message: string } }).error.message;
-  }
-  return fallback;
-}
-
 export async function fetchChatMessages(): Promise<ChatHistoryResponse> {
   const res = await fetch('/api/chat/messages', {
     headers: authHeaders(),
   });
   const body = await parseJson(res);
   if (!res.ok) {
-    throw new Error(errorMessage(body, 'Could not load chat'));
+    throwApiError(res, body, 'Could not load chat');
   }
   return ChatHistoryResponseSchema.parse(body);
 }
@@ -47,7 +36,7 @@ export async function sendChatMessage(content: string): Promise<SendChatMessageR
   });
   const body = await parseJson(res);
   if (!res.ok) {
-    throw new Error(errorMessage(body, 'Could not send message'));
+    throwApiError(res, body, 'Could not send message');
   }
   return SendChatMessageResponseSchema.parse(body);
 }
@@ -59,7 +48,7 @@ export async function restartInterview(): Promise<RestartInterviewResponse> {
   });
   const body = await parseJson(res);
   if (!res.ok) {
-    throw new Error(errorMessage(body, 'Could not restart the interview'));
+    throwApiError(res, body, 'Could not restart the interview');
   }
   return RestartInterviewResponseSchema.parse(body);
 }

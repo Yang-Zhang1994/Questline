@@ -161,6 +161,9 @@ describe('goalService (Issue #4)', () => {
         }
         return { deleted, active };
       },
+      async createManualPlan() {
+        throw new Error('createManualPlan is covered by integration tests');
+      },
     };
   }
 

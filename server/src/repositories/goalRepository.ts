@@ -3,6 +3,8 @@ import {
   type Goal,
   type GoalDraft,
   type GoalStatus,
+  type Milestone,
+  type MilestoneStatus,
   type RoadmapGoal,
 } from '@questline/shared';
 import { toIsoDateTime } from '../clock.js';
@@ -268,6 +270,95 @@ export function createGoalRepository(db: Db) {
 
         await client.query('COMMIT');
         return { deleted, active };
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+    },
+
+    /**
+     * Manual plan fallback (#21): pause any active goal, insert a new active goal
+     * plus ordered milestones in one transaction (confirm-before-save = form submit).
+     */
+    async createManualPlan(
+      userId: number,
+      input: {
+        title: string;
+        concrete_goal: string | null;
+        deadline: string | null;
+        milestones: Array<{
+          position: number;
+          title: string;
+          description: string | null;
+          target_date: string | null;
+        }>;
+        createdAt: string;
+      },
+    ): Promise<{ goal: Goal; milestones: Milestone[] }> {
+      const client = await db.connect();
+      try {
+        await client.query('BEGIN');
+
+        await client.query(
+          `UPDATE goals SET status = 'paused'
+           WHERE user_id = $1 AND status = 'active'`,
+          [userId],
+        );
+
+        const goalResult = await client.query<GoalRow>(
+          `INSERT INTO goals (
+             user_id, title, done_definition, starting_point,
+             time_budget_minutes_per_day, deadline, status, created_at
+           ) VALUES ($1, $2, $3, NULL, NULL, $4, 'active', $5)
+           RETURNING ${GOAL_COLUMNS}`,
+          [userId, input.title, input.concrete_goal, input.deadline, input.createdAt],
+        );
+        const goal = mapGoal(goalResult.rows[0]);
+
+        type MilestoneRow = {
+          id: number;
+          goal_id: number;
+          position: number;
+          title: string;
+          description: string | null;
+          target_date: string | null;
+          status: MilestoneStatus;
+        };
+
+        const milestones: Milestone[] = [];
+        for (const item of input.milestones) {
+          const status: MilestoneStatus = item.position === 1 ? 'current' : 'upcoming';
+          const inserted = await client.query<MilestoneRow>(
+            `INSERT INTO milestones (goal_id, position, title, description, target_date, status)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             RETURNING id, goal_id, position, title, description, target_date, status`,
+            [
+              goal.id,
+              item.position,
+              item.title,
+              item.description,
+              item.target_date,
+              status,
+            ],
+          );
+          const row = inserted.rows[0];
+          milestones.push({
+            id: row.id,
+            goal_id: row.goal_id,
+            position: row.position,
+            title: row.title,
+            description: row.description,
+            target_date: row.target_date,
+            status: row.status,
+            total_quests: 0,
+            done_quests: 0,
+          });
+        }
+
+        await client.query('COMMIT');
+        return { goal, milestones };
       } catch (err) {
         await client.query('ROLLBACK');
         throw err;

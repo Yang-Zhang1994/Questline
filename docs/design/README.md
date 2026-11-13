@@ -71,6 +71,7 @@ Rename prototype labels: "＋ New quest" → "＋ New goal"; "★ Start this que
 | `ChatWindow` / bubbles / input          | Enter or button send; distinct bubbles; Mochi name+avatar; auto-scroll; typing indicator | #2       |
 | Goal interview                          | Exactly one question per message; four topics; follow-ups; restart                       | #3       |
 | `GoalConfirmCard`                       | Proposed goal + deadline; Accept / revise; save only on Accept                           | #4       |
+| `ManualPlanForm`                        | Talk fallback: goal name / concrete goal / deadline / milestones; Back to chatting; auto-offer on AI error | #21      |
 | `MilestonePlanEditor`                   | 3–7 milestones; edit via Mochi; save only on confirm                                     | #5       |
 | `RoadmapView` / `MilestoneNode`         | Start → stages → goal; current highlighted; title + date                                 | #6, #10  |
 | `DailyNote` / `QuestItem`               | Window card “A note from Mochi”; today’s quests or rest-day; check/undo; done faded      | #8, #9   |

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ChatMessage, InterviewState } from '@questline/shared';
+import { isAiUnavailableError } from '../api/apiError';
 import { fetchChatMessages, restartInterview, sendChatMessage } from '../api/chat';
 import { useGoalDraft } from './useGoalDraft';
 
@@ -22,6 +23,7 @@ export function useChat() {
   const [sending, setSending] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [aiUnavailable, setAiUnavailable] = useState(false);
 
   const goal = useGoalDraft({
     interviewComplete: interview.status === 'complete',
@@ -31,12 +33,14 @@ export function useChat() {
   const reload = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setAiUnavailable(false);
     try {
       const payload = await fetchChatMessages();
       setMessages(payload.messages);
       setInterview(payload.interview);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
+      setAiUnavailable(isAiUnavailableError(err));
     } finally {
       setLoading(false);
     }
@@ -52,12 +56,14 @@ export function useChat() {
 
     setSending(true);
     setError(null);
+    setAiUnavailable(false);
     try {
       const payload = await sendChatMessage(trimmed);
       setMessages((prev) => [...prev, payload.user_message, payload.mochi_message]);
       setInterview(payload.interview);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not send message');
+      setAiUnavailable(isAiUnavailableError(err));
     } finally {
       setSending(false);
     }
@@ -68,6 +74,7 @@ export function useChat() {
   const restart = useCallback(async () => {
     setRestarting(true);
     setError(null);
+    setAiUnavailable(false);
     try {
       const payload = await restartInterview();
       setMessages(payload.messages);
@@ -75,6 +82,7 @@ export function useChat() {
       resetGoal();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not restart the interview');
+      setAiUnavailable(isAiUnavailableError(err));
     } finally {
       setRestarting(false);
     }
@@ -92,6 +100,7 @@ export function useChat() {
     sending,
     restarting,
     error,
+    aiUnavailable,
     send,
     restart,
     reload,

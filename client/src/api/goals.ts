@@ -5,6 +5,7 @@ import {
   GoalDraftResponseSchema,
   GoalsListResponseSchema,
   InterviewStateSchema,
+  ManualPlanResponseSchema,
   StartNewGoalResponseSchema,
   type ActivateGoalResponse,
   type ConfirmGoalResponse,
@@ -13,6 +14,8 @@ import {
   type GoalDraftResponse,
   type GoalsListResponse,
   type InterviewState,
+  type ManualPlanBody,
+  type ManualPlanResponse,
   type StartNewGoalResponse,
 } from '@questline/shared';
 import { z } from 'zod';
@@ -146,4 +149,18 @@ export async function confirmGoalDraft(draft: GoalDraft): Promise<ConfirmGoalRes
     throw new Error(errorMessage(body, 'Could not save the goal'));
   }
   return ConfirmGoalResponseSchema.parse(body);
+}
+
+/** Manual plan form — persists goal + milestones in one confirm-before-save (#21). */
+export async function createManualPlan(input: ManualPlanBody): Promise<ManualPlanResponse> {
+  const res = await fetch('/api/goals/manual-plan', {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(input),
+  });
+  const body = await parseJson(res);
+  if (!res.ok) {
+    throw new Error(errorMessage(body, 'Could not save your handwritten plan'));
+  }
+  return ManualPlanResponseSchema.parse(body);
 }
