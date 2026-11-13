@@ -8,7 +8,18 @@ export type TodayPageProps = {
 };
 
 export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
-  const { status, goal, milestone, todayDate, todayQuests, error, reload } = useTodayQuests();
+  const {
+    status,
+    goal,
+    milestone,
+    todayDate,
+    todayQuests,
+    error,
+    pendingQuestIds,
+    toggleError,
+    toggleQuest,
+    reload,
+  } = useTodayQuests();
 
   return (
     <div className="flex min-h-screen flex-col items-center px-4 pb-24 pt-6">
@@ -54,6 +65,11 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
           todayDate={todayDate}
           todayQuests={todayQuests}
           error={error}
+          pendingQuestIds={pendingQuestIds}
+          toggleError={toggleError}
+          onToggleQuest={(questId, completed) => {
+            void toggleQuest(questId, completed);
+          }}
           onRetry={() => {
             void reload();
           }}

@@ -287,4 +287,148 @@ describe('GET /api/quests & POST /api/quests/generate (Issue #7)', () => {
     expect(getEmbeddedRes.body.goal.deadline).toBe('2027-11-12');
     expect(CurrentMilestoneQuestsResponseSchema.safeParse(getEmbeddedRes.body).success).toBe(true);
   });
+
+  describe('PATCH /api/quests/:questId/completion (Issue #9)', () => {
+    it('checks off a quest using the server clock, persists after reload, and allows undoing back to null', async () => {
+      const { ToggleQuestCompletionResponseSchema } = await import('@questline/shared');
+      const app = buildApp();
+      const token = await loginAsDemo(app);
+
+      const genRes = await request(app)
+        .post('/api/quests/generate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({})
+        .expect(200);
+
+      const firstQuestId = genRes.body.quests[0].id as number;
+      expect(genRes.body.quests[0].completed_at).toBeNull();
+
+      // 1. Check off the quest (ignoring any client-supplied completed_at)
+      const checkRes = await request(app)
+        .patch(`/api/quests/${firstQuestId}/completion`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ completed: true, completed_at: '1999-01-01T00:00:00.000Z' })
+        .expect(200);
+
+      expect(ToggleQuestCompletionResponseSchema.safeParse(checkRes.body).success).toBe(true);
+      expect(checkRes.body.quest.id).toBe(firstQuestId);
+      expect(checkRes.body.quest.completed_at).toBe('2026-11-10T15:00:00Z');
+
+      // 2. Verify persistence on reload via GET /api/quests
+      const reloadRes = await request(app)
+        .get('/api/quests')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const reloadedQuest = reloadRes.body.quests.find(
+        (q: { id: number }) => q.id === firstQuestId,
+      );
+      expect(reloadedQuest.completed_at).toBe('2026-11-10T15:00:00Z');
+      expect(reloadRes.body.milestone.done_quests).toBe(1);
+
+      // 3. Undo check-off (completed: false) -> resets completed_at to null
+      const undoRes = await request(app)
+        .patch(`/api/quests/${firstQuestId}/completion`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ completed: false })
+        .expect(200);
+
+      expect(undoRes.body.quest.id).toBe(firstQuestId);
+      expect(undoRes.body.quest.completed_at).toBeNull();
+
+      // 4. Verify undo persists on reload
+      const reloadAfterUndo = await request(app)
+        .get('/api/quests')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const undoneQuest = reloadAfterUndo.body.quests.find(
+        (q: { id: number }) => q.id === firstQuestId,
+      );
+      expect(undoneQuest.completed_at).toBeNull();
+      expect(reloadAfterUndo.body.milestone.done_quests).toBe(0);
+    });
+
+    it('returns 404 NOT_FOUND when a user tries to toggle another user’s quest or a nonexistent quest', async () => {
+      const app = buildApp();
+      const demoToken = await loginAsDemo(app);
+
+      const genRes = await request(app)
+        .post('/api/quests/generate')
+        .set('Authorization', `Bearer ${demoToken}`)
+        .send({})
+        .expect(200);
+
+      const demoQuestId = genRes.body.quests[0].id as number;
+
+      // Register a second user
+      const registerRes = await request(app)
+        .post('/api/auth/register')
+        .send({ email: 'intruder@questline.local', password: 'intruder-password-123' })
+        .expect(201);
+      const otherToken = registerRes.body.token as string;
+
+      // Other user cannot check off demo user's quest -> 404
+      const otherUserPatch = await request(app)
+        .patch(`/api/quests/${demoQuestId}/completion`)
+        .set('Authorization', `Bearer ${otherToken}`)
+        .send({ completed: true })
+        .expect(404);
+
+      expect(otherUserPatch.body.error.code).toBe('NOT_FOUND');
+
+      // Demo user's quest remains untouched
+      const reloadRes = await request(app)
+        .get('/api/quests')
+        .set('Authorization', `Bearer ${demoToken}`)
+        .expect(200);
+      expect(reloadRes.body.quests[0].completed_at).toBeNull();
+
+      // Nonexistent quest ID -> 404
+      const missingRes = await request(app)
+        .patch('/api/quests/999999/completion')
+        .set('Authorization', `Bearer ${demoToken}`)
+        .send({ completed: true })
+        .expect(404);
+
+      expect(missingRes.body.error.code).toBe('NOT_FOUND');
+    });
+
+    it('returns 400 VALIDATION_ERROR for an invalid request body or invalid questId param', async () => {
+      const app = buildApp();
+      const token = await loginAsDemo(app);
+
+      const genRes = await request(app)
+        .post('/api/quests/generate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({})
+        .expect(200);
+
+      const questId = genRes.body.quests[0].id as number;
+
+      // Missing `completed`
+      const emptyBodyRes = await request(app)
+        .patch(`/api/quests/${questId}/completion`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({})
+        .expect(400);
+      expect(emptyBodyRes.body.error.code).toBe('VALIDATION_ERROR');
+
+      // Non-boolean `completed`
+      const stringBodyRes = await request(app)
+        .patch(`/api/quests/${questId}/completion`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ completed: 'yes' })
+        .expect(400);
+      expect(stringBodyRes.body.error.code).toBe('VALIDATION_ERROR');
+
+      // Non-integer questId
+      const badParamRes = await request(app)
+        .patch('/api/quests/not-a-number/completion')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ completed: true })
+        .expect(400);
+      expect(badParamRes.body.error.code).toBe('VALIDATION_ERROR');
+    });
+  });
 });

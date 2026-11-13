@@ -1,11 +1,16 @@
 import {
   CurrentMilestoneQuestsResponseSchema,
+  ToggleQuestCompletionResponseSchema,
   type CurrentMilestoneQuestsResponse,
+  type ToggleQuestCompletionResponse,
 } from '@questline/shared';
 import { authHeaders } from './authToken';
 
 export const FRIENDLY_QUESTS_ERROR =
   "Mochi couldn't open today's quest note right now. Take a gentle breath and try again in a moment.";
+
+export const FRIENDLY_QUEST_TOGGLE_ERROR =
+  "Mochi couldn't save that check-off just now — your quest was put right back so you can try again ♡";
 
 async function parseJson(res: Response): Promise<unknown> {
   const text = await res.text();
@@ -64,4 +69,30 @@ export async function generateCurrentMilestoneQuests(): Promise<CurrentMilestone
     throw new Error(errorMessage(body, FRIENDLY_QUESTS_ERROR));
   }
   return parseQuestsResponse(body);
+}
+
+export async function toggleQuestCompletion(
+  questId: number,
+  completed: boolean,
+): Promise<ToggleQuestCompletionResponse> {
+  const res = await fetch(`/api/quests/${questId}/completion`, {
+    method: 'PATCH',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ completed }),
+  });
+  let body: unknown;
+  try {
+    body = await parseJson(res);
+  } catch {
+    throw new Error(FRIENDLY_QUEST_TOGGLE_ERROR);
+  }
+  if (!res.ok) {
+    throw new Error(errorMessage(body, FRIENDLY_QUEST_TOGGLE_ERROR));
+  }
+  const parsed = ToggleQuestCompletionResponseSchema.safeParse(body);
+  if (!parsed.success) {
+    console.error('Invalid toggle quest response payload:', parsed.error);
+    throw new Error(FRIENDLY_QUEST_TOGGLE_ERROR);
+  }
+  return parsed.data;
 }

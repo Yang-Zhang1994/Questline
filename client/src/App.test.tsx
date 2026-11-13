@@ -16,8 +16,8 @@ beforeEach(() => {
   clearAuthToken();
 });
 
-describe('App auth gate & Today greeting note (Issue #8)', () => {
-  it('shows login first, then Mochi greeting note on Today after demo login (no quest check-off)', async () => {
+describe('App auth gate & Today greeting note (Issues #8 & #9)', () => {
+  it('shows login first, then Mochi greeting note with quest checkboxes on Today after demo login', async () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -83,7 +83,7 @@ describe('App auth gate & Today greeting note (Issue #8)', () => {
     expect(await screen.findByRole('heading', { name: /questline/i })).toBeInTheDocument();
     expect(await screen.findByRole('region', { name: /a note from mochi/i })).toBeInTheDocument();
     expect(await screen.findByText(/Read 2 pages of your graded reader slowly/)).toBeInTheDocument();
-    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /Read 2 pages of your graded reader slowly/i })).not.toBeChecked();
   });
 
   // AC: Talk dock route loads Mochi Messenger

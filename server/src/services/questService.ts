@@ -3,6 +3,7 @@ import {
   createQuestProposalListSchema,
   type CurrentMilestoneQuestsResponse,
   type ProposedQuest,
+  type ToggleQuestCompletionResponse,
 } from '@questline/shared';
 import type { ChatAiClient } from '../ai/client.js';
 import {
@@ -10,7 +11,7 @@ import {
   computeQuestGenerationWindow,
 } from '../ai/prompts/mochiQuests.js';
 import type { Clock } from '../clock.js';
-import { formatLocalDate } from '../clock.js';
+import { formatLocalDate, toIsoDateTime } from '../clock.js';
 import { DEFAULT_TIME_BUDGET_MINUTES } from '../config/game.js';
 import { mapGoalRowToRoadmapGoal } from '../repositories/goalRepository.js';
 import type { QuestRepository } from '../repositories/questRepository.js';
@@ -173,9 +174,27 @@ export function createQuestService(deps: QuestServiceDeps) {
     };
   }
 
+  /**
+   * Toggles quest completion for a quest owned by `userId`.
+   * Checking sets `completed_at` to the server's clock time; unchecking resets it to `null`.
+   */
+  async function toggleQuestCompletion(
+    userId: number,
+    questId: number,
+    completed: boolean,
+  ): Promise<ToggleQuestCompletionResponse> {
+    const completedAt = completed ? toIsoDateTime(deps.clock.now()) : null;
+    const quest = await deps.quests.setCompletedAtForUser(userId, questId, completedAt);
+    if (!quest) {
+      throw notFound('Quest not found.');
+    }
+    return { quest };
+  }
+
   return {
     getCurrentMilestoneQuests,
     generateCurrentMilestoneQuests,
+    toggleQuestCompletion,
   };
 }
 

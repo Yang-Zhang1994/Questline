@@ -1,6 +1,6 @@
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { BrowserRouter } from 'react-router';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Milestone, Quest, RoadmapGoal } from '@questline/shared';
 import { DailyNote, MAX_VISIBLE_TODAY_QUESTS, buildMochiTodayGreeting } from './DailyNote';
 
@@ -46,8 +46,8 @@ const sampleTodayQuests: Quest[] = [
   },
 ];
 
-describe('DailyNote (Issue #8)', () => {
-  it('renders Mochi greeting note with today quests, titles, and estimated minutes (no checkboxes)', () => {
+describe('DailyNote (Issues #8 & #9)', () => {
+  it('renders Mochi greeting note with today quests, accessible checkboxes, progress line, titles, and estimated minutes', () => {
     render(
       <BrowserRouter>
         <DailyNote
@@ -67,6 +67,8 @@ describe('DailyNote (Issue #8)', () => {
     expect(greeting.textContent).toMatch(/Build a tiny daily reading habit/);
     expect(greeting.textContent).toContain('♡');
 
+    expect(screen.getByTestId('today-quests-progress')).toHaveTextContent('0 of 2 done ♡');
+
     const items = screen.getAllByTestId('today-quest-item');
     expect(items).toHaveLength(2);
     expect(within(items[0]).getByText(/Read 2 pages of your graded reader slowly/)).toBeInTheDocument();
@@ -74,8 +76,106 @@ describe('DailyNote (Issue #8)', () => {
     expect(within(items[1]).getByText(/Jot down 3 new vocabulary words/)).toBeInTheDocument();
     expect(within(items[1]).getByText('~10 min')).toBeInTheDocument();
 
-    // Issue #8 does not include check-off (that's Issue #9)
-    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    const checkboxes = screen.getAllByRole('checkbox');
+    expect(checkboxes).toHaveLength(2);
+    expect(checkboxes[0]).not.toBeChecked();
+    expect(checkboxes[1]).not.toBeChecked();
+  });
+
+  it('styles completed quests as checked and visually distinct (faded + line-through), and updates today progress count', () => {
+    const questsWithOneDone: Quest[] = [
+      {
+        ...sampleTodayQuests[0],
+        completed_at: '2026-11-10T15:00:00.000Z',
+      },
+      sampleTodayQuests[1],
+    ];
+
+    render(
+      <BrowserRouter>
+        <DailyNote
+          status="quests_today"
+          goal={sampleGoal}
+          milestone={sampleMilestone}
+          todayDate="2026-11-10"
+          todayQuests={questsWithOneDone}
+        />
+      </BrowserRouter>,
+    );
+
+    expect(screen.getByTestId('today-quests-progress')).toHaveTextContent('1 of 2 done ♡');
+
+    const items = screen.getAllByTestId('today-quest-item');
+    expect(items[0]).toHaveAttribute('data-completed', 'true');
+    expect(items[0].className).toContain('opacity-65');
+    expect(items[1]).toHaveAttribute('data-completed', 'false');
+
+    const firstCheckbox = screen.getByRole('checkbox', {
+      name: /Read 2 pages of your graded reader slowly/i,
+    });
+    const secondCheckbox = screen.getByRole('checkbox', {
+      name: /Jot down 3 new vocabulary words/i,
+    });
+    expect(firstCheckbox).toBeChecked();
+    expect(secondCheckbox).not.toBeChecked();
+  });
+
+  it('calls onToggleQuest when checking or unchecking a quest, and disables the checkbox while pending', () => {
+    const onToggleQuest = vi.fn();
+    const questsWithOneDone: Quest[] = [
+      {
+        ...sampleTodayQuests[0],
+        completed_at: '2026-11-10T15:00:00.000Z',
+      },
+      sampleTodayQuests[1],
+    ];
+
+    render(
+      <BrowserRouter>
+        <DailyNote
+          status="quests_today"
+          goal={sampleGoal}
+          milestone={sampleMilestone}
+          todayDate="2026-11-10"
+          todayQuests={questsWithOneDone}
+          pendingQuestIds={new Set([102])}
+          onToggleQuest={onToggleQuest}
+        />
+      </BrowserRouter>,
+    );
+
+    const firstCheckbox = screen.getByRole('checkbox', {
+      name: /Read 2 pages of your graded reader slowly/i,
+    });
+    const secondCheckbox = screen.getByRole('checkbox', {
+      name: /Jot down 3 new vocabulary words/i,
+    });
+
+    expect(firstCheckbox).not.toBeDisabled();
+    expect(secondCheckbox).toBeDisabled();
+
+    // Uncheck first quest (undo)
+    fireEvent.click(firstCheckbox);
+    expect(onToggleQuest).toHaveBeenCalledWith(101, false);
+  });
+
+  it('displays a friendly alert message when toggleError is provided', () => {
+    render(
+      <BrowserRouter>
+        <DailyNote
+          status="quests_today"
+          goal={sampleGoal}
+          milestone={sampleMilestone}
+          todayDate="2026-11-10"
+          todayQuests={sampleTodayQuests}
+          toggleError="Mochi couldn't save that check-off just now — your quest was put right back so you can try again ♡"
+        />
+      </BrowserRouter>,
+    );
+
+    const alert = screen.getByTestId('today-quest-toggle-error');
+    expect(alert).toHaveAttribute('role', 'alert');
+    expect(alert).toHaveTextContent(/couldn't save that check-off just now/i);
   });
 
   it('keeps the note short by showing the first few quests and a "+N more" line when many are due today', () => {
