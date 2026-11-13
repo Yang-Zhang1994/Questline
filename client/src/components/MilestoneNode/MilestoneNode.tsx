@@ -5,26 +5,16 @@ import styles from './MilestoneNode.module.css';
 export interface MilestoneNodeProps {
   milestone: Milestone;
   isCurrent?: boolean;
-  isGoalNode?: boolean;
   onSelect?: (milestone: Milestone) => void;
 }
 
 export function MilestoneNode({
   milestone,
   isCurrent = false,
-  isGoalNode = false,
   onSelect,
 }: MilestoneNodeProps) {
   const isCompleted = milestone.status === 'completed';
   const isUpcoming = milestone.status === 'upcoming';
-
-  const statusLabel = isCompleted
-    ? 'Cleared'
-    : isCurrent
-      ? 'You are here'
-      : 'Upcoming';
-
-  const statusIcon = isCompleted ? '★' : isCurrent ? '♡' : '✧';
 
   return (
     <div
@@ -55,19 +45,20 @@ export function MilestoneNode({
 
       <div className={styles.headerRow}>
         <span className={styles.stageBadge}>
-          {isGoalNode ? 'Final Goal' : `Stage ${milestone.position}`}
+          Stage {milestone.position}
         </span>
-        <span
-          className={`${styles.statusPill} ${
-            isCompleted
-              ? styles.statusPillCleared
-              : isCurrent
-                ? styles.statusPillCurrent
+        {!isCurrent && (
+          <span
+            className={`${styles.statusPill} ${
+              isCompleted
+                ? styles.statusPillCleared
                 : styles.statusPillUpcoming
-          }`}
-        >
-          <span aria-hidden="true">{statusIcon}</span> {statusLabel}
-        </span>
+            }`}
+          >
+            <span aria-hidden="true">{isCompleted ? '★' : '✧'}</span>{' '}
+            {isCompleted ? 'Cleared' : 'Upcoming'}
+          </span>
+        )}
       </div>
 
       <h3 className={styles.title}>{milestone.title}</h3>

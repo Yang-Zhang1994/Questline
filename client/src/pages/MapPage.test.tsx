@@ -59,10 +59,12 @@ describe('MapPage', () => {
     expect(screen.getByText(/mochi is unrolling your roadmap…/i)).toBeInTheDocument();
 
     // After fetch completes
-    expect(await screen.findByText('Read a Japanese novel on my own')).toBeInTheDocument();
+    const titles = await screen.findAllByText('Read a Japanese novel on my own');
+    expect(titles.length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Learn Hiragana & Katakana')).toBeInTheDocument();
     expect(screen.getByText('Build a tiny daily reading habit')).toBeInTheDocument();
     expect(screen.getByText(/1\/2 stages cleared/i)).toBeInTheDocument();
+    expect(screen.getByTestId('roadmap-goal-node')).toBeInTheDocument();
   });
 
   it('renders error alert when server request fails', async () => {

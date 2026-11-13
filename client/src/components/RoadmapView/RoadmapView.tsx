@@ -107,6 +107,7 @@ export function RoadmapView({
   ).length;
   const totalCount = sortedMilestones.length;
   const currentIndex = sortedMilestones.findIndex((m) => m.status === 'current');
+  const allMilestonesCleared = totalCount > 0 && clearedCount === totalCount;
 
   return (
     <section className={styles.container} aria-label="Roadmap from Start to final goal">
@@ -165,7 +166,6 @@ export function RoadmapView({
           {sortedMilestones.map((milestone, idx) => {
             const isCurrent = milestone.status === 'current';
             const isCompleted = milestone.status === 'completed';
-            const isGoal = idx === sortedMilestones.length - 1;
             const isWalked =
               isCompleted ||
               (currentIndex !== -1 && idx <= currentIndex);
@@ -193,10 +193,10 @@ export function RoadmapView({
                           : styles.markerUpcoming
                     }`}
                   >
-                    {isCompleted ? '✓' : isGoal ? '★' : milestone.position}
+                    {isCompleted ? '✓' : milestone.position}
                   </div>
                   <span className={styles.markerLabel}>
-                    {isGoal ? 'Goal' : `Stage ${milestone.position}`}
+                    Stage {milestone.position}
                   </span>
                 </div>
 
@@ -204,13 +204,59 @@ export function RoadmapView({
                   <MilestoneNode
                     milestone={milestone}
                     isCurrent={isCurrent}
-                    isGoalNode={isGoal}
                     onSelect={onSelectMilestone}
                   />
                 </div>
               </li>
             );
           })}
+
+          {/* Final Goal Node */}
+          <li className={styles.trackStep} data-testid="roadmap-goal-node">
+            {/* Connecting road segment from last milestone to final goal */}
+            <div
+              className={`${styles.roadSegment} ${
+                allMilestonesCleared ? styles.roadSegmentWalked : styles.roadSegmentUpcoming
+              }`}
+              aria-hidden="true"
+            />
+
+            <div className={styles.stepMarker}>
+              <div
+                className={`${styles.markerDot} ${
+                  allMilestonesCleared ? styles.markerCleared : styles.markerGoal
+                }`}
+                aria-label="Final destination"
+              >
+                {allMilestonesCleared ? '✓' : '★'}
+              </div>
+              <span className={styles.markerLabel}>Goal</span>
+            </div>
+
+            <div className={styles.goalCard}>
+              <div className={styles.goalCardHeader}>
+                <span className={styles.goalBadge}>Final Goal</span>
+                <span
+                  className={`${styles.statusPill} ${
+                    allMilestonesCleared
+                      ? styles.statusPillCleared
+                      : styles.statusPillUpcoming
+                  }`}
+                >
+                  <span aria-hidden="true">{allMilestonesCleared ? '★' : '✧'}</span>{' '}
+                  {allMilestonesCleared ? 'Cleared' : 'Destination'}
+                </span>
+              </div>
+              <h3 className={styles.goalCardTitle}>{goal.title}</h3>
+              {goal.deadline ? (
+                <div className={styles.goalCardFooter}>
+                  <span className={styles.goalCardDeadline}>
+                    <span aria-hidden="true">🗓️</span> Target Deadline: {goal.deadline}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+          </li>
         </ol>
       </div>
     </section>

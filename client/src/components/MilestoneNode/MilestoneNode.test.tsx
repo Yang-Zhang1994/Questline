@@ -31,14 +31,15 @@ describe('MilestoneNode (Issue #6)', () => {
     expect(screen.getByText(/Stage 2/i)).toBeInTheDocument();
   });
 
-  // AC: Current stage is highlighted and shows Mochi / "You are here"
-  it('highlights the current stage and shows "You are here" indicator', () => {
+  // AC: Current stage is highlighted and shows "You are here" only in the Mochi bubble (no duplicate card badge)
+  it('highlights the current stage and shows "You are here" indicator only once in the bubble', () => {
     render(<MilestoneNode milestone={sampleMilestone} isCurrent />);
 
     const card = screen.getByTestId('milestone-node-2');
     expect(card).toHaveAttribute('aria-current', 'step');
     expect(screen.getByText('You are here!')).toBeInTheDocument();
-    expect(screen.getAllByText(/You are here/i)).toHaveLength(2);
+    expect(screen.getAllByText(/You are here/i)).toHaveLength(1);
+    expect(screen.queryByText(/^You are here$/i)).not.toBeInTheDocument();
   });
 
   // AC: Cleared/completed stage shows Cleared status
@@ -53,7 +54,7 @@ describe('MilestoneNode (Issue #6)', () => {
     render(<MilestoneNode milestone={completedMilestone} />);
 
     expect(screen.getByText(/Cleared/i)).toBeInTheDocument();
-    expect(screen.queryByText(/You are here!/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/You are here/i)).not.toBeInTheDocument();
   });
 
   // AC: Upcoming stage shows Upcoming status
@@ -68,6 +69,7 @@ describe('MilestoneNode (Issue #6)', () => {
     render(<MilestoneNode milestone={upcomingMilestone} />);
 
     expect(screen.getByText(/Upcoming/i)).toBeInTheDocument();
+    expect(screen.queryByText(/You are here/i)).not.toBeInTheDocument();
   });
 
   // AC: Interaction / keyboard accessibility
