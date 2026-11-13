@@ -4,10 +4,26 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CurrentMilestoneQuestsResponse, ToggleQuestCompletionResponse } from '@questline/shared';
 import { TodayPage } from './TodayPage';
 
+vi.mock('../hooks/useGoals', () => ({
+  useGoals: () => ({
+    goals: [],
+    activeGoal: null,
+    activeGoalId: null,
+    loading: false,
+    busy: false,
+    error: null,
+    reload: vi.fn(),
+    selectGoal: vi.fn(),
+    beginNewGoal: vi.fn(),
+    removeGoal: vi.fn(),
+  }),
+}));
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
+
 
 const basePayload: CurrentMilestoneQuestsResponse = {
   goal: {

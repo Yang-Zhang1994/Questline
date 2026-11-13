@@ -8,6 +8,7 @@ export const DEMO_EMAIL = 'demo@questline.local';
 export const DEMO_PASSWORD = 'demo-password-123';
 
 const DEMO_GOAL_TITLE = 'Read a Japanese novel on my own';
+const DEMO_PAUSED_GOAL_TITLE = 'Run a gentle 5K';
 const DEMO_MILESTONE_TITLE = 'Build a tiny daily reading habit';
 
 /**
@@ -48,6 +49,23 @@ export async function seedDemoDataIfEmpty(db: Db, clock: Clock = systemClock): P
         'Know hiragana and a few basic phrases',
         30,
         '2027-10-28',
+        createdAt,
+      ],
+    );
+
+    // Second paused goal so the Today selector can demo switching (#18).
+    await client.query(
+      `INSERT INTO goals (
+         user_id, title, done_definition, starting_point,
+         time_budget_minutes_per_day, deadline, status, created_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, 'paused', $7)`,
+      [
+        userId,
+        DEMO_PAUSED_GOAL_TITLE,
+        'Jog lightly for 20 minutes without stopping',
+        'Can walk 30 minutes comfortably',
+        20,
+        '2027-03-01',
         createdAt,
       ],
     );
@@ -96,6 +114,7 @@ export async function seedDemoDataIfEmpty(db: Db, clock: Clock = systemClock): P
 
 export const DEMO_TITLES = {
   goal: DEMO_GOAL_TITLE,
+  pausedGoal: DEMO_PAUSED_GOAL_TITLE,
   milestone: DEMO_MILESTONE_TITLE,
 } as const;
 

@@ -1,10 +1,13 @@
+import { useNavigate } from 'react-router';
 import { BottomDock } from '../components/BottomDock/BottomDock';
 import { DailyNote } from '../components/DailyNote/DailyNote';
 import { GoalCelebration } from '../components/GoalCelebration/GoalCelebration';
+import { GoalSelector } from '../components/GoalSelector/GoalSelector';
 import { LevelUpToast } from '../components/LevelUpToast/LevelUpToast';
 import { StageCompletePrompt } from '../components/StageCompletePrompt/StageCompletePrompt';
 import { StreakCounter } from '../components/StreakCounter/StreakCounter';
 import { XpBar } from '../components/XpBar/XpBar';
+import { useGoals } from '../hooks/useGoals';
 import { useStageAdvance } from '../hooks/useStageAdvance';
 import { useTodayQuests } from '../hooks/useTodayQuests';
 
@@ -14,6 +17,7 @@ export type TodayPageProps = {
 };
 
 export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
+  const navigate = useNavigate();
   const {
     status,
     goal,
@@ -31,6 +35,17 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
     toggleQuest,
     reload,
   } = useTodayQuests();
+
+  const {
+    goals,
+    activeGoalId,
+    loading: goalsLoading,
+    busy: goalsBusy,
+    error: goalsError,
+    selectGoal,
+    beginNewGoal,
+    removeGoal,
+  } = useGoals();
 
   const {
     busy: stageBusy,
@@ -81,6 +96,26 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
       </header>
 
       <main className="flex w-full flex-col items-center gap-3">
+        <GoalSelector
+          goals={goals}
+          activeGoalId={activeGoalId}
+          loading={goalsLoading}
+          busy={goalsBusy}
+          error={goalsError}
+          onSelect={async (goalId) => {
+            await selectGoal(goalId);
+            await reload();
+          }}
+          onNewGoal={async () => {
+            await beginNewGoal();
+            navigate('/talk');
+          }}
+          onDelete={async (goalId) => {
+            await removeGoal(goalId);
+            await reload();
+          }}
+        />
+
         {progress ? (
           <div className="relative z-[1] flex w-full max-w-[640px] flex-col gap-2">
             <XpBar progress={progress} />

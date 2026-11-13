@@ -88,9 +88,12 @@ describe('Postgres persistence (Issue #17)', () => {
     const users = await db.query(`SELECT id FROM users`);
     expect(users.rowCount).toBe(1);
 
-    const goals = await db.query<{ status: string }>(`SELECT status FROM goals`);
-    expect(goals.rowCount).toBe(1);
-    expect(goals.rows[0].status).toBe('active');
+    const goals = await db.query<{ status: string }>(
+      `SELECT status FROM goals ORDER BY status ASC`,
+    );
+    // Active novel goal + paused 5K goal for the multi-goal selector (#18).
+    expect(goals.rowCount).toBe(2);
+    expect(goals.rows.map((g) => g.status).sort()).toEqual(['active', 'paused']);
 
     const quests = await db.query(`SELECT id FROM quests`);
     expect(quests.rowCount).toBeGreaterThanOrEqual(1);

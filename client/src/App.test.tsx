@@ -31,6 +31,16 @@ describe('App auth gate & Today greeting note (Issues #8 & #9)', () => {
             }),
         };
       }
+      if (url === '/api/goals' || url.startsWith('/api/goals?')) {
+        return {
+          ok: true,
+          text: async () =>
+            JSON.stringify({
+              goals: [],
+              active_goal_id: null,
+            }),
+        };
+      }
       if (url === '/api/quests' || url.startsWith('/api/quests?')) {
         return {
           ok: true,
@@ -108,6 +118,16 @@ describe('App auth gate & Today greeting note (Issues #8 & #9)', () => {
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (url === '/api/goals' || url.startsWith('/api/goals?')) {
+        return {
+          ok: true,
+          text: async () =>
+            JSON.stringify({
+              goals: [],
+              active_goal_id: null,
+            }),
+        };
+      }
       if (url === '/api/quests' || url.startsWith('/api/quests?')) {
         return {
           ok: true,

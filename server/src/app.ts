@@ -87,7 +87,13 @@ export function createApp(options: CreateAppOptions) {
       };
     })();
   const chatService = createChatService({ chat, interviews, ai, clock });
-  const goalService = createGoalService({ goals, interviews, ai, clock });
+  const goalService = createGoalService({
+    goals,
+    interviews,
+    ai,
+    clock,
+    restartInterview: (userId) => chatService.restartInterview(userId),
+  });
   const milestoneService = createMilestoneService({ milestones, chat, ai, clock });
   const milestoneAdvanceService = createMilestoneAdvanceService({ milestones });
   const questService = createQuestService({ quests, progress, ai, clock });
