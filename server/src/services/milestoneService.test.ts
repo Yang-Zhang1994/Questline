@@ -137,6 +137,9 @@ describe('milestoneService (Issue #5)', () => {
         }));
         return savedRows;
       },
+      async completeCurrentAndAdvance() {
+        throw new Error('completeCurrentAndAdvance is not used by milestoneService tests');
+      },
     };
   }
 

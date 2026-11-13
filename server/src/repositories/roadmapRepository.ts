@@ -25,7 +25,19 @@ export function createRoadmapRepository(db: Db) {
         [userId],
       );
 
-      const goalRow = goalResult.rows[0];
+      let goalRow = goalResult.rows[0];
+      // After the final stage clears, fall back to the latest completed goal so Map
+      // can still show “Goal reached” (#10).
+      if (!goalRow) {
+        const completed = await db.query<RoadmapGoalRow>(
+          `SELECT id, title, done_definition, starting_point, time_budget_minutes_per_day, deadline, status
+           FROM goals
+           WHERE user_id = $1 AND status = 'completed'
+           ORDER BY id DESC LIMIT 1`,
+          [userId],
+        );
+        goalRow = completed.rows[0];
+      }
       if (!goalRow) {
         return { goal: null, milestones: [] };
       }

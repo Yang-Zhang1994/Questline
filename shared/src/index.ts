@@ -23,6 +23,7 @@ export {
   QUEST_GENERATION_WINDOW_DAYS,
   QuestGenerationAiResponseSchema,
   QuestSchema,
+  StageReadySummarySchema,
   TodayQuestsResponseSchema,
   ToggleQuestCompletionBodySchema,
   ToggleQuestCompletionResponseSchema,
@@ -33,6 +34,7 @@ export {
   type Quest,
   type QuestGenerationAiResponse,
   type QuestProposalValidationOptions,
+  type StageReadySummary,
   type TodayQuestsResponse,
   type ToggleQuestCompletionBody,
   type ToggleQuestCompletionResponse,
@@ -96,6 +98,7 @@ export {
 } from './schemas/goal.js';
 
 export {
+  CompleteStageResponseSchema,
   ConfirmMilestonesBodySchema,
   ConfirmMilestonesResponseSchema,
   MAX_MILESTONES,
@@ -110,6 +113,7 @@ export {
   createMilestoneProposalListSchema,
   extractGoalDeadlineDate,
   resolveGoalDeadlineDate,
+  type CompleteStageResponse,
   type ConfirmMilestonesBody,
   type ConfirmMilestonesResponse,
   type MilestonePlanAiResponse,

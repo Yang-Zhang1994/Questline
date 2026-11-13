@@ -48,6 +48,7 @@ export default {
         'sky-meadow':
           'radial-gradient(circle at 12% 18%, rgba(255, 255, 255, 0.85), transparent 28%), radial-gradient(circle at 88% 12%, rgba(255, 255, 255, 0.7), transparent 22%), linear-gradient(180deg, var(--sky-top) 0%, var(--page) 42%, var(--meadow) 100%)',
         'gel-pink': 'linear-gradient(180deg, #ff8fc4 0%, var(--pink) 100%)',
+        'gel-green': 'linear-gradient(180deg, #a8e686 0%, var(--tree) 100%)',
         'brand-title': 'linear-gradient(90deg, #ff6fb1, #ff9a5a, #38acf0)',
         'note-lines':
           'repeating-linear-gradient(transparent, transparent 27px, rgba(255, 111, 177, 0.18) 28px)',

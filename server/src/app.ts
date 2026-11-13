@@ -23,6 +23,7 @@ import { createRoadmapRouter } from './routes/roadmap.js';
 import { createAuthService } from './services/authService.js';
 import { createChatService } from './services/chatService.js';
 import { createGoalService } from './services/goalService.js';
+import { createMilestoneAdvanceService } from './services/milestoneAdvanceService.js';
 import { createMilestoneService } from './services/milestoneService.js';
 import { createQuestService } from './services/questService.js';
 import { createRoadmapService } from './services/roadmapService.js';
@@ -88,6 +89,7 @@ export function createApp(options: CreateAppOptions) {
   const chatService = createChatService({ chat, interviews, ai, clock });
   const goalService = createGoalService({ goals, interviews, ai, clock });
   const milestoneService = createMilestoneService({ milestones, chat, ai, clock });
+  const milestoneAdvanceService = createMilestoneAdvanceService({ milestones });
   const questService = createQuestService({ quests, progress, ai, clock });
 
   const app = express();
@@ -104,7 +106,7 @@ export function createApp(options: CreateAppOptions) {
   app.use('/api/auth', createAuthRouter(authService));
   app.use('/api/quests', createQuestsRouter(questService));
   app.use('/api/chat', createChatRouter(chatService));
-  app.use('/api/milestones', createMilestonesRouter(milestoneService));
+  app.use('/api/milestones', createMilestonesRouter(milestoneService, milestoneAdvanceService));
   app.use('/api/roadmap', createRoadmapRouter(roadmapService));
   app.use('/api/goals', createGoalsRouter(goalService));
 

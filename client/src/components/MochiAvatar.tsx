@@ -1,5 +1,5 @@
-/** Simple Mochi SVG (happy / wink / think) for notes and chat. */
-export type MochiMood = 'happy' | 'wink' | 'think';
+/** Simple Mochi SVG (happy / wink / think / cheer) for notes and chat. */
+export type MochiMood = 'happy' | 'wink' | 'think' | 'cheer';
 
 export function MochiAvatar({ mood = 'happy' }: { mood?: MochiMood }) {
   const leftEye =
@@ -18,6 +18,14 @@ export function MochiAvatar({ mood = 'happy' }: { mood?: MochiMood }) {
   const mouth =
     mood === 'think' ? (
       <circle cx="50" cy="64" r="2.2" fill="#3D3570" />
+    ) : mood === 'cheer' ? (
+      <path
+        d="M42 60 q8 10 16 0"
+        fill="none"
+        stroke="#3D3570"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+      />
     ) : (
       <path
         d="M46 62 q4 5 8 0"
@@ -43,6 +51,16 @@ export function MochiAvatar({ mood = 'happy' }: { mood?: MochiMood }) {
         <g aria-hidden="true">
           <circle cx="78" cy="28" r="3" fill="#FF6FB1" opacity="0.85" />
           <circle cx="86" cy="18" r="2" fill="#FF6FB1" opacity="0.7" />
+        </g>
+      ) : null}
+      {mood === 'cheer' ? (
+        <g aria-hidden="true">
+          <text x="12" y="28" fontSize="12" fill="#FF6FB1">
+            ★
+          </text>
+          <text x="78" y="24" fontSize="10" fill="#38ACF0">
+            ✧
+          </text>
         </g>
       ) : null}
     </svg>

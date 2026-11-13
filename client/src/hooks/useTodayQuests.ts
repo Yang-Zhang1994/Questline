@@ -107,6 +107,8 @@ export function useTodayQuests() {
         return {
           ...prev,
           progress: result.progress,
+          stage_ready: result.stage_ready,
+          stage_ready_milestone: result.stage_ready_milestone,
           quests: prev.quests.map((q) => (q.id === questId ? result.quest : q)),
         };
       });
@@ -161,6 +163,8 @@ export function useTodayQuests() {
     todayDate,
     todayQuests,
     progress,
+    stageReady: Boolean(data?.stage_ready && data.stage_ready_milestone),
+    stageReadyMilestone: data?.stage_ready_milestone ?? null,
     levelUpMessage,
     dismissLevelUp: () => setLevelUpMessage(null),
     loading,
