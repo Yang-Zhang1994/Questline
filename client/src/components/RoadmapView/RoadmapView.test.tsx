@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RoadmapView } from './RoadmapView';
@@ -22,13 +22,49 @@ describe('RoadmapView (Issue #6)', () => {
     expect(screen.getByText(/where your journey begins/i)).toBeInTheDocument();
     expect(screen.getByText('Start')).toBeInTheDocument();
 
-    // All milestone titles are displayed in order
+    // All milestone titles and Stage 1..N labels are displayed in order
     for (const milestone of MOCK_MILESTONES) {
       expect(screen.getByText(milestone.title)).toBeInTheDocument();
+      expect(
+        screen.getAllByText(`Stage ${milestone.position}`).length
+      ).toBeGreaterThanOrEqual(1);
     }
 
-    // Final goal indicator
-    expect(screen.getByText('Final Goal')).toBeInTheDocument();
+    // Separate final Goal node at the end of the path
+    const goalNode = screen.getByTestId('roadmap-goal-node');
+    expect(goalNode).toBeInTheDocument();
+    expect(within(goalNode).getByText('Goal')).toBeInTheDocument();
+    expect(within(goalNode).getByText('Final Goal')).toBeInTheDocument();
+    expect(
+      within(goalNode).getByRole('heading', { level: 3, name: MOCK_GOAL.title })
+    ).toBeInTheDocument();
+  });
+
+  // Works with 1 milestone
+  it('renders correctly with 1 milestone, labeling it Stage 1 and showing the separate final Goal node', () => {
+    const singleMilestone = [MOCK_MILESTONES[0]];
+    render(<RoadmapView goal={MOCK_GOAL} milestones={singleMilestone} />);
+
+    expect(screen.getAllByText('Stage 1').length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText('Stage 2')).not.toBeInTheDocument();
+
+    const goalNode = screen.getByTestId('roadmap-goal-node');
+    expect(goalNode).toBeInTheDocument();
+    expect(within(goalNode).getByText('Goal')).toBeInTheDocument();
+    expect(
+      within(goalNode).getByRole('heading', { level: 3, name: MOCK_GOAL.title })
+    ).toBeInTheDocument();
+  });
+
+  it('marks the final goal node as Cleared when all milestones are completed', () => {
+    const completedMilestones = MOCK_MILESTONES.map((m) => ({
+      ...m,
+      status: 'completed' as const,
+    }));
+    render(<RoadmapView goal={MOCK_GOAL} milestones={completedMilestones} />);
+
+    const goalNode = screen.getByTestId('roadmap-goal-node');
+    expect(within(goalNode).getByText('Cleared')).toBeInTheDocument();
   });
 
   // AC: User can see which stage they are currently on
@@ -45,10 +81,13 @@ describe('RoadmapView (Issue #6)', () => {
   it('displays the goal title, target deadline, and stages cleared in the HUD', () => {
     render(<RoadmapView goal={MOCK_GOAL} milestones={MOCK_MILESTONES} />);
 
-    expect(screen.getByText(MOCK_GOAL.title)).toBeInTheDocument();
     expect(
-      screen.getByText(new RegExp(`Target Deadline: ${MOCK_GOAL.deadline}`, 'i'))
+      screen.getByRole('heading', { level: 2, name: MOCK_GOAL.title })
     ).toBeInTheDocument();
+    expect(screen.getAllByText(MOCK_GOAL.title)).toHaveLength(2);
+    expect(
+      screen.getAllByText(new RegExp(`Target Deadline: ${MOCK_GOAL.deadline}`, 'i')).length
+    ).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/1\/5 stages cleared/i)).toBeInTheDocument();
 
     const progressbar = screen.getByRole('progressbar');
