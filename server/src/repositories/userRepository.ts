@@ -28,13 +28,29 @@ export function createUserRepository(db: Db) {
     },
 
     async create(email: string, passwordHash: string): Promise<UserRow> {
-      const result = await db.query<UserRow>(
-        `INSERT INTO users (email, password_hash)
-         VALUES ($1, $2)
-         RETURNING id, email, password_hash, created_at`,
-        [email, passwordHash],
-      );
-      return result.rows[0];
+      const client = await db.connect();
+      try {
+        await client.query('BEGIN');
+        const result = await client.query<UserRow>(
+          `INSERT INTO users (email, password_hash)
+           VALUES ($1, $2)
+           RETURNING id, email, password_hash, created_at`,
+          [email, passwordHash],
+        );
+        const user = result.rows[0];
+        await client.query(
+          `INSERT INTO user_progress (user_id, xp, level, current_streak, best_streak)
+           VALUES ($1, 0, 1, 0, 0)`,
+          [user.id],
+        );
+        await client.query('COMMIT');
+        return user;
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
     },
   };
 }

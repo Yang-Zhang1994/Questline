@@ -313,6 +313,8 @@ describe('GET /api/quests & POST /api/quests/generate (Issue #7)', () => {
       expect(ToggleQuestCompletionResponseSchema.safeParse(checkRes.body).success).toBe(true);
       expect(checkRes.body.quest.id).toBe(firstQuestId);
       expect(checkRes.body.quest.completed_at).toBe('2026-11-10T15:00:00Z');
+      expect(checkRes.body.progress.xp).toBe(10);
+      expect(checkRes.body.leveled_up).toBe(false);
 
       // 2. Verify persistence on reload via GET /api/quests
       const reloadRes = await request(app)
@@ -335,6 +337,7 @@ describe('GET /api/quests & POST /api/quests/generate (Issue #7)', () => {
 
       expect(undoRes.body.quest.id).toBe(firstQuestId);
       expect(undoRes.body.quest.completed_at).toBeNull();
+      expect(undoRes.body.progress.xp).toBe(0);
 
       // 4. Verify undo persists on reload
       const reloadAfterUndo = await request(app)

@@ -38,6 +38,8 @@ export {
   type ToggleQuestCompletionResponse,
 } from './schemas/quest.js';
 
+export { UserProgressSchema, type UserProgress } from './schemas/progress.js';
+
 export {
   GoalStatusSchema,
   MilestoneSchema,

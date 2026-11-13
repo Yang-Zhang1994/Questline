@@ -29,6 +29,12 @@ const basePayload: CurrentMilestoneQuestsResponse = {
   },
   window_start: '2026-11-10',
   window_end: '2026-11-12',
+  progress: {
+    xp: 0,
+    level: 1,
+    xp_into_level: 0,
+    xp_for_next_level: 50,
+  },
   quests: [
     {
       id: 101,
@@ -95,6 +101,12 @@ describe('TodayPage (Issue #8)', () => {
           window_start: '2026-11-10',
           window_end: '2026-11-12',
           quests: [],
+        progress: {
+    xp: 0,
+    level: 1,
+    xp_into_level: 0,
+    xp_for_next_level: 50,
+  },
         } satisfies CurrentMilestoneQuestsResponse),
     } as Response);
 
@@ -124,6 +136,12 @@ describe('TodayPage (Issue #8)', () => {
           window_start: '2026-11-10',
           window_end: '2026-11-12',
           quests: [],
+        progress: {
+    xp: 0,
+    level: 1,
+    xp_into_level: 0,
+    xp_for_next_level: 50,
+  },
         } satisfies CurrentMilestoneQuestsResponse),
     } as Response);
 
@@ -327,6 +345,14 @@ describe('TodayPage (Issue #8)', () => {
                 ...basePayload.quests[0],
                 completed_at: null,
               },
+              progress: {
+                xp: 10,
+                level: 1,
+                xp_into_level: 10,
+                xp_for_next_level: 50,
+              },
+              leveled_up: false,
+              level_up_message: null
             } satisfies ToggleQuestCompletionResponse),
         } as Response);
 
@@ -365,7 +391,15 @@ describe('TodayPage (Issue #8)', () => {
               ...basePayload.quests[0],
               completed_at: '2026-11-10T15:00:00.000Z',
             },
-          } satisfies ToggleQuestCompletionResponse),
+              progress: {
+                xp: 10,
+                level: 1,
+                xp_into_level: 10,
+                xp_for_next_level: 50,
+              },
+              leveled_up: false,
+              level_up_message: null
+            } satisfies ToggleQuestCompletionResponse),
       } as Response);
 
       await waitFor(() => {

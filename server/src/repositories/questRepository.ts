@@ -1,5 +1,6 @@
-import type { Milestone, ProposedQuest, Quest, RoadmapGoal } from '@questline/shared';
+import type { Milestone, ProposedQuest, Quest, RoadmapGoal, UserProgress } from '@questline/shared';
 import { toIsoDateTime } from '../clock.js';
+import { levelFromTotalXp, progressSnapshotFromXp } from '../config/game.js';
 import type { Db } from '../db/connection.js';
 import { notFound } from '../services/errors.js';
 import { mapGoalRowToRoadmapGoal, type RoadmapGoalRow } from './goalRepository.js';
@@ -288,6 +289,75 @@ export function createQuestRepository(db: Db) {
       );
       const row = result.rows[0];
       return row ? mapQuest(row) : null;
+    },
+
+    /**
+     * Toggle quest completion and adjust XP in one transaction (Issue #11).
+     * Caller must only invoke for a real state change (idempotent no-ops stay in the service).
+     */
+    async setCompletionWithXp(
+      userId: number,
+      id: number,
+      completedAt: string | null,
+      xpDelta: number,
+    ): Promise<{ quest: Quest; progress: UserProgress; previousLevel: number } | null> {
+      const client = await db.connect();
+      try {
+        await client.query('BEGIN');
+
+        const owned = await client.query<QuestRow>(
+          `SELECT q.id, q.milestone_id, q.title, q.due_date, q.estimated_minutes, q.completed_at
+           FROM quests q
+           INNER JOIN milestones m ON m.id = q.milestone_id
+           INNER JOIN goals g ON g.id = m.goal_id
+           WHERE q.id = $1 AND g.user_id = $2
+           FOR UPDATE OF q`,
+          [id, userId],
+        );
+        if (!owned.rows[0]) {
+          await client.query('ROLLBACK');
+          return null;
+        }
+
+        const updated = await client.query<QuestRow>(
+          `UPDATE quests
+           SET completed_at = $1
+           WHERE id = $2
+           RETURNING id, milestone_id, title, due_date, estimated_minutes, completed_at`,
+          [completedAt, id],
+        );
+
+        const progressRow = await client.query<{ xp: number; level: number }>(
+          `INSERT INTO user_progress (user_id, xp, level, current_streak, best_streak)
+           VALUES ($1, 0, 1, 0, 0)
+           ON CONFLICT (user_id) DO UPDATE SET user_id = EXCLUDED.user_id
+           RETURNING xp, level`,
+          [userId],
+        );
+        const previousLevel = progressRow.rows[0].level;
+        const previousXp = progressRow.rows[0].xp;
+        const nextXp = Math.max(0, previousXp + xpDelta);
+        const nextLevel = levelFromTotalXp(nextXp);
+
+        await client.query(
+          `UPDATE user_progress
+           SET xp = $1, level = $2
+           WHERE user_id = $3`,
+          [nextXp, nextLevel, userId],
+        );
+
+        await client.query('COMMIT');
+        return {
+          quest: mapQuest(updated.rows[0]),
+          progress: progressSnapshotFromXp(nextXp),
+          previousLevel,
+        };
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
     },
   };
 }

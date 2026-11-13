@@ -55,6 +55,12 @@ describe('App auth gate & Today greeting note (Issues #8 & #9)', () => {
               },
               window_start: '2026-11-10',
               window_end: '2026-11-12',
+              progress: {
+                xp: 0,
+                level: 1,
+                xp_into_level: 0,
+                xp_for_next_level: 50,
+              },
               quests: [
                 {
                   id: 101,
@@ -106,6 +112,12 @@ describe('App auth gate & Today greeting note (Issues #8 & #9)', () => {
               milestone: null,
               window_start: '2026-11-10',
               window_end: '2026-11-12',
+              progress: {
+                xp: 0,
+                level: 1,
+                xp_into_level: 0,
+                xp_for_next_level: 50,
+              },
               quests: [],
             }),
         };

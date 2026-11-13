@@ -1,5 +1,7 @@
 import { BottomDock } from '../components/BottomDock/BottomDock';
 import { DailyNote } from '../components/DailyNote/DailyNote';
+import { LevelUpToast } from '../components/LevelUpToast/LevelUpToast';
+import { XpBar } from '../components/XpBar/XpBar';
 import { useTodayQuests } from '../hooks/useTodayQuests';
 
 export type TodayPageProps = {
@@ -14,6 +16,9 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
     milestone,
     todayDate,
     todayQuests,
+    progress,
+    levelUpMessage,
+    dismissLevelUp,
     error,
     pendingQuestIds,
     toggleError,
@@ -57,7 +62,8 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
         </div>
       </header>
 
-      <main className="flex w-full justify-center">
+      <main className="flex w-full flex-col items-center gap-3">
+        {progress ? <XpBar progress={progress} /> : null}
         <DailyNote
           status={status}
           goal={goal}
@@ -76,6 +82,7 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
         />
       </main>
 
+      <LevelUpToast message={levelUpMessage} onDismiss={dismissLevelUp} />
       <BottomDock />
     </div>
   );

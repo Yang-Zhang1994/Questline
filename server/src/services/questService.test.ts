@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Milestone, ProposedQuest, Quest, RoadmapGoal } from '@questline/shared';
 import { createClaudeClient, createEchoChatClient, type ChatAiClient } from '../ai/client.js';
 import type { Clock } from '../clock.js';
+import { XP_PER_QUEST, XP_TO_REACH_LEVEL, progressSnapshotFromXp } from '../config/game.js';
+import type { ProgressRepository } from '../repositories/progressRepository.js';
 import type { QuestRepository } from '../repositories/questRepository.js';
 import { AppError } from './errors.js';
 import { createQuestService } from './questService.js';
@@ -157,6 +159,46 @@ describe('questService (Issue #7)', () => {
         savedRows[idx] = updated;
         return updated;
       },
+      async setCompletionWithXp(
+        userId: number,
+        id: number,
+        completedAt: string | null,
+        xpDelta: number,
+      ) {
+        if (userId !== 1) return null;
+        const idx = savedRows.findIndex((q) => q.id === id);
+        if (idx === -1) return null;
+        const updated: Quest = {
+          ...savedRows[idx],
+          completed_at: completedAt,
+        };
+        savedRows[idx] = updated;
+        // Progress is owned by the progress mock; service tests that need XP
+        // use a shared mutable store via buildProgress().
+        const store = (globalThis as unknown as { __xpStore?: { xp: number } }).__xpStore;
+        const previousXp = store?.xp ?? 0;
+        const previousLevel = progressSnapshotFromXp(previousXp).level;
+        const nextXp = Math.max(0, previousXp + xpDelta);
+        if (store) store.xp = nextXp;
+        return {
+          quest: updated,
+          progress: progressSnapshotFromXp(nextXp),
+          previousLevel,
+        };
+      },
+    };
+  }
+
+  function buildProgress(initialXp = 0): ProgressRepository & { xp: number } {
+    const store = { xp: initialXp };
+    (globalThis as unknown as { __xpStore: { xp: number } }).__xpStore = store;
+    return {
+      get xp() {
+        return store.xp;
+      },
+      async getOrCreate() {
+        return progressSnapshotFromXp(store.xp);
+      },
     };
   }
 
@@ -175,6 +217,7 @@ describe('questService (Issue #7)', () => {
     const generateDailyQuests = vi.fn();
     const service = createQuestService({
       quests: questsRepo,
+      progress: buildProgress(),
       ai: buildAi(generateDailyQuests),
       clock,
     });
@@ -201,6 +244,7 @@ describe('questService (Issue #7)', () => {
     }));
     const service = createQuestService({
       quests: questsRepo,
+      progress: buildProgress(),
       ai: buildAi(generateDailyQuests),
       clock,
     });
@@ -223,6 +267,7 @@ describe('questService (Issue #7)', () => {
     }));
     const service = createQuestService({
       quests: questsRepo,
+      progress: buildProgress(),
       ai: buildAi(generateDailyQuests),
       clock,
     });
@@ -268,6 +313,7 @@ describe('questService (Issue #7)', () => {
     }));
     const service = createQuestService({
       quests: questsRepo,
+      progress: buildProgress(),
       ai: buildAi(generateDailyQuests),
       clock,
     });
@@ -297,6 +343,7 @@ describe('questService (Issue #7)', () => {
     }));
     const service = createQuestService({
       quests: questsRepo,
+      progress: buildProgress(),
       ai: buildAi(generateDailyQuests),
       clock,
     });
@@ -323,6 +370,7 @@ describe('questService (Issue #7)', () => {
     }));
     const service = createQuestService({
       quests: questsRepo,
+      progress: buildProgress(),
       ai: buildAi(generateDailyQuests),
       clock,
     });
@@ -347,6 +395,7 @@ describe('questService (Issue #7)', () => {
     // 1. Total minutes on 2026-11-10 is 20 + 15 = 35 > 25 daily budget
     const overBudgetService = createQuestService({
       quests: questsRepo,
+      progress: buildProgress(),
       ai: buildAi(async () => ({
         quests: [
           { title: 'Part 1', due_date: '2026-11-10', estimated_minutes: 20 },
@@ -364,6 +413,7 @@ describe('questService (Issue #7)', () => {
     // 2. Quest due_date outside the 3-day window (2026-11-15 > 2026-11-12)
     const outsideWindowService = createQuestService({
       quests: questsRepo,
+      progress: buildProgress(),
       ai: buildAi(async () => ({
         quests: [{ title: 'Too far ahead', due_date: '2026-11-15', estimated_minutes: 15 }],
       })),
@@ -378,6 +428,7 @@ describe('questService (Issue #7)', () => {
     // 3. Empty title or non-integer/non-positive estimated_minutes
     const badFieldsService = createQuestService({
       quests: questsRepo,
+      progress: buildProgress(),
       ai: buildAi(async () => ({
         quests: [{ title: '   ', due_date: '2026-11-10', estimated_minutes: 0 }],
       })),
@@ -395,6 +446,7 @@ describe('questService (Issue #7)', () => {
   it('returns 404 NOT_FOUND on generate when the user has no active goal or no current milestone', async () => {
     const noGoalService = createQuestService({
       quests: buildQuestRepo({ goal: null }),
+      progress: buildProgress(),
       ai: buildAi(),
       clock,
     });
@@ -405,6 +457,7 @@ describe('questService (Issue #7)', () => {
 
     const noMilestoneService = createQuestService({
       quests: buildQuestRepo({ milestone: null }),
+      progress: buildProgress(),
       ai: buildAi(),
       clock,
     });
@@ -488,6 +541,7 @@ describe('questService (Issue #7)', () => {
       });
       const service = createQuestService({
         quests: questsRepo,
+        progress: buildProgress(),
         ai: buildAi(),
         clock: fixedClock('2026-11-10T18:30:00.000Z'),
       });
@@ -495,6 +549,7 @@ describe('questService (Issue #7)', () => {
       const checked = await service.toggleQuestCompletion(1, 1, true);
       expect(checked.quest.id).toBe(1);
       expect(checked.quest.completed_at).toBe('2026-11-10T18:30:00Z');
+      expect(checked.progress.xp).toBe(XP_PER_QUEST);
       expect(questsRepo.savedRows[0].completed_at).toBe('2026-11-10T18:30:00Z');
 
       const unchecked = await service.toggleQuestCompletion(1, 1, false);
@@ -518,6 +573,7 @@ describe('questService (Issue #7)', () => {
       });
       const service = createQuestService({
         quests: questsRepo,
+        progress: buildProgress(),
         ai: buildAi(),
         clock,
       });
@@ -535,6 +591,91 @@ describe('questService (Issue #7)', () => {
       } satisfies Partial<AppError>);
 
       expect(questsRepo.savedRows[0].completed_at).toBeNull();
+    });
+
+    it('awards XP_PER_QUEST when completing a quest and reverses on undo (Issue #11)', async () => {
+      const questsRepo = buildQuestRepo({
+        initialQuests: [
+          {
+            id: 1,
+            milestone_id: currentMilestone.id,
+            title: 'Read 2 pages slowly',
+            due_date: '2026-11-10',
+            estimated_minutes: 15,
+            completed_at: null,
+          },
+        ],
+      });
+      const progress = buildProgress(0);
+      const service = createQuestService({
+        quests: questsRepo,
+        progress,
+        ai: buildAi(),
+        clock: fixedClock('2026-11-10T18:30:00.000Z'),
+      });
+
+      const checked = await service.toggleQuestCompletion(1, 1, true);
+      expect(checked.progress.xp).toBe(XP_PER_QUEST);
+      expect(checked.leveled_up).toBe(false);
+
+      const undone = await service.toggleQuestCompletion(1, 1, false);
+      expect(undone.progress.xp).toBe(0);
+      expect(undone.quest.completed_at).toBeNull();
+    });
+
+    it('levels up and returns a Mochi celebration when XP crosses a threshold', async () => {
+      const questsRepo = buildQuestRepo({
+        initialQuests: [
+          {
+            id: 1,
+            milestone_id: currentMilestone.id,
+            title: 'Read 2 pages slowly',
+            due_date: '2026-11-10',
+            estimated_minutes: 15,
+            completed_at: null,
+          },
+        ],
+      });
+      const progress = buildProgress(XP_TO_REACH_LEVEL[2] - XP_PER_QUEST);
+      const service = createQuestService({
+        quests: questsRepo,
+        progress,
+        ai: buildAi(),
+        clock,
+      });
+
+      const updated = await service.toggleQuestCompletion(1, 1, true);
+      expect(updated.progress.level).toBe(2);
+      expect(updated.leveled_up).toBe(true);
+      expect(updated.level_up_message).toMatch(/Level 2/);
+      expect(updated.level_up_message).toMatch(/Mochi/i);
+    });
+
+    it('does not double-award XP on an already-completed quest', async () => {
+      const questsRepo = buildQuestRepo({
+        initialQuests: [
+          {
+            id: 1,
+            milestone_id: currentMilestone.id,
+            title: 'Read 2 pages slowly',
+            due_date: '2026-11-10',
+            estimated_minutes: 15,
+            completed_at: null,
+          },
+        ],
+      });
+      const progress = buildProgress(0);
+      const service = createQuestService({
+        quests: questsRepo,
+        progress,
+        ai: buildAi(),
+        clock,
+      });
+
+      await service.toggleQuestCompletion(1, 1, true);
+      const again = await service.toggleQuestCompletion(1, 1, true);
+      expect(again.progress.xp).toBe(XP_PER_QUEST);
+      expect(again.leveled_up).toBe(false);
     });
   });
 });

@@ -4,6 +4,7 @@ import {
   type CurrentMilestoneQuestsResponse,
   type ProposedQuest,
   type ToggleQuestCompletionResponse,
+  type UserProgress,
 } from '@questline/shared';
 import type { ChatAiClient } from '../ai/client.js';
 import {
@@ -12,16 +13,31 @@ import {
 } from '../ai/prompts/mochiQuests.js';
 import type { Clock } from '../clock.js';
 import { formatLocalDate, toIsoDateTime } from '../clock.js';
-import { DEFAULT_TIME_BUDGET_MINUTES } from '../config/game.js';
+import { DEFAULT_TIME_BUDGET_MINUTES, XP_PER_QUEST, levelUpMessage } from '../config/game.js';
 import { mapGoalRowToRoadmapGoal } from '../repositories/goalRepository.js';
+import type { ProgressRepository } from '../repositories/progressRepository.js';
 import type { QuestRepository } from '../repositories/questRepository.js';
 import { aiUnavailable, notFound } from './errors.js';
 
 export type QuestServiceDeps = {
   quests: QuestRepository;
+  progress: ProgressRepository;
   ai: ChatAiClient;
   clock: Clock;
 };
+
+function completionPayload(
+  quest: ToggleQuestCompletionResponse['quest'],
+  progress: UserProgress,
+  leveledUp: boolean,
+): ToggleQuestCompletionResponse {
+  return {
+    quest,
+    progress,
+    leveled_up: leveledUp,
+    level_up_message: leveledUp ? levelUpMessage(progress.level) : null,
+  };
+}
 
 export function createQuestService(deps: QuestServiceDeps) {
   function normalizeGoal(goal: CurrentMilestoneQuestsResponse['goal']) {
@@ -45,6 +61,7 @@ export function createQuestService(deps: QuestServiceDeps) {
     const today = formatLocalDate(deps.clock.now());
     const { goal: rawGoal, milestone } = await deps.quests.getCurrentMilestoneContextForUser(userId);
     const goal = normalizeGoal(rawGoal);
+    const progress = await deps.progress.getOrCreate(userId);
 
     const { windowStart, windowEnd } = computeQuestGenerationWindow(
       today,
@@ -58,6 +75,7 @@ export function createQuestService(deps: QuestServiceDeps) {
         window_start: windowStart,
         window_end: windowEnd,
         quests: [],
+        progress,
       };
     }
 
@@ -68,6 +86,7 @@ export function createQuestService(deps: QuestServiceDeps) {
       window_start: windowStart,
       window_end: windowEnd,
       quests,
+      progress,
     };
   }
 
@@ -81,6 +100,7 @@ export function createQuestService(deps: QuestServiceDeps) {
     const today = formatLocalDate(deps.clock.now());
     const { goal: rawGoal, milestone } = await deps.quests.getCurrentMilestoneContextForUser(userId);
     const goal = normalizeGoal(rawGoal);
+    const progress = await deps.progress.getOrCreate(userId);
 
     if (!goal) {
       throw notFound('Confirm a goal first before generating quests.');
@@ -106,6 +126,7 @@ export function createQuestService(deps: QuestServiceDeps) {
         window_start: windowStart,
         window_end: windowEnd,
         quests,
+        progress,
       };
     }
 
@@ -171,24 +192,46 @@ export function createQuestService(deps: QuestServiceDeps) {
       window_start: windowStart,
       window_end: windowEnd,
       quests,
+      progress,
     };
   }
 
   /**
    * Toggles quest completion for a quest owned by `userId`.
-   * Checking sets `completed_at` to the server's clock time; unchecking resets it to `null`.
+   * Checking awards XP; undoing reverses it — same transaction (Issue #11).
    */
   async function toggleQuestCompletion(
     userId: number,
     questId: number,
     completed: boolean,
   ): Promise<ToggleQuestCompletionResponse> {
-    const completedAt = completed ? toIsoDateTime(deps.clock.now()) : null;
-    const quest = await deps.quests.setCompletedAtForUser(userId, questId, completedAt);
-    if (!quest) {
+    const existing = await deps.quests.findByIdForUser(userId, questId);
+    if (!existing) {
       throw notFound('Quest not found.');
     }
-    return { quest };
+
+    // Idempotent no-ops: still return current progress for the HUD.
+    if (completed && existing.completed_at !== null) {
+      const progress = await deps.progress.getOrCreate(userId);
+      return completionPayload(existing, progress, false);
+    }
+    if (!completed && existing.completed_at === null) {
+      const progress = await deps.progress.getOrCreate(userId);
+      return completionPayload(existing, progress, false);
+    }
+
+    const result = await deps.quests.setCompletionWithXp(
+      userId,
+      questId,
+      completed ? toIsoDateTime(deps.clock.now()) : null,
+      completed ? XP_PER_QUEST : -XP_PER_QUEST,
+    );
+    if (!result) {
+      throw notFound('Quest not found.');
+    }
+
+    const leveledUp = completed && result.progress.level > result.previousLevel;
+    return completionPayload(result.quest, result.progress, leveledUp);
   }
 
   return {
