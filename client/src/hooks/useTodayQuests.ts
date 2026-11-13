@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CurrentMilestoneQuestsResponse, Milestone, Quest, RoadmapGoal } from '@questline/shared';
 import {
+  FRIENDLY_QUEST_TOGGLE_ERROR,
   FRIENDLY_QUESTS_ERROR,
   fetchCurrentMilestoneQuests,
   generateCurrentMilestoneQuests,
+  toggleQuestCompletion,
 } from '../api/quests';
 
 export type TodayViewStatus =
@@ -14,11 +16,11 @@ export type TodayViewStatus =
   | 'rest_day'
   | 'quests_today';
 
-function toFriendlyErrorMessage(err: unknown): string {
-  if (!(err instanceof Error)) return FRIENDLY_QUESTS_ERROR;
+function toFriendlyErrorMessage(err: unknown, fallback = FRIENDLY_QUESTS_ERROR): string {
+  if (!(err instanceof Error)) return fallback;
   const trimmed = err.message.trim();
   if (!trimmed || trimmed.startsWith('[') || trimmed.startsWith('{')) {
-    return FRIENDLY_QUESTS_ERROR;
+    return fallback;
   }
   return trimmed;
 }
@@ -37,10 +39,14 @@ export function useTodayQuests() {
   const [data, setData] = useState<CurrentMilestoneQuestsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [pendingQuestIds, setPendingQuestIds] = useState<ReadonlySet<number>>(() => new Set());
+  const [toggleError, setToggleError] = useState<string | null>(null);
+  const pendingRef = useRef<Set<number>>(new Set());
 
   const reload = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setToggleError(null);
     try {
       let payload = await fetchCurrentMilestoneQuests();
       if (payload.goal && payload.milestone && !hasQuestsInCurrentWindow(payload)) {
@@ -58,6 +64,61 @@ export function useTodayQuests() {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  const toggleQuest = useCallback(async (questId: number, completed: boolean) => {
+    if (pendingRef.current.has(questId)) {
+      return;
+    }
+
+    let previousCompletedAt: string | null | undefined;
+    const optimisticCompletedAt = completed ? new Date().toISOString() : null;
+
+    setData((prev) => {
+      if (!prev) return prev;
+      const target = prev.quests.find((q) => q.id === questId);
+      if (!target) return prev;
+      previousCompletedAt = target.completed_at;
+      const updatedQuests = prev.quests.map((q) =>
+        q.id === questId ? { ...q, completed_at: optimisticCompletedAt } : q,
+      );
+      return {
+        ...prev,
+        quests: updatedQuests,
+      };
+    });
+
+    pendingRef.current.add(questId);
+    setPendingQuestIds(new Set(pendingRef.current));
+    setToggleError(null);
+
+    try {
+      const { quest: savedQuest } = await toggleQuestCompletion(questId, completed);
+      setData((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          quests: prev.quests.map((q) => (q.id === questId ? savedQuest : q)),
+        };
+      });
+    } catch (err) {
+      console.error('Could not toggle quest completion:', err);
+      setData((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          quests: prev.quests.map((q) =>
+            q.id === questId
+              ? { ...q, completed_at: previousCompletedAt ?? null }
+              : q,
+          ),
+        };
+      });
+      setToggleError(toFriendlyErrorMessage(err, FRIENDLY_QUEST_TOGGLE_ERROR));
+    } finally {
+      pendingRef.current.delete(questId);
+      setPendingQuestIds(new Set(pendingRef.current));
+    }
+  }, []);
 
   const goal: RoadmapGoal | null = data?.goal ?? null;
   const milestone: Milestone | null = data?.milestone ?? null;
@@ -87,6 +148,9 @@ export function useTodayQuests() {
     todayQuests,
     loading,
     error,
+    pendingQuestIds,
+    toggleError,
+    toggleQuest,
     reload,
   };
 }

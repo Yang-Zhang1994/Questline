@@ -139,14 +139,23 @@ describe('questService (Issue #7)', () => {
           (a, b) => a.due_date.localeCompare(b.due_date) || a.id - b.id,
         );
       },
-      async findByIdForUser() {
-        return null;
+      async findByIdForUser(userId: number, id: number) {
+        if (userId !== 1) return null;
+        return savedRows.find((q) => q.id === id) ?? null;
       },
       async listDueOnDateForActiveGoal() {
         return { goalTitle: null, milestoneTitle: null, quests: [] };
       },
-      async setCompletedAtForUser() {
-        return null;
+      async setCompletedAtForUser(userId: number, id: number, completedAt: string | null) {
+        if (userId !== 1) return null;
+        const idx = savedRows.findIndex((q) => q.id === id);
+        if (idx === -1) return null;
+        const updated: Quest = {
+          ...savedRows[idx],
+          completed_at: completedAt,
+        };
+        savedRows[idx] = updated;
+        return updated;
       },
     };
   }
@@ -461,5 +470,71 @@ describe('questService (Issue #7)', () => {
     for (const total of byDate.values()) {
       expect(total).toBeLessThanOrEqual(25);
     }
+  });
+
+  describe('toggleQuestCompletion (Issue #9)', () => {
+    it('sets completed_at to the server clock timestamp when completed is true, and resets to null when completed is false', async () => {
+      const questsRepo = buildQuestRepo({
+        initialQuests: [
+          {
+            id: 1,
+            milestone_id: currentMilestone.id,
+            title: 'Read 2 pages slowly',
+            due_date: '2026-11-10',
+            estimated_minutes: 15,
+            completed_at: null,
+          },
+        ],
+      });
+      const service = createQuestService({
+        quests: questsRepo,
+        ai: buildAi(),
+        clock: fixedClock('2026-11-10T18:30:00.000Z'),
+      });
+
+      const checked = await service.toggleQuestCompletion(1, 1, true);
+      expect(checked.quest.id).toBe(1);
+      expect(checked.quest.completed_at).toBe('2026-11-10T18:30:00Z');
+      expect(questsRepo.savedRows[0].completed_at).toBe('2026-11-10T18:30:00Z');
+
+      const unchecked = await service.toggleQuestCompletion(1, 1, false);
+      expect(unchecked.quest.id).toBe(1);
+      expect(unchecked.quest.completed_at).toBeNull();
+      expect(questsRepo.savedRows[0].completed_at).toBeNull();
+    });
+
+    it('throws 404 NOT_FOUND when toggling a nonexistent quest or a quest belonging to another user', async () => {
+      const questsRepo = buildQuestRepo({
+        initialQuests: [
+          {
+            id: 1,
+            milestone_id: currentMilestone.id,
+            title: 'User 1 quest',
+            due_date: '2026-11-10',
+            estimated_minutes: 15,
+            completed_at: null,
+          },
+        ],
+      });
+      const service = createQuestService({
+        quests: questsRepo,
+        ai: buildAi(),
+        clock,
+      });
+
+      // Nonexistent quest ID for user 1
+      await expect(service.toggleQuestCompletion(1, 999, true)).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+        status: 404,
+      } satisfies Partial<AppError>);
+
+      // User 2 trying to toggle user 1's quest
+      await expect(service.toggleQuestCompletion(2, 1, true)).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+        status: 404,
+      } satisfies Partial<AppError>);
+
+      expect(questsRepo.savedRows[0].completed_at).toBeNull();
+    });
   });
 });

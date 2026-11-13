@@ -73,7 +73,12 @@ export type DailyNoteProps = {
   todayQuests: Quest[];
   error?: string | null;
   onRetry?: () => void;
+  pendingQuestIds?: ReadonlySet<number>;
+  toggleError?: string | null;
+  onToggleQuest?: (questId: number, completed: boolean) => void;
 };
+
+const EMPTY_PENDING_IDS: ReadonlySet<number> = new Set();
 
 export function DailyNote({
   status,
@@ -83,9 +88,14 @@ export function DailyNote({
   todayQuests,
   error = null,
   onRetry,
+  pendingQuestIds = EMPTY_PENDING_IDS,
+  toggleError = null,
+  onToggleQuest,
 }: DailyNoteProps) {
   const visibleQuests = todayQuests.slice(0, MAX_VISIBLE_TODAY_QUESTS);
   const remainingCount = Math.max(0, todayQuests.length - visibleQuests.length);
+  const doneTodayCount = todayQuests.filter((q) => q.completed_at !== null).length;
+  const totalTodayCount = todayQuests.length;
   const greeting = buildMochiTodayGreeting({
     status,
     todayDate,
@@ -176,32 +186,88 @@ export function DailyNote({
 
               {status === 'quests_today' ? (
                 <div className="mt-3">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="text-[0.8rem] font-bold uppercase tracking-wide text-ink-soft">
+                      Today&apos;s quests
+                    </span>
+                    <span
+                      data-testid="today-quests-progress"
+                      className="rounded-pill bg-panel/90 px-2.5 py-0.5 text-[0.8rem] font-bold text-pink-ink shadow-sm"
+                    >
+                      {doneTodayCount} of {totalTodayCount} done ♡
+                    </span>
+                  </div>
+
+                  {toggleError ? (
+                    <div
+                      className="mb-2.5 rounded-[12px] border border-pink/40 bg-panel/95 px-3.5 py-2 text-left"
+                      role="alert"
+                      data-testid="today-quest-toggle-error"
+                    >
+                      <p className="m-0 text-[0.85rem] text-ink">{toggleError}</p>
+                    </div>
+                  ) : null}
+
                   <ul
                     className="m-0 flex list-none flex-col gap-2 p-0"
                     aria-label="Quests due today"
                   >
-                    {visibleQuests.map((quest) => (
-                      <li
-                        key={quest.id}
-                        data-testid="today-quest-item"
-                        className="flex items-center justify-between gap-3 rounded-[14px] border border-pink/30 bg-panel/95 px-3.5 py-2.5 text-left shadow-sm"
-                      >
-                        <span className="min-w-0 flex-1 font-bold text-ink">
-                          <span className="mr-1.5 text-pink-ink" aria-hidden="true">
-                            ✦
-                          </span>
-                          {quest.title}
-                        </span>
-                        {quest.estimated_minutes != null ? (
-                          <span
-                            data-testid="today-quest-minutes"
-                            className="shrink-0 rounded-pill bg-blue-pale px-2.5 py-0.5 text-[0.78rem] font-bold text-blue-ink"
+                    {visibleQuests.map((quest) => {
+                      const isCompleted = quest.completed_at !== null;
+                      const isPending = pendingQuestIds.has(quest.id);
+                      const checkboxId = `today-quest-checkbox-${quest.id}`;
+
+                      return (
+                        <li
+                          key={quest.id}
+                          data-testid="today-quest-item"
+                          data-completed={isCompleted ? 'true' : 'false'}
+                          className={`flex items-center justify-between gap-3 rounded-[14px] border px-3.5 py-2.5 text-left shadow-sm transition-opacity ${
+                            isCompleted
+                              ? 'border-pink/20 bg-panel/70 opacity-65'
+                              : 'border-pink/30 bg-panel/95'
+                          }`}
+                        >
+                          <label
+                            htmlFor={checkboxId}
+                            className={`flex min-w-0 flex-1 items-center gap-2.5 ${
+                              isPending ? 'cursor-wait' : 'cursor-pointer'
+                            }`}
                           >
-                            ~{quest.estimated_minutes} min
-                          </span>
-                        ) : null}
-                      </li>
-                    ))}
+                            <input
+                              id={checkboxId}
+                              type="checkbox"
+                              checked={isCompleted}
+                              disabled={isPending}
+                              onChange={(e) => {
+                                onToggleQuest?.(quest.id, e.target.checked);
+                              }}
+                              className="h-4 w-4 shrink-0 cursor-pointer rounded border-pink text-pink focus:ring-2 focus:ring-pink/50 disabled:cursor-not-allowed disabled:opacity-60"
+                            />
+                            <span
+                              className={`min-w-0 flex-1 font-bold ${
+                                isCompleted ? 'line-through text-ink-soft' : 'text-ink'
+                              }`}
+                            >
+                              <span className="mr-1.5 text-pink-ink" aria-hidden="true">
+                                {isCompleted ? '✓' : '✦'}
+                              </span>
+                              {quest.title}
+                            </span>
+                          </label>
+                          {quest.estimated_minutes != null ? (
+                            <span
+                              data-testid="today-quest-minutes"
+                              className={`shrink-0 rounded-pill bg-blue-pale px-2.5 py-0.5 text-[0.78rem] font-bold text-blue-ink ${
+                                isCompleted ? 'opacity-75' : ''
+                              }`}
+                            >
+                              ~{quest.estimated_minutes} min
+                            </span>
+                          ) : null}
+                        </li>
+                      );
+                    })}
                   </ul>
 
                   {remainingCount > 0 ? (

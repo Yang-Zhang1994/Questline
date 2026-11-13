@@ -1,7 +1,7 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { BrowserRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { CurrentMilestoneQuestsResponse } from '@questline/shared';
+import type { CurrentMilestoneQuestsResponse, ToggleQuestCompletionResponse } from '@questline/shared';
 import { TodayPage } from './TodayPage';
 
 afterEach(() => {
@@ -289,5 +289,185 @@ describe('TodayPage (Issue #8)', () => {
     expect(alert.textContent).not.toContain('[');
     expect(alert.textContent).not.toContain('invalid_type');
     expect(consoleErrorSpy).toHaveBeenCalled();
+  });
+
+  describe('Quest check-off and undo (Issue #9)', () => {
+    it('counts only today quests in the progress line, checks off immediately, disables while in-flight, and allows undoing', async () => {
+      // basePayload has 2 quests on 2026-11-10 (today) and 1 quest on 2026-11-11 (tomorrow)
+      // Even if tomorrow's quest were completed, the progress line must count only today's quests (0 of 2 done ♡).
+      const payloadWithTomorrowDone: CurrentMilestoneQuestsResponse = {
+        ...basePayload,
+        quests: [
+          basePayload.quests[0],
+          basePayload.quests[1],
+          {
+            ...basePayload.quests[2],
+            completed_at: '2026-11-10T10:00:00.000Z',
+          },
+        ],
+      };
+
+      let resolveCheck!: (value: Response) => void;
+      const checkPromise = new Promise<Response>((resolve) => {
+        resolveCheck = resolve;
+      });
+
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => JSON.stringify(payloadWithTomorrowDone),
+        } as Response)
+        .mockReturnValueOnce(checkPromise)
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () =>
+            JSON.stringify({
+              quest: {
+                ...basePayload.quests[0],
+                completed_at: null,
+              },
+            } satisfies ToggleQuestCompletionResponse),
+        } as Response);
+
+      render(
+        <BrowserRouter>
+          <TodayPage />
+        </BrowserRouter>,
+      );
+
+      const firstCheckbox = await screen.findByRole('checkbox', {
+        name: /Read 2 pages of your graded reader slowly/i,
+      });
+      expect(firstCheckbox).not.toBeChecked();
+      // Only today's 2 quests are counted (0 of 2 done ♡)
+      expect(screen.getByTestId('today-quests-progress')).toHaveTextContent('0 of 2 done ♡');
+
+      // 1. Click to check off -> immediately checked, faded, progress updated, and disabled while request is in flight
+      fireEvent.click(firstCheckbox);
+      expect(firstCheckbox).toBeChecked();
+      expect(firstCheckbox).toBeDisabled();
+      expect(screen.getByTestId('today-quests-progress')).toHaveTextContent('1 of 2 done ♡');
+
+      // Attempt a double-click while in flight -> does not send another request
+      fireEvent.click(firstCheckbox);
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      expect(fetchSpy.mock.calls[1][0]).toBe('/api/quests/101/completion');
+      expect(fetchSpy.mock.calls[1][1]?.method).toBe('PATCH');
+      expect(fetchSpy.mock.calls[1][1]?.body).toBe(JSON.stringify({ completed: true }));
+
+      // Resolve server PATCH response
+      resolveCheck({
+        ok: true,
+        text: async () =>
+          JSON.stringify({
+            quest: {
+              ...basePayload.quests[0],
+              completed_at: '2026-11-10T15:00:00.000Z',
+            },
+          } satisfies ToggleQuestCompletionResponse),
+      } as Response);
+
+      await waitFor(() => {
+        expect(firstCheckbox).not.toBeDisabled();
+      });
+      expect(firstCheckbox).toBeChecked();
+      expect(screen.getByTestId('today-quests-progress')).toHaveTextContent('1 of 2 done ♡');
+
+      // 2. Click again to undo -> unchecks and sends { completed: false }
+      fireEvent.click(firstCheckbox);
+      await waitFor(() => {
+        expect(firstCheckbox).not.toBeChecked();
+        expect(firstCheckbox).not.toBeDisabled();
+      });
+      expect(screen.getByTestId('today-quests-progress')).toHaveTextContent('0 of 2 done ♡');
+      expect(fetchSpy).toHaveBeenCalledTimes(3);
+      expect(fetchSpy.mock.calls[2][0]).toBe('/api/quests/101/completion');
+      expect(fetchSpy.mock.calls[2][1]?.body).toBe(JSON.stringify({ completed: false }));
+    });
+
+    it('reverts the checkbox immediately and shows a friendly message if saving fails', async () => {
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      vi.spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => JSON.stringify(basePayload),
+        } as Response)
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 500,
+          text: async () =>
+            JSON.stringify({
+              error: {
+                code: 'INTERNAL_ERROR',
+                message: '',
+              },
+            }),
+        } as Response);
+
+      render(
+        <BrowserRouter>
+          <TodayPage />
+        </BrowserRouter>,
+      );
+
+      const firstCheckbox = await screen.findByRole('checkbox', {
+        name: /Read 2 pages of your graded reader slowly/i,
+      });
+      expect(firstCheckbox).not.toBeChecked();
+
+      fireEvent.click(firstCheckbox);
+
+      // Reverts back to unchecked after the failed request and shows friendly alert
+      await waitFor(() => {
+        expect(firstCheckbox).not.toBeChecked();
+        expect(firstCheckbox).not.toBeDisabled();
+      });
+
+      expect(screen.getByTestId('today-quests-progress')).toHaveTextContent('0 of 2 done ♡');
+      const alert = await screen.findByTestId('today-quest-toggle-error');
+      expect(alert).toHaveTextContent(/couldn't save that check-off just now/i);
+      expect(consoleErrorSpy).toHaveBeenCalled();
+    });
+
+    it('keeps completed quests completed and visually distinct after a page reload', async () => {
+      const reloadedPayload: CurrentMilestoneQuestsResponse = {
+        ...basePayload,
+        quests: [
+          {
+            ...basePayload.quests[0],
+            completed_at: '2026-11-10T15:00:00.000Z',
+          },
+          basePayload.quests[1],
+          basePayload.quests[2],
+        ],
+      };
+
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        text: async () => JSON.stringify(reloadedPayload),
+      } as Response);
+
+      render(
+        <BrowserRouter>
+          <TodayPage />
+        </BrowserRouter>,
+      );
+
+      const firstCheckbox = await screen.findByRole('checkbox', {
+        name: /Read 2 pages of your graded reader slowly/i,
+      });
+      const secondCheckbox = screen.getByRole('checkbox', {
+        name: /Jot down 3 new vocabulary words/i,
+      });
+
+      expect(firstCheckbox).toBeChecked();
+      expect(secondCheckbox).not.toBeChecked();
+      expect(screen.getByTestId('today-quests-progress')).toHaveTextContent('1 of 2 done ♡');
+
+      const items = screen.getAllByTestId('today-quest-item');
+      expect(items[0]).toHaveAttribute('data-completed', 'true');
+      expect(items[1]).toHaveAttribute('data-completed', 'false');
+    });
   });
 });
