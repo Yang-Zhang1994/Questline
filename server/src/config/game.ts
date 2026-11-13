@@ -161,3 +161,16 @@ export function progressSnapshotFromXp(
 export function levelUpMessage(level: number): string {
   return `★ Level ${level}! Mochi is hopping with joy — you're growing so gently. ♡`;
 }
+
+/** Encouraging Mochi copy when a stage clears (#10) — never guilt. */
+export function stageClearedMessage(stageTitle: string, nextTitle: string | null): string {
+  if (nextTitle) {
+    return `★ Stage cleared: “${stageTitle}”! Soft paws of applause — next up is “${nextTitle}”. Take it gentle. ♡`;
+  }
+  return `★ Stage cleared: “${stageTitle}”! Soft paws of applause — that was the last stage on this map. ♡`;
+}
+
+/** Celebration when the final milestone finishes the goal (#10). */
+export function goalCompletedMessage(goalTitle: string): string {
+  return `★ You did it! “${goalTitle}” is complete. Mochi is so proud of this gentle journey — celebrate softly. ♡`;
+}

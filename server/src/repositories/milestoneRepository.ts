@@ -114,6 +114,147 @@ export function createMilestoneRepository(db: Db) {
         client.release();
       }
     },
+
+    /**
+     * Confirm stage clear (#10): mark current → completed, next → current
+     * (or complete the goal when no next stage remains).
+     */
+    async completeCurrentAndAdvance(
+      userId: number,
+      milestoneId: number,
+    ): Promise<{
+      completed: Milestone;
+      next: Milestone | null;
+      goalCompleted: boolean;
+      goal: RoadmapGoal;
+      milestones: Milestone[];
+    }> {
+      const client = await db.connect();
+      try {
+        await client.query('BEGIN');
+
+        const owned = await client.query<
+          MilestoneRow & {
+            goal_title: string;
+            done_definition: string | null;
+            starting_point: string | null;
+            time_budget_minutes_per_day: number | null;
+            deadline: string | null;
+            goal_status: RoadmapGoal['status'];
+          }
+        >(
+          `SELECT m.id, m.goal_id, m.position, m.title, m.description, m.target_date, m.status,
+                  g.title AS goal_title, g.done_definition, g.starting_point,
+                  g.time_budget_minutes_per_day, g.deadline, g.status AS goal_status
+           FROM milestones m
+           INNER JOIN goals g ON g.id = m.goal_id
+           WHERE m.id = $1
+             AND g.user_id = $2
+             AND g.status = 'active'
+           FOR UPDATE OF m, g`,
+          [milestoneId, userId],
+        );
+        const row = owned.rows[0];
+        if (!row) {
+          throw new Error('MILESTONE_NOT_FOUND');
+        }
+        if (row.status !== 'current') {
+          throw new Error('MILESTONE_NOT_CURRENT');
+        }
+
+        const incomplete = await client.query<{ c: string }>(
+          `SELECT COUNT(*)::text AS c FROM quests
+           WHERE milestone_id = $1 AND completed_at IS NULL`,
+          [milestoneId],
+        );
+        if (Number(incomplete.rows[0].c) > 0) {
+          throw new Error('MILESTONE_QUESTS_INCOMPLETE');
+        }
+        const totalQuests = await client.query<{ c: string }>(
+          `SELECT COUNT(*)::text AS c FROM quests WHERE milestone_id = $1`,
+          [milestoneId],
+        );
+        if (Number(totalQuests.rows[0].c) === 0) {
+          throw new Error('MILESTONE_QUESTS_EMPTY');
+        }
+
+        const completedResult = await client.query<MilestoneRow>(
+          `UPDATE milestones
+           SET status = 'completed'
+           WHERE id = $1
+           RETURNING id, goal_id, position, title, description, target_date, status`,
+          [milestoneId],
+        );
+        const completed = mapMilestone(completedResult.rows[0]);
+
+        const nextResult = await client.query<MilestoneRow>(
+          `SELECT id, goal_id, position, title, description, target_date, status
+           FROM milestones
+           WHERE goal_id = $1 AND position > $2
+           ORDER BY position ASC
+           LIMIT 1
+           FOR UPDATE`,
+          [row.goal_id, row.position],
+        );
+        const nextRow = nextResult.rows[0];
+        let next: Milestone | null = null;
+        let goalCompleted = false;
+        let goalStatus: RoadmapGoal['status'] = 'active';
+
+        if (nextRow) {
+          const advanced = await client.query<MilestoneRow>(
+            `UPDATE milestones
+             SET status = 'current'
+             WHERE id = $1
+             RETURNING id, goal_id, position, title, description, target_date, status`,
+            [nextRow.id],
+          );
+          next = mapMilestone(advanced.rows[0]);
+        } else {
+          await client.query(`UPDATE goals SET status = 'completed' WHERE id = $1 AND user_id = $2`, [
+            row.goal_id,
+            userId,
+          ]);
+          goalCompleted = true;
+          goalStatus = 'completed';
+        }
+
+        const list = await client.query<MilestoneRow>(
+          `SELECT
+             m.id, m.goal_id, m.position, m.title, m.description, m.target_date, m.status,
+             COUNT(q.id)::int AS total_quests,
+             COALESCE(SUM(CASE WHEN q.completed_at IS NOT NULL THEN 1 ELSE 0 END), 0)::int AS done_quests
+           FROM milestones m
+           LEFT JOIN quests q ON q.milestone_id = m.id
+           WHERE m.goal_id = $1
+           GROUP BY m.id
+           ORDER BY m.position ASC`,
+          [row.goal_id],
+        );
+
+        await client.query('COMMIT');
+        return {
+          completed,
+          next,
+          goalCompleted,
+          goal: mapGoalRowToRoadmapGoal({
+            id: row.goal_id,
+            title: row.goal_title,
+            done_definition: row.done_definition,
+            starting_point: row.starting_point,
+            time_budget_minutes_per_day: row.time_budget_minutes_per_day,
+            deadline: row.deadline,
+            status: goalStatus,
+          }),
+          milestones: list.rows.map(mapMilestone),
+        };
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+    },
   };
 }
 

@@ -1,8 +1,11 @@
 import { BottomDock } from '../components/BottomDock/BottomDock';
 import { DailyNote } from '../components/DailyNote/DailyNote';
+import { GoalCelebration } from '../components/GoalCelebration/GoalCelebration';
 import { LevelUpToast } from '../components/LevelUpToast/LevelUpToast';
+import { StageCompletePrompt } from '../components/StageCompletePrompt/StageCompletePrompt';
 import { StreakCounter } from '../components/StreakCounter/StreakCounter';
 import { XpBar } from '../components/XpBar/XpBar';
+import { useStageAdvance } from '../hooks/useStageAdvance';
 import { useTodayQuests } from '../hooks/useTodayQuests';
 
 export type TodayPageProps = {
@@ -18,6 +21,8 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
     todayDate,
     todayQuests,
     progress,
+    stageReady,
+    stageReadyMilestone,
     levelUpMessage,
     dismissLevelUp,
     error,
@@ -26,6 +31,18 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
     toggleQuest,
     reload,
   } = useTodayQuests();
+
+  const {
+    busy: stageBusy,
+    error: stageError,
+    result: stageResult,
+    confirm: confirmStage,
+    dismissResult: dismissStageResult,
+  } = useStageAdvance();
+
+  const showStagePrompt = stageReady && stageReadyMilestone && !stageResult;
+  const stageAdvanceToast =
+    stageResult && !stageResult.goal_completed ? stageResult.mochi_message : null;
 
   return (
     <div className="flex min-h-screen flex-col items-center px-4 pb-24 pt-6">
@@ -86,9 +103,42 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
             void reload();
           }}
         />
+
+        {showStagePrompt && stageReadyMilestone ? (
+          <StageCompletePrompt
+            milestoneTitle={stageReadyMilestone.milestone_title}
+            busy={stageBusy}
+            error={stageError}
+            onConfirm={() => {
+              void (async () => {
+                try {
+                  await confirmStage(stageReadyMilestone.milestone_id);
+                  await reload();
+                } catch {
+                  // Error surfaced via useStageAdvance.
+                }
+              })();
+            }}
+          />
+        ) : null}
       </main>
 
       <LevelUpToast message={levelUpMessage} onDismiss={dismissLevelUp} />
+      <LevelUpToast
+        message={stageAdvanceToast}
+        onDismiss={() => {
+          dismissStageResult();
+        }}
+      />
+
+      {stageResult?.goal_completed ? (
+        <GoalCelebration
+          goalTitle={stageResult.goal.title}
+          message={stageResult.mochi_message}
+          onDismiss={dismissStageResult}
+        />
+      ) : null}
+
       <BottomDock />
     </div>
   );

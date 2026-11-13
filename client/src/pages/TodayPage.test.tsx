@@ -38,6 +38,8 @@ const basePayload: CurrentMilestoneQuestsResponse = {
     best_streak: 0,
     last_active_date: null,
   },
+  stage_ready: false,
+  stage_ready_milestone: null,
   quests: [
     {
       id: 101,
@@ -113,6 +115,8 @@ describe('TodayPage (Issue #8)', () => {
     best_streak: 0,
     last_active_date: null,
   },
+        stage_ready: false,
+        stage_ready_milestone: null,
         } satisfies CurrentMilestoneQuestsResponse),
     } as Response);
 
@@ -151,6 +155,8 @@ describe('TodayPage (Issue #8)', () => {
     best_streak: 0,
     last_active_date: null,
   },
+        stage_ready: false,
+        stage_ready_milestone: null,
         } satisfies CurrentMilestoneQuestsResponse),
     } as Response);
 
@@ -364,7 +370,9 @@ describe('TodayPage (Issue #8)', () => {
                 last_active_date: null,
               },
               leveled_up: false,
-              level_up_message: null
+              level_up_message: null,
+            stage_ready: false,
+            stage_ready_milestone: null,
             } satisfies ToggleQuestCompletionResponse),
         } as Response);
 
@@ -415,7 +423,9 @@ describe('TodayPage (Issue #8)', () => {
                 last_active_date: null,
               },
               leveled_up: false,
-              level_up_message: null
+              level_up_message: null,
+            stage_ready: false,
+            stage_ready_milestone: null,
             } satisfies ToggleQuestCompletionResponse),
       } as Response);
 

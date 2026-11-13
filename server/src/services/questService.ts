@@ -3,6 +3,7 @@ import {
   createQuestProposalListSchema,
   type CurrentMilestoneQuestsResponse,
   type ProposedQuest,
+  type StageReadySummary,
   type ToggleQuestCompletionResponse,
   type UserProgress,
 } from '@questline/shared';
@@ -26,16 +27,42 @@ export type QuestServiceDeps = {
   clock: Clock;
 };
 
+type StageReadiness = {
+  stage_ready: boolean;
+  stage_ready_milestone: StageReadySummary | null;
+};
+
+const NOT_READY: StageReadiness = { stage_ready: false, stage_ready_milestone: null };
+
+function stageFromMilestoneQuests(
+  milestoneId: number,
+  milestoneTitle: string,
+  quests: Array<{ completed_at: string | null }>,
+): StageReadiness {
+  if (quests.length === 0) return NOT_READY;
+  if (!quests.every((q) => q.completed_at !== null)) return NOT_READY;
+  return {
+    stage_ready: true,
+    stage_ready_milestone: {
+      milestone_id: milestoneId,
+      milestone_title: milestoneTitle,
+    },
+  };
+}
+
 function completionPayload(
   quest: ToggleQuestCompletionResponse['quest'],
   progress: UserProgress,
   leveledUp: boolean,
+  stage: StageReadiness,
 ): ToggleQuestCompletionResponse {
   return {
     quest,
     progress,
     leveled_up: leveledUp,
     level_up_message: leveledUp ? levelUpMessage(progress.level) : null,
+    stage_ready: stage.stage_ready,
+    stage_ready_milestone: stage.stage_ready_milestone,
   };
 }
 
@@ -79,10 +106,12 @@ export function createQuestService(deps: QuestServiceDeps) {
         window_end: windowEnd,
         quests: [],
         progress,
+        ...NOT_READY,
       };
     }
 
     const quests = await deps.quests.listForMilestone(userId, milestone.id);
+    const stage = stageFromMilestoneQuests(milestone.id, milestone.title, quests);
     return {
       goal,
       milestone,
@@ -90,6 +119,7 @@ export function createQuestService(deps: QuestServiceDeps) {
       window_end: windowEnd,
       quests,
       progress,
+      ...stage,
     };
   }
 
@@ -124,6 +154,7 @@ export function createQuestService(deps: QuestServiceDeps) {
     );
     if (existingInWindow.length > 0) {
       const quests = await deps.quests.listForMilestone(userId, milestone.id);
+      const stage = stageFromMilestoneQuests(milestone.id, milestone.title, quests);
       return {
         goal,
         milestone,
@@ -131,6 +162,7 @@ export function createQuestService(deps: QuestServiceDeps) {
         window_end: windowEnd,
         quests,
         progress,
+        ...stage,
       };
     }
 
@@ -190,6 +222,7 @@ export function createQuestService(deps: QuestServiceDeps) {
       done_quests: quests.filter((q) => q.completed_at !== null).length,
     };
 
+    const stage = stageFromMilestoneQuests(updatedMilestone.id, updatedMilestone.title, quests);
     return {
       goal,
       milestone: updatedMilestone,
@@ -197,12 +230,21 @@ export function createQuestService(deps: QuestServiceDeps) {
       window_end: windowEnd,
       quests,
       progress,
+      ...stage,
     };
+  }
+
+  async function stageReadiness(userId: number): Promise<StageReadiness> {
+    const { milestone } = await deps.quests.getCurrentMilestoneContextForUser(userId);
+    if (!milestone) return NOT_READY;
+    const quests = await deps.quests.listForMilestone(userId, milestone.id);
+    return stageFromMilestoneQuests(milestone.id, milestone.title, quests);
   }
 
   /**
    * Toggles quest completion for a quest owned by `userId`.
    * Checking awards XP + streak; undoing reverses both — same transaction (#11 / #12).
+   * Stage-ready detection runs after that transaction (#10).
    */
   async function toggleQuestCompletion(
     userId: number,
@@ -220,11 +262,13 @@ export function createQuestService(deps: QuestServiceDeps) {
     // Idempotent no-ops: still return current progress for the HUD.
     if (completed && existing.completed_at !== null) {
       const progress = await deps.progress.getOrCreate(userId, date);
-      return completionPayload(existing, progress, false);
+      const stage = await stageReadiness(userId);
+      return completionPayload(existing, progress, false, stage);
     }
     if (!completed && existing.completed_at === null) {
       const progress = await deps.progress.getOrCreate(userId, date);
-      return completionPayload(existing, progress, false);
+      const stage = await stageReadiness(userId);
+      return completionPayload(existing, progress, false, stage);
     }
 
     const result = await deps.quests.setCompletionWithXp(
@@ -239,7 +283,8 @@ export function createQuestService(deps: QuestServiceDeps) {
     }
 
     const leveledUp = completed && result.progress.level > result.previousLevel;
-    return completionPayload(result.quest, result.progress, leveledUp);
+    const stage = await stageReadiness(userId);
+    return completionPayload(result.quest, result.progress, leveledUp, stage);
   }
 
   return {

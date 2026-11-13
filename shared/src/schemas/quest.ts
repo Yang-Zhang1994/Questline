@@ -4,6 +4,14 @@ import { MilestoneSchema, RoadmapGoalSchema } from './roadmap.js';
 
 export const IsoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD');
 
+/** Current stage is ready to mark complete (all its quests done) — Issue #10. */
+export const StageReadySummarySchema = z.object({
+  milestone_id: z.number().int().positive(),
+  milestone_title: z.string().min(1),
+});
+
+export type StageReadySummary = z.infer<typeof StageReadySummarySchema>;
+
 export const IsoDateTimeSchema = z.string().datetime({ offset: true });
 
 /** Default starting window length in days (today + next 2 days = 3 days). */
@@ -110,6 +118,9 @@ export const CurrentMilestoneQuestsResponseSchema = z.object({
   quests: z.array(QuestSchema),
   /** XP / level HUD snapshot (Issue #11). */
   progress: UserProgressSchema,
+  /** True when every quest on the current milestone is done (#10). */
+  stage_ready: z.boolean().default(false),
+  stage_ready_milestone: StageReadySummarySchema.nullable().default(null),
 });
 
 export type CurrentMilestoneQuestsResponse = z.infer<typeof CurrentMilestoneQuestsResponseSchema>;
@@ -139,6 +150,9 @@ export const ToggleQuestCompletionResponseSchema = z.object({
   progress: UserProgressSchema,
   leveled_up: z.boolean(),
   level_up_message: z.string().nullable(),
+  /** True when every quest on the current milestone is done (#10). */
+  stage_ready: z.boolean().default(false),
+  stage_ready_milestone: StageReadySummarySchema.nullable().default(null),
 });
 
 export type ToggleQuestCompletionResponse = z.infer<typeof ToggleQuestCompletionResponseSchema>;

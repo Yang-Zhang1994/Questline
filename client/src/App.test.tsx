@@ -64,6 +64,8 @@ describe('App auth gate & Today greeting note (Issues #8 & #9)', () => {
                 best_streak: 0,
                 last_active_date: null,
               },
+              stage_ready: false,
+              stage_ready_milestone: null,
               quests: [
                 {
                   id: 101,
@@ -124,6 +126,8 @@ describe('App auth gate & Today greeting note (Issues #8 & #9)', () => {
                 best_streak: 0,
                 last_active_date: null,
               },
+              stage_ready: false,
+              stage_ready_milestone: null,
               quests: [],
             }),
         };
