@@ -95,6 +95,19 @@ describe('RoadmapView (Issue #6)', () => {
     expect(progressbar).toHaveAttribute('aria-valuemax', '5');
   });
 
+  it('displays "No deadline set" when goal.deadline is null', () => {
+    render(
+      <RoadmapView
+        goal={{ ...MOCK_GOAL, deadline: null }}
+        milestones={MOCK_MILESTONES}
+      />,
+    );
+
+    expect(
+      screen.getAllByText(/Target Deadline: No deadline set/i).length,
+    ).toBeGreaterThanOrEqual(1);
+  });
+
   // AC: Empty state renders friendly Mochi card when roadmap is blank
   it('renders loading state when loading without a goal', () => {
     render(<RoadmapView goal={null} milestones={[]} loading />);

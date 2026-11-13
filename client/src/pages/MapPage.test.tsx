@@ -81,4 +81,56 @@ describe('MapPage', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Server exploded');
   });
+
+  it('shows "No deadline set" when the goal deadline is null', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      text: async () =>
+        JSON.stringify({
+          ...mockPayload,
+          goal: {
+            ...mockPayload.goal!,
+            deadline: null,
+          },
+        }),
+    } as Response);
+
+    render(
+      <BrowserRouter>
+        <MapPage />
+      </BrowserRouter>,
+    );
+
+    const noDeadlineEls = await screen.findAllByText(/Target Deadline: No deadline set/i);
+    expect(noDeadlineEls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('shows a friendly Mochi message and logs details to console instead of raw Zod error JSON', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      text: async () =>
+        JSON.stringify({
+          goal: {
+            id: 1,
+            title: 'Read a Japanese novel on my own',
+            deadline: 'by 2027-11-12, about one year from now',
+            status: 'active',
+          },
+          milestones: [],
+        }),
+    } as Response);
+
+    render(
+      <BrowserRouter>
+        <MapPage />
+      </BrowserRouter>,
+    );
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/mochi couldn't unroll your map right now/i);
+    expect(alert.textContent).not.toContain('invalid_string');
+    expect(alert.textContent).not.toContain('[');
+    expect(consoleErrorSpy).toHaveBeenCalled();
+  });
 });

@@ -15,7 +15,7 @@ export interface Milestone {
 export interface RoadmapGoal {
   id: number;
   title: string;
-  deadline: string; // YYYY-MM-DD
+  deadline: string | null; // YYYY-MM-DD or null
   status: 'active' | 'completed' | 'paused';
 }
 

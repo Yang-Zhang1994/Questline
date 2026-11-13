@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { Milestone, ProposedMilestone, RoadmapGoal } from '@questline/shared';
+import {
+  resolveGoalDeadlineDate,
+  type Milestone,
+  type ProposedMilestone,
+  type RoadmapGoal,
+} from '@questline/shared';
 import { createClaudeClient, createEchoChatClient, type ChatAiClient } from '../ai/client.js';
 import type { Clock } from '../clock.js';
 import type { ChatRepository } from '../repositories/chatRepository.js';
@@ -459,4 +464,72 @@ describe('milestoneService (Issue #5)', () => {
     });
     expect(adjusted.milestones).toHaveLength(initial.milestones.length + 1);
   });
+
+  it.each([
+    {
+      label: 'clean YYYY-MM-DD deadline',
+      rawDeadline: '2027-11-12',
+      expectedResolvedDeadline: '2027-11-12',
+    },
+    {
+      label: 'sentence containing a YYYY-MM-DD date',
+      rawDeadline: 'by 2027-11-12, about one year from now',
+      expectedResolvedDeadline: '2027-11-12',
+    },
+    {
+      label: 'free text with no date (defaults to one year from today)',
+      rawDeadline: 'this progress should take one year',
+      expectedResolvedDeadline: '2027-11-10',
+    },
+  ])(
+    'proposes and confirms milestones with echo client for $label ("$rawDeadline")',
+    async ({ rawDeadline, expectedResolvedDeadline }) => {
+      const today = '2026-11-10';
+      expect(resolveGoalDeadlineDate(rawDeadline, today)).toBe(expectedResolvedDeadline);
+
+      const goalWithRawDeadline: RoadmapGoal = {
+        ...activeGoal,
+        deadline: rawDeadline,
+      };
+      const chat = buildChatRepo();
+      const milestonesRepo = buildMilestoneRepo(goalWithRawDeadline);
+      const echo = createEchoChatClient();
+
+      const service = createMilestoneService({
+        milestones: milestonesRepo,
+        chat,
+        ai: echo,
+        clock,
+      });
+
+      const proposed = await service.proposeMilestones(1);
+      expect(proposed.milestones.length).toBeGreaterThanOrEqual(3);
+      expect(proposed.milestones.length).toBeLessThanOrEqual(7);
+      for (const m of proposed.milestones) {
+        expect(m.target_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        expect(m.target_date <= expectedResolvedDeadline).toBe(true);
+      }
+
+      // Rejects a milestone whose target_date is after the resolved deadline
+      await expect(
+        service.confirmMilestones(1, [
+          proposed.milestones[0],
+          proposed.milestones[1],
+          {
+            title: 'Too late stage',
+            description: 'Past resolved deadline',
+            target_date: '2028-01-01',
+          },
+        ]),
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_ERROR',
+        status: 400,
+      } satisfies Partial<AppError>);
+
+      // Confirms the proposed milestones cleanly
+      const confirmed = await service.confirmMilestones(1, proposed.milestones);
+      expect(confirmed.milestones).toHaveLength(proposed.milestones.length);
+      expect(confirmed.milestones[0].status).toBe('current');
+    },
+  );
 });

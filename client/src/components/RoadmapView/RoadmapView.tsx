@@ -1,7 +1,17 @@
 import type { Milestone, RoadmapGoal } from '@questline/shared';
+import { FRIENDLY_ROADMAP_ERROR } from '../../api/roadmap';
 import { MilestoneNode } from '../MilestoneNode/MilestoneNode';
 import { MochiAvatar } from '../MochiAvatar';
 import styles from './RoadmapView.module.css';
+
+function formatSafeError(error: string): string {
+  const trimmed = error.trim();
+  if (!trimmed || trimmed.startsWith('[') || trimmed.startsWith('{')) {
+    console.error('RoadmapView received raw error payload:', error);
+    return FRIENDLY_ROADMAP_ERROR;
+  }
+  return trimmed;
+}
 
 export interface RoadmapViewProps {
   goal?: RoadmapGoal | null;
@@ -58,7 +68,7 @@ export function RoadmapView({
           </div>
           <div className={styles.emptyContent}>
             <p className={styles.errorMessage} role="alert">
-              {error}
+              {formatSafeError(error)}
             </p>
           </div>
         </div>
@@ -122,7 +132,7 @@ export function RoadmapView({
         <h2 className={styles.goalTitle}>{goal.title}</h2>
         <div className={styles.goalMeta}>
           <span className={styles.deadline}>
-            <span aria-hidden="true">🏁</span> Target Deadline: {goal.deadline}
+            <span aria-hidden="true">🏁</span> Target Deadline: {goal.deadline ?? 'No deadline set'}
           </span>
         </div>
         <div
@@ -248,13 +258,12 @@ export function RoadmapView({
                 </span>
               </div>
               <h3 className={styles.goalCardTitle}>{goal.title}</h3>
-              {goal.deadline ? (
-                <div className={styles.goalCardFooter}>
-                  <span className={styles.goalCardDeadline}>
-                    <span aria-hidden="true">🗓️</span> Target Deadline: {goal.deadline}
-                  </span>
-                </div>
-              ) : null}
+              <div className={styles.goalCardFooter}>
+                <span className={styles.goalCardDeadline}>
+                  <span aria-hidden="true">🗓️</span> Target Deadline:{' '}
+                  {goal.deadline ?? 'No deadline set'}
+                </span>
+              </div>
             </div>
           </li>
         </ol>

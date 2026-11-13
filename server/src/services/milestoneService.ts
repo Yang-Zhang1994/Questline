@@ -75,7 +75,7 @@ export function createMilestoneService(deps: MilestoneServiceDeps) {
     }
 
     const validationSchema = MilestonePlanAiResponseSchema.extend({
-      milestones: createMilestoneProposalListSchema(goal.deadline),
+      milestones: createMilestoneProposalListSchema(goal.deadline, today),
     });
     const parsed = validationSchema.safeParse(rawProposal);
     if (!parsed.success) {
@@ -131,7 +131,8 @@ export function createMilestoneService(deps: MilestoneServiceDeps) {
       throw notFound('No active goal found to confirm milestones for.');
     }
 
-    const listSchema = createMilestoneProposalListSchema(goal.deadline);
+    const today = formatLocalDate(deps.clock.now());
+    const listSchema = createMilestoneProposalListSchema(goal.deadline, today);
     const parsed = listSchema.safeParse(proposed);
     if (!parsed.success) {
       const firstMessage = parsed.error.issues[0]?.message ?? 'Invalid milestone plan';
