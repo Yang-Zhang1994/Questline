@@ -1,7 +1,8 @@
-import type {
-  MilestonePlanAiResponse,
-  ProposedMilestone,
-  RoadmapGoal,
+import {
+  resolveGoalDeadlineDate,
+  type MilestonePlanAiResponse,
+  type ProposedMilestone,
+  type RoadmapGoal,
 } from '@questline/shared';
 import type { ClaudeChatTurn } from '../client.js';
 
@@ -61,20 +62,18 @@ function addDaysUtc(ymd: string, days: number): string {
 }
 
 /**
- * Computes `count` ordered YYYY-MM-DD target dates strictly before `deadline`
- * (or spaced forward from `today` if `deadline` is null).
+ * Computes `count` ordered YYYY-MM-DD target dates strictly before the resolved `deadline`
+ * (extracting a YYYY-MM-DD date from free text when present, or defaulting to one year from `today`).
  */
 export function buildSpacedTargetDates(
   today: string,
   deadline: string | null,
   count: number,
 ): string[] {
-  if (!deadline) {
-    return Array.from({ length: count }, (_, idx) => addDaysUtc(today, (idx + 1) * 14));
-  }
+  const resolvedDeadline = resolveGoalDeadlineDate(deadline, today);
 
   const startMs = parseUtcDate(today).getTime();
-  const endMs = parseUtcDate(deadline).getTime();
+  const endMs = parseUtcDate(resolvedDeadline).getTime();
   const dayMs = 86_400_000;
   // Ensure the last milestone lands at least 1 day before the goal deadline when possible.
   const latestMilestoneMs = endMs - dayMs;
@@ -96,11 +95,12 @@ export function buildSpacedTargetDates(
     const fraction = (idx + 1) / (count + 1);
     const offsetDays = Math.max(1, Math.round(totalSpanDays * fraction));
     const candidate = addDaysUtc(today, offsetDays);
-    return candidate < deadline ? candidate : formatUtcDate(new Date(latestMilestoneMs));
+    return candidate < resolvedDeadline ? candidate : formatUtcDate(new Date(latestMilestoneMs));
   });
 }
 
 export function buildMilestoneUserPayload(input: MilestonePlanAiRequest): string {
+  const resolvedDeadline = resolveGoalDeadlineDate(input.goal.deadline, input.today);
   return JSON.stringify(
     {
       today: input.today,
@@ -109,7 +109,8 @@ export function buildMilestoneUserPayload(input: MilestonePlanAiRequest): string
         done_definition: input.goal.done_definition ?? null,
         starting_point: input.goal.starting_point ?? null,
         time_budget_minutes_per_day: input.goal.time_budget_minutes_per_day ?? null,
-        deadline: input.goal.deadline,
+        deadline: resolvedDeadline,
+        raw_deadline: input.goal.deadline,
       },
       current_draft: input.current_draft ?? null,
       feedback: input.feedback ?? null,

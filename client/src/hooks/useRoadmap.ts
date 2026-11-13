@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { RoadmapResponse } from '@questline/shared';
-import { fetchRoadmap } from '../api/roadmap';
+import { FRIENDLY_ROADMAP_ERROR, fetchRoadmap } from '../api/roadmap';
+
+function toFriendlyErrorMessage(err: unknown): string {
+  if (!(err instanceof Error)) return FRIENDLY_ROADMAP_ERROR;
+  const trimmed = err.message.trim();
+  if (!trimmed || trimmed.startsWith('[') || trimmed.startsWith('{')) {
+    return FRIENDLY_ROADMAP_ERROR;
+  }
+  return trimmed;
+}
 
 export function useRoadmap() {
   const [data, setData] = useState<RoadmapResponse | null>(null);
@@ -14,7 +23,8 @@ export function useRoadmap() {
       const payload = await fetchRoadmap();
       setData(payload);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load roadmap');
+      console.error('Could not load roadmap:', err);
+      setError(toFriendlyErrorMessage(err));
     } finally {
       setLoading(false);
     }

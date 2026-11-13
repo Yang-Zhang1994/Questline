@@ -1,4 +1,9 @@
-import type { Milestone, RoadmapGoal, RoadmapResponse } from '@questline/shared';
+import {
+  extractGoalDeadlineDate,
+  type Milestone,
+  type RoadmapGoal,
+  type RoadmapResponse,
+} from '@questline/shared';
 import type { Db } from '../db/connection.js';
 
 type GoalRow = {
@@ -45,7 +50,7 @@ export function createRoadmapRepository(db: Db) {
         done_definition: goalRow.done_definition,
         starting_point: goalRow.starting_point,
         time_budget_minutes_per_day: goalRow.time_budget_minutes_per_day,
-        deadline: goalRow.deadline,
+        deadline: extractGoalDeadlineDate(goalRow.deadline),
         status: goalRow.status,
       };
 

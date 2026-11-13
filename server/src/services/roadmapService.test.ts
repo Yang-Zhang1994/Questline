@@ -1,3 +1,4 @@
+import { RoadmapResponseSchema } from '@questline/shared';
 import { describe, expect, it } from 'vitest';
 import { createRoadmapService } from './roadmapService.js';
 import type { RoadmapRepository } from '../repositories/roadmapRepository.js';
@@ -49,5 +50,41 @@ describe('roadmapService (Issue #6)', () => {
 
     expect(result.goal).toBeNull();
     expect(result.milestones).toEqual([]);
+  });
+
+  it('extracts a YYYY-MM-DD deadline from free text or returns null when no date is present', async () => {
+    const repoWithEmbeddedDate: RoadmapRepository = {
+      getActiveGoalRoadmapForUser: async () => ({
+        goal: {
+          id: 1,
+          title: 'Read a Japanese novel on my own',
+          deadline: 'by 2027-11-12, about one year from now',
+          status: 'active',
+        },
+        milestones: [],
+      }),
+    };
+    const resEmbedded = await createRoadmapService({
+      roadmap: repoWithEmbeddedDate,
+    }).getActiveRoadmap(1);
+    expect(resEmbedded.goal?.deadline).toBe('2027-11-12');
+    expect(RoadmapResponseSchema.safeParse(resEmbedded).success).toBe(true);
+
+    const repoWithoutDate: RoadmapRepository = {
+      getActiveGoalRoadmapForUser: async () => ({
+        goal: {
+          id: 1,
+          title: 'Read a Japanese novel on my own',
+          deadline: 'this progress should take one year',
+          status: 'active',
+        },
+        milestones: [],
+      }),
+    };
+    const resNull = await createRoadmapService({
+      roadmap: repoWithoutDate,
+    }).getActiveRoadmap(1);
+    expect(resNull.goal?.deadline).toBeNull();
+    expect(RoadmapResponseSchema.safeParse(resNull).success).toBe(true);
   });
 });

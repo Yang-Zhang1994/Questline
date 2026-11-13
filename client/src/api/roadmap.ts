@@ -1,10 +1,18 @@
 import { RoadmapResponseSchema, type RoadmapResponse } from '@questline/shared';
 import { authHeaders } from './authToken';
 
+export const FRIENDLY_ROADMAP_ERROR =
+  "Mochi couldn't unroll your map right now. Please try again in a moment.";
+
 async function parseJson(res: Response): Promise<unknown> {
   const text = await res.text();
   if (!text) return null;
-  return JSON.parse(text) as unknown;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch (err) {
+    console.error('Failed to parse roadmap JSON:', err);
+    throw new Error(FRIENDLY_ROADMAP_ERROR);
+  }
 }
 
 function errorMessage(body: unknown, fallback: string): string {
@@ -25,7 +33,12 @@ export async function fetchRoadmap(): Promise<RoadmapResponse> {
   });
   const body = await parseJson(res);
   if (!res.ok) {
-    throw new Error(errorMessage(body, 'Could not load roadmap'));
+    throw new Error(errorMessage(body, FRIENDLY_ROADMAP_ERROR));
   }
-  return RoadmapResponseSchema.parse(body);
+  const parsed = RoadmapResponseSchema.safeParse(body);
+  if (!parsed.success) {
+    console.error('Invalid roadmap response payload:', parsed.error);
+    throw new Error(FRIENDLY_ROADMAP_ERROR);
+  }
+  return parsed.data;
 }

@@ -390,7 +390,7 @@ export function createClaudeClient(options: CreateClaudeClientOptions = {}): Cha
       ];
 
       const schema = MilestonePlanAiResponseSchema.extend({
-        milestones: createMilestoneProposalListSchema(input.goal.deadline),
+        milestones: createMilestoneProposalListSchema(input.goal.deadline, input.today),
       }) satisfies z.ZodType<MilestonePlanAiResponse>;
 
       const first = await completeOnce(MOCHI_MILESTONES_SYSTEM_PROMPT, messages, 1024);
