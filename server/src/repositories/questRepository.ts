@@ -2,6 +2,7 @@ import type { Milestone, ProposedQuest, Quest, RoadmapGoal } from '@questline/sh
 import { toIsoDateTime } from '../clock.js';
 import type { Db } from '../db/connection.js';
 import { notFound } from '../services/errors.js';
+import { mapGoalRowToRoadmapGoal, type RoadmapGoalRow } from './goalRepository.js';
 
 type QuestRow = {
   id: number;
@@ -10,16 +11,6 @@ type QuestRow = {
   due_date: string;
   estimated_minutes: number | null;
   completed_at: Date | string | null;
-};
-
-type GoalRow = {
-  id: number;
-  title: string;
-  done_definition: string | null;
-  starting_point: string | null;
-  time_budget_minutes_per_day: number | null;
-  deadline: string | null;
-  status: 'active' | 'paused' | 'completed' | 'archived';
 };
 
 type MilestoneRow = {
@@ -54,18 +45,6 @@ function mapQuest(row: QuestRow): Quest {
   };
 }
 
-function mapGoal(row: GoalRow): RoadmapGoal {
-  return {
-    id: row.id,
-    title: row.title,
-    done_definition: row.done_definition,
-    starting_point: row.starting_point,
-    time_budget_minutes_per_day: row.time_budget_minutes_per_day,
-    deadline: row.deadline,
-    status: row.status,
-  };
-}
-
 function mapMilestone(row: MilestoneRow): Milestone {
   return {
     id: row.id,
@@ -94,7 +73,7 @@ export type CurrentMilestoneContext = {
 export function createQuestRepository(db: Db) {
   return {
     async getCurrentMilestoneContextForUser(userId: number): Promise<CurrentMilestoneContext> {
-      const goalResult = await db.query<GoalRow>(
+      const goalResult = await db.query<RoadmapGoalRow>(
         `SELECT id, title, done_definition, starting_point, time_budget_minutes_per_day, deadline, status
          FROM goals
          WHERE user_id = $1 AND status = 'active'
@@ -129,7 +108,7 @@ export function createQuestRepository(db: Db) {
       const milestoneRow = milestoneResult.rows[0];
 
       return {
-        goal: mapGoal(goalRow),
+        goal: mapGoalRowToRoadmapGoal(goalRow),
         milestone: milestoneRow ? mapMilestone(milestoneRow) : null,
       };
     },

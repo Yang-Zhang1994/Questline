@@ -180,6 +180,31 @@ describe('questService (Issue #7)', () => {
     expect(res.quests).toEqual([]);
   });
 
+  it('normalizes free-text goal.deadline via mapGoalRowToRoadmapGoal so client schema validation succeeds', async () => {
+    const { CurrentMilestoneQuestsResponseSchema } = await import('@questline/shared');
+    const freeTextGoal: RoadmapGoal = {
+      ...activeGoal,
+      deadline: 'in about one year',
+    };
+    const questsRepo = buildQuestRepo({ goal: freeTextGoal });
+    const generateDailyQuests = vi.fn(async () => ({
+      quests: validProposedQuests,
+    }));
+    const service = createQuestService({
+      quests: questsRepo,
+      ai: buildAi(generateDailyQuests),
+      clock,
+    });
+
+    const getRes = await service.getCurrentMilestoneQuests(1);
+    expect(getRes.goal?.deadline).toBeNull();
+    expect(CurrentMilestoneQuestsResponseSchema.safeParse(getRes).success).toBe(true);
+
+    const genRes = await service.generateCurrentMilestoneQuests(1);
+    expect(genRes.goal?.deadline).toBeNull();
+    expect(CurrentMilestoneQuestsResponseSchema.safeParse(genRes).success).toBe(true);
+  });
+
   // AC: Quests are generated for the current milestone only, fit the daily time budget,
   // have title/due_date/estimated_minutes, and are saved.
   it('generateCurrentMilestoneQuests generates and saves quests for the 3-day starting window', async () => {

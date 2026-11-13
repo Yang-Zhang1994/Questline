@@ -1,18 +1,44 @@
-import type { Goal, GoalDraft, GoalStatus } from '@questline/shared';
+import {
+  extractGoalDeadlineDate,
+  type Goal,
+  type GoalDraft,
+  type GoalStatus,
+  type RoadmapGoal,
+} from '@questline/shared';
 import { toIsoDateTime } from '../clock.js';
 import type { Db } from '../db/connection.js';
 
-type GoalRow = {
+export type RoadmapGoalRow = {
   id: number;
-  user_id: number;
   title: string;
   done_definition: string | null;
   starting_point: string | null;
   time_budget_minutes_per_day: number | null;
   deadline: string | null;
   status: GoalStatus;
+};
+
+type GoalRow = RoadmapGoalRow & {
+  user_id: number;
   created_at: Date | string;
 };
+
+/**
+ * Central mapper that turns a goal database row (or in-memory goal object) into the
+ * `RoadmapGoal` sent to the client across `/api/quests`, `/api/roadmap`, and `/api/milestones`,
+ * normalizing `deadline` to a clean `YYYY-MM-DD` date or `null`.
+ */
+export function mapGoalRowToRoadmapGoal(row: RoadmapGoalRow): RoadmapGoal {
+  return {
+    id: row.id,
+    title: row.title,
+    done_definition: row.done_definition,
+    starting_point: row.starting_point,
+    time_budget_minutes_per_day: row.time_budget_minutes_per_day,
+    deadline: extractGoalDeadlineDate(row.deadline),
+    status: row.status,
+  };
+}
 
 function mapCreatedAt(value: Date | string): string {
   if (value instanceof Date) return toIsoDateTime(value);

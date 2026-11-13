@@ -250,4 +250,41 @@ describe('GET /api/quests & POST /api/quests/generate (Issue #7)', () => {
       .send({})
       .expect(404);
   });
+
+  it('normalizes a free-text goal deadline to YYYY-MM-DD or null in GET /api/quests and POST /api/quests/generate so CurrentMilestoneQuestsResponseSchema passes', async () => {
+    const { CurrentMilestoneQuestsResponseSchema } = await import('@questline/shared');
+    const app = buildApp();
+    const token = await loginAsDemo(app);
+
+    // 1. Free-text deadline with no embedded date -> normalized to null
+    await db.query(`UPDATE goals SET deadline = 'One year from now'`);
+
+    const getFreeTextRes = await request(app)
+      .get('/api/quests')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(getFreeTextRes.body.goal.deadline).toBeNull();
+    expect(CurrentMilestoneQuestsResponseSchema.safeParse(getFreeTextRes.body).success).toBe(true);
+
+    const genFreeTextRes = await request(app)
+      .post('/api/quests/generate')
+      .set('Authorization', `Bearer ${token}`)
+      .send({})
+      .expect(200);
+
+    expect(genFreeTextRes.body.goal.deadline).toBeNull();
+    expect(CurrentMilestoneQuestsResponseSchema.safeParse(genFreeTextRes.body).success).toBe(true);
+
+    // 2. Free-text deadline containing an embedded YYYY-MM-DD -> extracted to clean YYYY-MM-DD
+    await db.query(`UPDATE goals SET deadline = 'by 2027-11-12, about one year from now'`);
+
+    const getEmbeddedRes = await request(app)
+      .get('/api/quests')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(getEmbeddedRes.body.goal.deadline).toBe('2027-11-12');
+    expect(CurrentMilestoneQuestsResponseSchema.safeParse(getEmbeddedRes.body).success).toBe(true);
+  });
 });

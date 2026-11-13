@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Milestone, RoadmapGoal } from './roadmap.js';
+import { MilestoneSchema, RoadmapGoalSchema } from './roadmap.js';
 
 export const IsoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD');
 
@@ -101,13 +101,15 @@ export const QuestGenerationAiResponseSchema = z.object({
 
 export type QuestGenerationAiResponse = z.infer<typeof QuestGenerationAiResponseSchema>;
 
-export type CurrentMilestoneQuestsResponse = {
-  goal: RoadmapGoal | null;
-  milestone: Milestone | null;
-  window_start: string;
-  window_end: string;
-  quests: Quest[];
-};
+export const CurrentMilestoneQuestsResponseSchema = z.object({
+  goal: RoadmapGoalSchema.nullable(),
+  milestone: MilestoneSchema.nullable(),
+  window_start: IsoDateSchema,
+  window_end: IsoDateSchema,
+  quests: z.array(QuestSchema),
+});
+
+export type CurrentMilestoneQuestsResponse = z.infer<typeof CurrentMilestoneQuestsResponseSchema>;
 
 export const TodayQuestsResponseSchema = z.object({
   local_date: IsoDateSchema,
