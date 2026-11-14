@@ -433,5 +433,58 @@ describe('GET /api/quests & POST /api/quests/generate (Issue #7)', () => {
         .expect(400);
       expect(badParamRes.body.error.code).toBe('VALIDATION_ERROR');
     });
+
+    it('validates local_date across GET /api/quests, POST /api/quests/generate, and PATCH /api/quests/:questId/completion (real date within ±1 day of server clock)', async () => {
+      const app = buildApp();
+      const token = await loginAsDemo(app);
+
+      // ±1 day of server date (2026-11-10) is accepted
+      const prevDayGet = await request(app)
+        .get('/api/quests?local_date=2026-11-09')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(prevDayGet.body.window_start).toBe('2026-11-09');
+
+      const nextDayGet = await request(app)
+        .get('/api/quests?local_date=2026-11-11')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(nextDayGet.body.window_start).toBe('2026-11-11');
+
+      // Non-existent calendar date (2026-02-30) -> 400 VALIDATION_ERROR
+      const fakeDateGet = await request(app)
+        .get('/api/quests?local_date=2026-02-30')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(400);
+      expect(fakeDateGet.body.error.code).toBe('VALIDATION_ERROR');
+
+      // Date >1 day away from server clock (2026-11-10) -> 400 VALIDATION_ERROR
+      const farDateGet = await request(app)
+        .get('/api/quests?local_date=2026-11-05')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(400);
+      expect(farDateGet.body.error.code).toBe('VALIDATION_ERROR');
+
+      const farDateGen = await request(app)
+        .post('/api/quests/generate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ local_date: '2026-11-20' })
+        .expect(400);
+      expect(farDateGen.body.error.code).toBe('VALIDATION_ERROR');
+
+      const genRes = await request(app)
+        .post('/api/quests/generate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ local_date: '2026-11-10' })
+        .expect(200);
+      const questId = genRes.body.quests[0].id as number;
+
+      const farDatePatch = await request(app)
+        .patch(`/api/quests/${questId}/completion`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ completed: true, local_date: '2026-11-01' })
+        .expect(400);
+      expect(farDatePatch.body.error.code).toBe('VALIDATION_ERROR');
+    });
   });
 });

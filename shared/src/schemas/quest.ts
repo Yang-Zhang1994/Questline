@@ -2,7 +2,44 @@ import { z } from 'zod';
 import { UserProgressSchema } from './progress.js';
 import { MilestoneSchema, RoadmapGoalSchema } from './roadmap.js';
 
-export const IsoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD');
+export function isRealCalendarDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+  const [year, month, day] = value.split('-').map(Number);
+  if (month < 1 || month > 12 || day < 1 || day > 31) {
+    return false;
+  }
+  const utc = new Date(Date.UTC(year, month - 1, day));
+  return (
+    utc.getUTCFullYear() === year &&
+    utc.getUTCMonth() === month - 1 &&
+    utc.getUTCDate() === day
+  );
+}
+
+const MS_PER_DAY = 86_400_000;
+
+function toUtcDayMidnightMs(isoDate: string): number {
+  const [year, month, day] = isoDate.split('-').map(Number);
+  return Date.UTC(year, month - 1, day);
+}
+
+export function calendarDayDiff(dateA: string, dateB: string): number {
+  return Math.round((toUtcDayMidnightMs(dateA) - toUtcDayMidnightMs(dateB)) / MS_PER_DAY);
+}
+
+export function isLocalDateWithinOneDay(localDate: string, serverDate: string): boolean {
+  if (!isRealCalendarDate(localDate) || !isRealCalendarDate(serverDate)) {
+    return false;
+  }
+  return Math.abs(calendarDayDiff(localDate, serverDate)) <= 1;
+}
+
+export const IsoDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD')
+  .refine(isRealCalendarDate, 'Expected a real calendar date (YYYY-MM-DD)');
 
 /** Current stage is ready to mark complete (all its quests done) — Issue #10. */
 export const StageReadySummarySchema = z.object({

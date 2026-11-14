@@ -27,7 +27,10 @@ export {
   TodayQuestsResponseSchema,
   ToggleQuestCompletionBodySchema,
   ToggleQuestCompletionResponseSchema,
+  calendarDayDiff,
   createQuestProposalListSchema,
+  isLocalDateWithinOneDay,
+  isRealCalendarDate,
   type CurrentMilestoneQuestsResponse,
   type ProposedQuest,
   type ProposedQuestList,
@@ -39,6 +42,15 @@ export {
   type ToggleQuestCompletionBody,
   type ToggleQuestCompletionResponse,
 } from './schemas/quest.js';
+
+export {
+  DiaryNoteContentSchema,
+  DiaryNoteSchema,
+  MAX_DIARY_NOTE_LENGTH,
+  UpsertDiaryNoteBodySchema,
+  type DiaryNote,
+  type UpsertDiaryNoteBody,
+} from './schemas/diary.js';
 
 export { UserProgressSchema, type UserProgress } from './schemas/progress.js';
 

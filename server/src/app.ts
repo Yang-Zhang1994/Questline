@@ -7,6 +7,7 @@ import { systemClock } from './clock.js';
 import type { Db } from './db/connection.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { createChatRepository } from './repositories/chatRepository.js';
+import { createDiaryRepository } from './repositories/diaryRepository.js';
 import { createGoalRepository } from './repositories/goalRepository.js';
 import { createInterviewRepository } from './repositories/interviewRepository.js';
 import { createMilestoneRepository } from './repositories/milestoneRepository.js';
@@ -16,12 +17,14 @@ import { createRoadmapRepository } from './repositories/roadmapRepository.js';
 import { createUserRepository } from './repositories/userRepository.js';
 import { createAuthRouter } from './routes/auth.js';
 import { createChatRouter } from './routes/chat.js';
+import { createDiaryNotesRouter } from './routes/diaryNotes.js';
 import { createGoalsRouter } from './routes/goals.js';
 import { createMilestonesRouter } from './routes/milestones.js';
 import { createQuestsRouter } from './routes/quests.js';
 import { createRoadmapRouter } from './routes/roadmap.js';
 import { createAuthService } from './services/authService.js';
 import { createChatService } from './services/chatService.js';
+import { createDiaryService } from './services/diaryService.js';
 import { createGoalService } from './services/goalService.js';
 import { createMilestoneAdvanceService } from './services/milestoneAdvanceService.js';
 import { createMilestoneService } from './services/milestoneService.js';
@@ -45,8 +48,10 @@ export function createApp(options: CreateAppOptions) {
   const progress = createProgressRepository(options.db);
   const roadmap = createRoadmapRepository(options.db);
   const goals = createGoalRepository(options.db);
+  const diary = createDiaryRepository(options.db);
   const authService = createAuthService({ users });
   const roadmapService = createRoadmapService({ roadmap });
+  const diaryService = createDiaryService({ diary, goals, clock });
 
   // Lazy default so auth/chat tests can createApp without ANTHROPIC_* env.
   const ai: ChatAiClient =
@@ -115,6 +120,7 @@ export function createApp(options: CreateAppOptions) {
   app.use('/api/milestones', createMilestonesRouter(milestoneService, milestoneAdvanceService));
   app.use('/api/roadmap', createRoadmapRouter(roadmapService));
   app.use('/api/goals', createGoalsRouter(goalService));
+  app.use('/api/diary-notes', createDiaryNotesRouter(diaryService));
 
   app.use(errorHandler);
   return app;
