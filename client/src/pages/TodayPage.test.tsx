@@ -84,6 +84,13 @@ const basePayload: CurrentMilestoneQuestsResponse = {
     best_streak: 0,
     last_active_date: null,
   },
+  stamp_card: {
+    card_number: 1,
+    stamps_per_card: 10,
+    stamped_dates: [],
+    filled_count: 0,
+    past_cards: [],
+  },
   stage_ready: false,
   stage_ready_milestone: null,
   quests: [
@@ -153,14 +160,15 @@ describe('TodayPage (Issue #8)', () => {
           window_end: '2026-11-12',
           quests: [],
         progress: {
-    xp: 0,
-    level: 1,
-    xp_into_level: 0,
-    xp_for_next_level: 50,
-    current_streak: 0,
-    best_streak: 0,
-    last_active_date: null,
-  },
+          xp: 0,
+          level: 1,
+          xp_into_level: 0,
+          xp_for_next_level: 50,
+          current_streak: 0,
+          best_streak: 0,
+          last_active_date: null,
+        },
+        stamp_card: basePayload.stamp_card,
         stage_ready: false,
         stage_ready_milestone: null,
         } satisfies CurrentMilestoneQuestsResponse),
@@ -193,14 +201,15 @@ describe('TodayPage (Issue #8)', () => {
           window_end: '2026-11-12',
           quests: [],
         progress: {
-    xp: 0,
-    level: 1,
-    xp_into_level: 0,
-    xp_for_next_level: 50,
-    current_streak: 0,
-    best_streak: 0,
-    last_active_date: null,
-  },
+          xp: 0,
+          level: 1,
+          xp_into_level: 0,
+          xp_for_next_level: 50,
+          current_streak: 0,
+          best_streak: 0,
+          last_active_date: null,
+        },
+        stamp_card: basePayload.stamp_card,
         stage_ready: false,
         stage_ready_milestone: null,
         } satisfies CurrentMilestoneQuestsResponse),
@@ -417,6 +426,9 @@ describe('TodayPage (Issue #8)', () => {
               },
               leveled_up: false,
               level_up_message: null,
+              stamp_card: basePayload.stamp_card,
+              card_completed: false,
+              card_reward_message: null,
             stage_ready: false,
             stage_ready_milestone: null,
             } satisfies ToggleQuestCompletionResponse),
@@ -470,6 +482,9 @@ describe('TodayPage (Issue #8)', () => {
               },
               leveled_up: false,
               level_up_message: null,
+              stamp_card: basePayload.stamp_card,
+              card_completed: false,
+              card_reward_message: null,
             stage_ready: false,
             stage_ready_milestone: null,
             } satisfies ToggleQuestCompletionResponse),
@@ -641,6 +656,109 @@ describe('TodayPage (Issue #8)', () => {
         );
       });
       expect(screen.getByTestId('diary-save-status')).toHaveTextContent('Saved ♡');
+    });
+  });
+
+  describe('Stamp card on Today view (Issue #13)', () => {
+    it('updates the stamp card and shows Mochi’s reward message when completing the 10th stamp', async () => {
+      const nineStampsPayload: CurrentMilestoneQuestsResponse = {
+        ...basePayload,
+        stamp_card: {
+          card_number: 1,
+          stamps_per_card: 10,
+          stamped_dates: [
+            '2026-11-01',
+            '2026-11-02',
+            '2026-11-03',
+            '2026-11-04',
+            '2026-11-05',
+            '2026-11-06',
+            '2026-11-07',
+            '2026-11-08',
+            '2026-11-09',
+          ],
+          filled_count: 9,
+          past_cards: [],
+        },
+      };
+
+      const completedCardResponse: ToggleQuestCompletionResponse = {
+        quest: {
+          ...basePayload.quests[0],
+          completed_at: '2026-11-10T15:00:00.000Z',
+        },
+        progress: {
+          xp: 10,
+          level: 1,
+          xp_into_level: 10,
+          xp_for_next_level: 50,
+          current_streak: 1,
+          best_streak: 1,
+          last_active_date: '2026-11-10',
+        },
+        leveled_up: false,
+        level_up_message: null,
+        stamp_card: {
+          card_number: 2,
+          stamps_per_card: 10,
+          stamped_dates: [],
+          filled_count: 0,
+          past_cards: [
+            {
+              card_number: 1,
+              stamp_dates: [
+                '2026-11-01',
+                '2026-11-02',
+                '2026-11-03',
+                '2026-11-04',
+                '2026-11-05',
+                '2026-11-06',
+                '2026-11-07',
+                '2026-11-08',
+                '2026-11-09',
+                '2026-11-10',
+              ],
+              stamp_count: 10,
+            },
+          ],
+        },
+        card_completed: true,
+        card_reward_message:
+          '★ Stamp Card #1 is full! Mochi tucked it into your collection and opened a fresh card for you. ♡',
+        stage_ready: false,
+        stage_ready_milestone: null,
+      };
+
+      vi.spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => JSON.stringify(nineStampsPayload),
+        } as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => JSON.stringify(completedCardResponse),
+        } as Response);
+
+      render(
+        <BrowserRouter>
+          <TodayPage />
+        </BrowserRouter>,
+      );
+
+      expect(await screen.findByTestId('stamp-card-progress')).toHaveTextContent(
+        '9 of 10 stamps ♡',
+      );
+
+      const firstCheckbox = screen.getByRole('checkbox', {
+        name: /Read 2 pages of your graded reader slowly/i,
+      });
+      fireEvent.click(firstCheckbox);
+
+      expect(await screen.findByTestId('level-up-toast')).toHaveTextContent(
+        /Stamp Card #1 is full/i,
+      );
+      expect(screen.getByTestId('stamp-card-progress')).toHaveTextContent('0 of 10 stamps ♡');
+      expect(screen.getByTestId('toggle-past-cards')).toHaveTextContent('View past cards (1)');
     });
   });
 });

@@ -1,10 +1,20 @@
-import type { Milestone, ProposedQuest, Quest, RoadmapGoal, UserProgress } from '@questline/shared';
+import type {
+  Milestone,
+  ProposedQuest,
+  Quest,
+  RoadmapGoal,
+  StampCard,
+  UserProgress,
+} from '@questline/shared';
 import { toIsoDateTime } from '../clock.js';
 import {
+  STAMPS_PER_CARD,
   applyActiveDay,
+  buildStampCardSnapshot,
   levelFromTotalXp,
   progressSnapshotFromXp,
   revertActiveDay,
+  type StampRowInput,
   type StreakState,
 } from '../config/game.js';
 import type { Db } from '../db/connection.js';
@@ -18,6 +28,7 @@ type QuestRow = {
   due_date: string;
   estimated_minutes: number | null;
   completed_at: Date | string | null;
+  completed_local_date?: string | null;
 };
 
 type MilestoneRow = {
@@ -298,7 +309,7 @@ export function createQuestRepository(db: Db) {
     },
 
     /**
-     * Toggle quest completion and adjust XP + streak in one transaction (#11 / #12).
+     * Toggle quest completion and adjust XP + streak + stamp card in one transaction (#11 / #12 / #13).
      * Caller must only invoke for a real state change (idempotent no-ops stay in the service).
      * `localDate` is the user's local YYYY-MM-DD (never server "today").
      */
@@ -308,13 +319,21 @@ export function createQuestRepository(db: Db) {
       completedAt: string | null,
       xpDelta: number,
       localDate: string,
-    ): Promise<{ quest: Quest; progress: UserProgress; previousLevel: number } | null> {
+    ): Promise<{
+      quest: Quest;
+      progress: UserProgress;
+      previousLevel: number;
+      stampCard: StampCard;
+      cardCompleted: boolean;
+      completedCardNumber: number | null;
+    } | null> {
       const client = await db.connect();
       try {
         await client.query('BEGIN');
 
         const owned = await client.query<QuestRow>(
-          `SELECT q.id, q.milestone_id, q.title, q.due_date, q.estimated_minutes, q.completed_at
+          `SELECT q.id, q.milestone_id, q.title, q.due_date, q.estimated_minutes,
+                  q.completed_at, q.completed_local_date
            FROM quests q
            INNER JOIN milestones m ON m.id = q.milestone_id
            INNER JOIN goals g ON g.id = m.goal_id
@@ -327,12 +346,16 @@ export function createQuestRepository(db: Db) {
           return null;
         }
 
+        const previousCompletedLocalDate = owned.rows[0].completed_local_date ?? null;
+        const nextCompletedLocalDate = completedAt !== null ? localDate : null;
+
         const updated = await client.query<QuestRow>(
           `UPDATE quests
-           SET completed_at = $1
-           WHERE id = $2
+           SET completed_at = $1,
+               completed_local_date = $2
+           WHERE id = $3
            RETURNING id, milestone_id, title, due_date, estimated_minutes, completed_at`,
-          [completedAt, id],
+          [completedAt, nextCompletedLocalDate, id],
         );
 
         const progressRow = await client.query<{
@@ -396,11 +419,89 @@ export function createQuestRepository(db: Db) {
           ],
         );
 
+        let cardCompleted = false;
+        let completedCardNumber: number | null = null;
+
+        if (completedAt !== null) {
+          const existingStamp = await client.query<{ id: number }>(
+            `SELECT id FROM stamps WHERE user_id = $1 AND stamp_date = $2`,
+            [userId, localDate],
+          );
+          if (!existingStamp.rows[0]) {
+            const latestCard = await client.query<{ card_number: number; stamp_count: number }>(
+              `SELECT card_number, COUNT(*)::int AS stamp_count
+               FROM stamps
+               WHERE user_id = $1
+               GROUP BY card_number
+               ORDER BY card_number DESC
+               LIMIT 1`,
+              [userId],
+            );
+            const top = latestCard.rows[0];
+            let targetCardNumber = 1;
+            let currentCardCount = 0;
+            if (top) {
+              if (top.stamp_count >= STAMPS_PER_CARD) {
+                targetCardNumber = top.card_number + 1;
+                currentCardCount = 0;
+              } else {
+                targetCardNumber = top.card_number;
+                currentCardCount = top.stamp_count;
+              }
+            }
+
+            await client.query(
+              `INSERT INTO stamps (user_id, card_number, stamp_date)
+               VALUES ($1, $2, $3)
+               ON CONFLICT (user_id, stamp_date) DO NOTHING`,
+              [userId, targetCardNumber, localDate],
+            );
+
+            if (currentCardCount + 1 === STAMPS_PER_CARD) {
+              cardCompleted = true;
+              completedCardNumber = targetCardNumber;
+            }
+          }
+        } else {
+          // Undo: remove the stamp for the day the quest was completed (or fallback to localDate)
+          // ONLY if no other completed quest of this user has that same completed_local_date.
+          const stampDateToCheck = previousCompletedLocalDate ?? localDate;
+          const remainingForDate = await client.query<{ c: number }>(
+            `SELECT COUNT(*)::int AS c
+             FROM quests q
+             INNER JOIN milestones m ON m.id = q.milestone_id
+             INNER JOIN goals g ON g.id = m.goal_id
+             WHERE g.user_id = $1
+               AND q.completed_at IS NOT NULL
+               AND q.completed_local_date = $2`,
+            [userId, stampDateToCheck],
+          );
+          if (Number(remainingForDate.rows[0]?.c ?? 0) === 0) {
+            await client.query(
+              `DELETE FROM stamps
+               WHERE user_id = $1 AND stamp_date = $2`,
+              [userId, stampDateToCheck],
+            );
+          }
+        }
+
+        const stampRows = await client.query<StampRowInput>(
+          `SELECT card_number, stamp_date
+           FROM stamps
+           WHERE user_id = $1
+           ORDER BY card_number ASC, stamp_date ASC, id ASC`,
+          [userId],
+        );
+        const stampCard = buildStampCardSnapshot(stampRows.rows);
+
         await client.query('COMMIT');
         return {
           quest: mapQuest(updated.rows[0]),
           progress: progressSnapshotFromXp(nextXp, streak),
           previousLevel,
+          stampCard,
+          cardCompleted,
+          completedCardNumber,
         };
       } catch (err) {
         await client.query('ROLLBACK');

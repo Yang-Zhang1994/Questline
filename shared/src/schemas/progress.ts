@@ -20,3 +20,24 @@ export const UserProgressSchema = z.object({
 });
 
 export type UserProgress = z.infer<typeof UserProgressSchema>;
+
+/** Past completed stamp card snapshot (#13). */
+export const StampPastCardSchema = z.object({
+  card_number: z.number().int().positive(),
+  stamp_dates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD')),
+  stamp_count: z.number().int().nonnegative(),
+});
+
+export type StampPastCard = z.infer<typeof StampPastCardSchema>;
+
+/** Active stamp card + past cards history for the logged-in user (#13). */
+export const StampCardSchema = z.object({
+  card_number: z.number().int().positive(),
+  stamps_per_card: z.number().int().positive(),
+  stamped_dates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD')),
+  filled_count: z.number().int().nonnegative(),
+  past_cards: z.array(StampPastCardSchema),
+});
+
+export type StampCard = z.infer<typeof StampCardSchema>;
+

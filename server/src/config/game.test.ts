@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  STAMPS_PER_CARD,
   XP_PER_QUEST,
   XP_TO_REACH_LEVEL,
   applyActiveDay,
   applyMissedDayReset,
+  buildStampCardSnapshot,
+  cardCompletedMessage,
   levelFromTotalXp,
   levelUpMessage,
   previousIsoDate,
@@ -108,5 +111,51 @@ describe('game streak helpers (Issue #12)', () => {
       best_streak: 1,
       last_active_date: '2026-10-28',
     });
+  });
+});
+
+describe('game stamp card helpers (Issue #13)', () => {
+  it('returns an empty Card #1 with STAMPS_PER_CARD (10) slots when the user has no stamps', () => {
+    expect(STAMPS_PER_CARD).toBe(10);
+    expect(buildStampCardSnapshot([])).toEqual({
+      card_number: 1,
+      stamps_per_card: 10,
+      stamped_dates: [],
+      filled_count: 0,
+      past_cards: [],
+    });
+  });
+
+  it('tracks stamped dates on the current card and rolls over to Card #2 when Card #1 fills 10 slots', () => {
+    const nineRows = Array.from({ length: 9 }, (_, i) => ({
+      card_number: 1,
+      stamp_date: `2026-11-${String(i + 1).padStart(2, '0')}`,
+    }));
+
+    const partial = buildStampCardSnapshot(nineRows);
+    expect(partial.card_number).toBe(1);
+    expect(partial.filled_count).toBe(9);
+    expect(partial.past_cards).toEqual([]);
+
+    const tenRows = [...nineRows, { card_number: 1, stamp_date: '2026-11-10' }];
+    const rolledOver = buildStampCardSnapshot(tenRows);
+    expect(rolledOver).toEqual({
+      card_number: 2,
+      stamps_per_card: 10,
+      stamped_dates: [],
+      filled_count: 0,
+      past_cards: [
+        {
+          card_number: 1,
+          stamp_dates: tenRows.map((r) => r.stamp_date),
+          stamp_count: 10,
+        },
+      ],
+    });
+  });
+
+  it('builds a warm Mochi celebration message when a card completes', () => {
+    expect(cardCompletedMessage(1)).toMatch(/Stamp Card #1/i);
+    expect(cardCompletedMessage(1)).toMatch(/Mochi/i);
   });
 });

@@ -2,7 +2,16 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Milestone, ProposedQuest, Quest, RoadmapGoal } from '@questline/shared';
 import { createClaudeClient, createEchoChatClient, type ChatAiClient } from '../ai/client.js';
 import type { Clock } from '../clock.js';
-import { XP_PER_QUEST, XP_TO_REACH_LEVEL, applyActiveDay, progressSnapshotFromXp, revertActiveDay } from '../config/game.js';
+import {
+  STAMPS_PER_CARD,
+  XP_PER_QUEST,
+  XP_TO_REACH_LEVEL,
+  applyActiveDay,
+  buildStampCardSnapshot,
+  progressSnapshotFromXp,
+  revertActiveDay,
+  type StampRowInput,
+} from '../config/game.js';
 import type { ProgressRepository } from '../repositories/progressRepository.js';
 import type { QuestRepository } from '../repositories/questRepository.js';
 import { AppError } from './errors.js';
@@ -73,7 +82,9 @@ describe('questService (Issue #7)', () => {
     const goalForUser1 = options?.goal !== undefined ? options.goal : activeGoal;
     const milestoneForUser1 =
       options?.milestone !== undefined ? options.milestone : currentMilestone;
-    const savedRows: Quest[] = [...(options?.initialQuests ?? [])];
+    const savedRows: Array<Quest & { completed_local_date?: string | null }> = [
+      ...(options?.initialQuests ?? []),
+    ];
     let nextId = savedRows.length + 1;
 
     return {
@@ -169,9 +180,12 @@ describe('questService (Issue #7)', () => {
         if (userId !== 1) return null;
         const idx = savedRows.findIndex((q) => q.id === id);
         if (idx === -1) return null;
-        const updated: Quest = {
+        const previousCompletedLocalDate = savedRows[idx].completed_local_date ?? null;
+        const nextCompletedLocalDate = completedAt !== null ? localDate : null;
+        const updated: Quest & { completed_local_date?: string | null } = {
           ...savedRows[idx],
           completed_at: completedAt,
+          completed_local_date: nextCompletedLocalDate,
         };
         savedRows[idx] = updated;
         const store = (globalThis as unknown as {
@@ -181,6 +195,7 @@ describe('questService (Issue #7)', () => {
             best_streak: number;
             last_active_date: string | null;
             active_day_completions: number;
+            stamps: StampRowInput[];
           };
         }).__xpStore;
         const previousXp = store?.xp ?? 0;
@@ -205,34 +220,77 @@ describe('questService (Issue #7)', () => {
             streak = revertActiveDay(streak, localDate);
           }
         }
+        const stamps = store?.stamps ?? [];
+        let cardCompleted = false;
+        let completedCardNumber: number | null = null;
+        if (completedAt !== null) {
+          if (!stamps.some((s) => s.stamp_date === localDate)) {
+            const maxCard = stamps.reduce((m, s) => Math.max(m, s.card_number), 1);
+            const countOnMax = stamps.filter((s) => s.card_number === maxCard).length;
+            const targetCard = countOnMax >= STAMPS_PER_CARD ? maxCard + 1 : maxCard;
+            const currentCount = countOnMax >= STAMPS_PER_CARD ? 0 : countOnMax;
+            stamps.push({ card_number: targetCard, stamp_date: localDate });
+            if (currentCount + 1 === STAMPS_PER_CARD) {
+              cardCompleted = true;
+              completedCardNumber = targetCard;
+            }
+          }
+        } else {
+          const stampDateToCheck = previousCompletedLocalDate ?? localDate;
+          const remaining = savedRows.filter(
+            (q) => q.completed_at !== null && q.completed_local_date === stampDateToCheck,
+          );
+          if (remaining.length === 0) {
+            const sIdx = stamps.findIndex((s) => s.stamp_date === stampDateToCheck);
+            if (sIdx !== -1) stamps.splice(sIdx, 1);
+          }
+        }
         if (store) {
           store.xp = nextXp;
           store.current_streak = streak.current_streak;
           store.best_streak = streak.best_streak;
           store.last_active_date = streak.last_active_date;
           store.active_day_completions = activeDay;
+          store.stamps = stamps;
         }
         return {
-          quest: updated,
+          quest: {
+            id: updated.id,
+            milestone_id: updated.milestone_id,
+            title: updated.title,
+            due_date: updated.due_date,
+            estimated_minutes: updated.estimated_minutes,
+            completed_at: updated.completed_at,
+          },
           progress: progressSnapshotFromXp(nextXp, streak),
           previousLevel,
+          stampCard: buildStampCardSnapshot(stamps),
+          cardCompleted,
+          completedCardNumber,
         };
       },
     };
   }
 
-  function buildProgress(initialXp = 0): ProgressRepository & { xp: number } {
+  function buildProgress(
+    initialXp = 0,
+    initialStamps: StampRowInput[] = [],
+  ): ProgressRepository & { xp: number; stamps: StampRowInput[] } {
     const store = {
       xp: initialXp,
       current_streak: 0,
       best_streak: 0,
       last_active_date: null as string | null,
       active_day_completions: 0,
+      stamps: [...initialStamps],
     };
     (globalThis as unknown as { __xpStore: typeof store }).__xpStore = store;
     return {
       get xp() {
         return store.xp;
+      },
+      get stamps() {
+        return store.stamps;
       },
       async getOrCreate(_userId: number, _localDate?: string) {
         return progressSnapshotFromXp(store.xp, {
@@ -240,6 +298,9 @@ describe('questService (Issue #7)', () => {
           best_streak: store.best_streak,
           last_active_date: store.last_active_date,
         });
+      },
+      async getStampCard(_userId: number) {
+        return buildStampCardSnapshot(store.stamps);
       },
     };
   }
@@ -756,6 +817,101 @@ describe('questService (Issue #7)', () => {
       const again = await service.toggleQuestCompletion(1, 1, true);
       expect(again.progress.xp).toBe(XP_PER_QUEST);
       expect(again.leveled_up).toBe(false);
+    });
+
+    it('earns one stamp per active day, keeps the stamp if other quests remain that day, and removes the completion-day stamp when undoing the last quest even on a later day (Issue #13)', async () => {
+      const questsRepo = buildQuestRepo({
+        initialQuests: [
+          {
+            id: 1,
+            milestone_id: currentMilestone.id,
+            title: 'Quest A',
+            due_date: '2026-11-10',
+            estimated_minutes: 15,
+            completed_at: null,
+          },
+          {
+            id: 2,
+            milestone_id: currentMilestone.id,
+            title: 'Quest B',
+            due_date: '2026-11-10',
+            estimated_minutes: 10,
+            completed_at: null,
+          },
+        ],
+      });
+      const progress = buildProgress(0);
+      let currentIso = '2026-11-10T18:30:00.000Z';
+      const service = createQuestService({
+        quests: questsRepo,
+        progress,
+        ai: buildAi(),
+        clock: { now: () => new Date(currentIso) },
+      });
+
+      // 1. First completion on 2026-11-10 earns 1 stamp
+      const first = await service.toggleQuestCompletion(1, 1, true, '2026-11-10');
+      expect(first.stamp_card.filled_count).toBe(1);
+      expect(first.stamp_card.stamped_dates).toEqual(['2026-11-10']);
+      expect(first.card_completed).toBe(false);
+
+      // 2. Second completion on 2026-11-10 does not add another stamp
+      const second = await service.toggleQuestCompletion(1, 2, true, '2026-11-10');
+      expect(second.stamp_card.filled_count).toBe(1);
+      expect(second.stamp_card.stamped_dates).toEqual(['2026-11-10']);
+
+      // 3. Undo Quest A while Quest B is still completed -> stamp for 2026-11-10 stays
+      const undoOne = await service.toggleQuestCompletion(1, 1, false, '2026-11-10');
+      expect(undoOne.stamp_card.filled_count).toBe(1);
+      expect(undoOne.stamp_card.stamped_dates).toEqual(['2026-11-10']);
+
+      // 4. Advance clock to Day 2 (2026-11-11) and undo Quest B -> Day 1's stamp (2026-11-10) is removed
+      currentIso = '2026-11-11T12:00:00.000Z';
+      const undoLastOnDay2 = await service.toggleQuestCompletion(1, 2, false, '2026-11-11');
+      expect(undoLastOnDay2.stamp_card.filled_count).toBe(0);
+      expect(undoLastOnDay2.stamp_card.stamped_dates).toEqual([]);
+    });
+
+    it('fills a 10-slot card, returns Mochi reward message, saves the completed card in past_cards, and starts Card #2 (Issue #13)', async () => {
+      const initialNineStamps: StampRowInput[] = Array.from({ length: 9 }, (_, i) => ({
+        card_number: 1,
+        stamp_date: `2026-11-${String(i + 1).padStart(2, '0')}`,
+      }));
+      const questsRepo = buildQuestRepo({
+        initialQuests: [
+          {
+            id: 1,
+            milestone_id: currentMilestone.id,
+            title: '10th stamp quest',
+            due_date: '2026-11-10',
+            estimated_minutes: 15,
+            completed_at: null,
+          },
+        ],
+      });
+      const progress = buildProgress(0, initialNineStamps);
+      const service = createQuestService({
+        quests: questsRepo,
+        progress,
+        ai: buildAi(),
+        clock: fixedClock('2026-11-10T18:30:00.000Z'),
+      });
+
+      const tenth = await service.toggleQuestCompletion(1, 1, true, '2026-11-10');
+      expect(tenth.card_completed).toBe(true);
+      expect(tenth.card_reward_message).toMatch(/Stamp Card #1/i);
+      expect(tenth.stamp_card.card_number).toBe(2);
+      expect(tenth.stamp_card.filled_count).toBe(0);
+      expect(tenth.stamp_card.past_cards).toHaveLength(1);
+      expect(tenth.stamp_card.past_cards[0].card_number).toBe(1);
+      expect(tenth.stamp_card.past_cards[0].stamp_count).toBe(10);
+
+      // Undoing that 10th completion re-opens Card #1 at 9/10
+      const undone = await service.toggleQuestCompletion(1, 1, false, '2026-11-10');
+      expect(undone.card_completed).toBe(false);
+      expect(undone.stamp_card.card_number).toBe(1);
+      expect(undone.stamp_card.filled_count).toBe(9);
+      expect(undone.stamp_card.past_cards).toEqual([]);
     });
   });
 });

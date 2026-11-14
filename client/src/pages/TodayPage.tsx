@@ -6,6 +6,7 @@ import { GoalCelebration } from '../components/GoalCelebration/GoalCelebration';
 import { GoalSelector } from '../components/GoalSelector/GoalSelector';
 import { LevelUpToast } from '../components/LevelUpToast/LevelUpToast';
 import { StageCompletePrompt } from '../components/StageCompletePrompt/StageCompletePrompt';
+import { StampCard } from '../components/StampCard/StampCard';
 import { StreakCounter } from '../components/StreakCounter/StreakCounter';
 import { XpBar } from '../components/XpBar/XpBar';
 import { useDiaryNote } from '../hooks/useDiaryNote';
@@ -28,10 +29,13 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
     todayDate,
     todayQuests,
     progress,
+    stampCard,
     stageReady,
     stageReadyMilestone,
     levelUpMessage,
     dismissLevelUp,
+    cardRewardMessage,
+    dismissCardReward,
     error,
     pendingQuestIds,
     toggleError,
@@ -165,6 +169,8 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
           />
         ) : null}
 
+        {stampCard ? <StampCard stampCard={stampCard} /> : null}
+
         {goal ? (
           <DiaryNoteCard
             content={diary.content}
@@ -178,6 +184,7 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
       </main>
 
       <LevelUpToast message={levelUpMessage} onDismiss={dismissLevelUp} />
+      <LevelUpToast message={cardRewardMessage} onDismiss={dismissCardReward} />
       <LevelUpToast
         message={stageAdvanceToast}
         onDismiss={() => {

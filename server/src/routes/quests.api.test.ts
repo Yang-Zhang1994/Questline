@@ -487,4 +487,241 @@ describe('GET /api/quests & POST /api/quests/generate (Issue #7)', () => {
       expect(farDatePatch.body.error.code).toBe('VALIDATION_ERROR');
     });
   });
+
+  describe('Stamp Card collection & transactional sync (Issue #13)', () => {
+    it('earns one stamp on first check-off of the day, does not add a second on the same day, keeps stamp when other completed quests remain, and removes the stamp when the last completed quest for that day is undone', async () => {
+      const app = buildApp();
+      const token = await loginAsDemo(app);
+
+      const genRes = await request(app)
+        .post('/api/quests/generate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ local_date: '2026-11-10' })
+        .expect(200);
+
+      expect(genRes.body.stamp_card).toEqual({
+        card_number: 1,
+        stamps_per_card: 10,
+        stamped_dates: [],
+        filled_count: 0,
+        past_cards: [],
+      });
+
+      const quest1Id = genRes.body.quests[0].id as number;
+      const quest2Id = genRes.body.quests[1].id as number;
+
+      // 1. First check-off on 2026-11-10 earns 1 stamp
+      const firstCheck = await request(app)
+        .patch(`/api/quests/${quest1Id}/completion`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ completed: true, local_date: '2026-11-10' })
+        .expect(200);
+
+      expect(firstCheck.body.stamp_card.card_number).toBe(1);
+      expect(firstCheck.body.stamp_card.filled_count).toBe(1);
+      expect(firstCheck.body.stamp_card.stamped_dates).toEqual(['2026-11-10']);
+      expect(firstCheck.body.card_completed).toBe(false);
+      expect(firstCheck.body.card_reward_message).toBeNull();
+
+      // 2. Second check-off on the same day (2026-11-10) does NOT add a second stamp
+      const secondCheck = await request(app)
+        .patch(`/api/quests/${quest2Id}/completion`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ completed: true, local_date: '2026-11-10' })
+        .expect(200);
+
+      expect(secondCheck.body.stamp_card.filled_count).toBe(1);
+      expect(secondCheck.body.stamp_card.stamped_dates).toEqual(['2026-11-10']);
+
+      const stampCountAfterTwo = await db.query<{ c: number }>(
+        `SELECT COUNT(*)::int AS c FROM stamps WHERE stamp_date = '2026-11-10'`,
+      );
+      expect(stampCountAfterTwo.rows[0].c).toBe(1);
+
+      // 3. Undo quest 1 while quest 2 is still completed on 2026-11-10 -> stamp remains
+      const undoFirst = await request(app)
+        .patch(`/api/quests/${quest1Id}/completion`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ completed: false, local_date: '2026-11-10' })
+        .expect(200);
+
+      expect(undoFirst.body.stamp_card.filled_count).toBe(1);
+      expect(undoFirst.body.stamp_card.stamped_dates).toEqual(['2026-11-10']);
+
+      // 4. Undo quest 2 (the only remaining completed quest for 2026-11-10) -> removes the stamp
+      const undoSecond = await request(app)
+        .patch(`/api/quests/${quest2Id}/completion`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ completed: false, local_date: '2026-11-10' })
+        .expect(200);
+
+      expect(undoSecond.body.stamp_card.filled_count).toBe(0);
+      expect(undoSecond.body.stamp_card.stamped_dates).toEqual([]);
+    });
+
+    it('removes day 1’s stamp when a quest completed on day 1 is undone on day 2', async () => {
+      let currentIso = '2026-11-10T15:00:00.000Z';
+      const dynamicApp = createApp({
+        db,
+        clock: { now: () => new Date(currentIso) },
+        ai: {
+          completeChat: vi.fn(async () => 'Chat reply ♡'),
+          evaluateInterviewAnswer: vi.fn(),
+          proposeGoalDraft: vi.fn(),
+          reviseGoalDraft: vi.fn(),
+          proposeMilestones: vi.fn(),
+          generateDailyQuests,
+        },
+      });
+      const token = await loginAsDemo(dynamicApp);
+
+      const genRes = await request(dynamicApp)
+        .post('/api/quests/generate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ local_date: '2026-11-10' })
+        .expect(200);
+
+      const day1QuestId = genRes.body.quests[0].id as number;
+      const day2QuestId = genRes.body.quests[2].id as number;
+
+      // Day 1 (2026-11-10): complete quest 1 -> earns stamp for 2026-11-10
+      const checkDay1 = await request(dynamicApp)
+        .patch(`/api/quests/${day1QuestId}/completion`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ completed: true, local_date: '2026-11-10' })
+        .expect(200);
+      expect(checkDay1.body.stamp_card.stamped_dates).toEqual(['2026-11-10']);
+
+      // Advance clock to Day 2 (2026-11-11) and complete a Day 2 quest -> stamps for 11-10 and 11-11
+      currentIso = '2026-11-11T15:00:00.000Z';
+      const checkDay2 = await request(dynamicApp)
+        .patch(`/api/quests/${day2QuestId}/completion`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ completed: true, local_date: '2026-11-11' })
+        .expect(200);
+      expect(checkDay2.body.stamp_card.stamped_dates).toEqual(['2026-11-10', '2026-11-11']);
+
+      // Still on Day 2 (2026-11-11): undo the Day 1 quest -> removes Day 1's stamp (2026-11-10), keeps Day 2's stamp
+      const undoDay1OnDay2 = await request(dynamicApp)
+        .patch(`/api/quests/${day1QuestId}/completion`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ completed: false, local_date: '2026-11-11' })
+        .expect(200);
+
+      expect(undoDay1OnDay2.body.stamp_card.stamped_dates).toEqual(['2026-11-11']);
+      expect(undoDay1OnDay2.body.stamp_card.filled_count).toBe(1);
+    });
+
+    it('fills a 10-slot card, triggers Mochi reward message, saves past card history, starts a new card, and handles undoing the 10th stamp', async () => {
+      const app = buildApp();
+      const token = await loginAsDemo(app);
+
+      // Seed 9 prior stamps on Card #1 for demo user (user_id = 1)
+      for (let i = 1; i <= 9; i += 1) {
+        const d = `2026-11-${String(i).padStart(2, '0')}`;
+        await db.query(
+          `INSERT INTO stamps (user_id, card_number, stamp_date) VALUES (1, 1, $1)`,
+          [d],
+        );
+      }
+
+      const genRes = await request(app)
+        .post('/api/quests/generate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ local_date: '2026-11-10' })
+        .expect(200);
+
+      expect(genRes.body.stamp_card.card_number).toBe(1);
+      expect(genRes.body.stamp_card.filled_count).toBe(9);
+      expect(genRes.body.stamp_card.past_cards).toEqual([]);
+
+      const quest1Id = genRes.body.quests[0].id as number;
+      const quest3Id = genRes.body.quests[2].id as number;
+
+      // Complete 10th stamp on 2026-11-10 -> fills Card #1, triggers Mochi message, starts Card #2
+      const fillRes = await request(app)
+        .patch(`/api/quests/${quest1Id}/completion`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ completed: true, local_date: '2026-11-10' })
+        .expect(200);
+
+      expect(fillRes.body.card_completed).toBe(true);
+      expect(fillRes.body.card_reward_message).toMatch(/Stamp Card #1/i);
+      expect(fillRes.body.stamp_card.card_number).toBe(2);
+      expect(fillRes.body.stamp_card.filled_count).toBe(0);
+      expect(fillRes.body.stamp_card.stamped_dates).toEqual([]);
+      expect(fillRes.body.stamp_card.past_cards).toEqual([
+        {
+          card_number: 1,
+          stamp_dates: [
+            '2026-11-01',
+            '2026-11-02',
+            '2026-11-03',
+            '2026-11-04',
+            '2026-11-05',
+            '2026-11-06',
+            '2026-11-07',
+            '2026-11-08',
+            '2026-11-09',
+            '2026-11-10',
+          ],
+          stamp_count: 10,
+        },
+      ]);
+
+      // Complete a quest on 2026-11-11 -> lands on Card #2 slot 1 while Card #1 stays in past_cards
+      const nextCardRes = await request(app)
+        .patch(`/api/quests/${quest3Id}/completion`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ completed: true, local_date: '2026-11-11' })
+        .expect(200);
+
+      expect(nextCardRes.body.card_completed).toBe(false);
+      expect(nextCardRes.body.stamp_card.card_number).toBe(2);
+      expect(nextCardRes.body.stamp_card.filled_count).toBe(1);
+      expect(nextCardRes.body.stamp_card.stamped_dates).toEqual(['2026-11-11']);
+      expect(nextCardRes.body.stamp_card.past_cards).toHaveLength(1);
+      expect(nextCardRes.body.stamp_card.past_cards[0].card_number).toBe(1);
+    });
+
+    it('never exposes another user’s stamps or allows another user’s actions to affect them', async () => {
+      const app = buildApp();
+      const demoToken = await loginAsDemo(app);
+
+      const genRes = await request(app)
+        .post('/api/quests/generate')
+        .set('Authorization', `Bearer ${demoToken}`)
+        .send({ local_date: '2026-11-10' })
+        .expect(200);
+      const demoQuestId = genRes.body.quests[0].id as number;
+
+      // Demo user earns a stamp on 2026-11-10
+      await request(app)
+        .patch(`/api/quests/${demoQuestId}/completion`)
+        .set('Authorization', `Bearer ${demoToken}`)
+        .send({ completed: true, local_date: '2026-11-10' })
+        .expect(200);
+
+      // Register a second user
+      const otherReg = await request(app)
+        .post('/api/auth/register')
+        .send({ email: 'second@questline.local', password: 'second-password-123' })
+        .expect(201);
+      const otherToken = otherReg.body.token as string;
+
+      // Second user sees an empty stamp card with 0 stamps and no past cards
+      const otherGet = await request(app)
+        .get('/api/quests?local_date=2026-11-10')
+        .set('Authorization', `Bearer ${otherToken}`)
+        .expect(200);
+
+      expect(otherGet.body.stamp_card).toEqual({
+        card_number: 1,
+        stamps_per_card: 10,
+        stamped_dates: [],
+        filled_count: 0,
+        past_cards: [],
+      });
+    });
+  });
 });

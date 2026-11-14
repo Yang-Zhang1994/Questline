@@ -4,6 +4,7 @@ import type {
   Milestone,
   Quest,
   RoadmapGoal,
+  StampCard,
   UserProgress,
 } from '@questline/shared';
 import {
@@ -49,6 +50,7 @@ export function useTodayQuests() {
   const [pendingQuestIds, setPendingQuestIds] = useState<ReadonlySet<number>>(() => new Set());
   const [toggleError, setToggleError] = useState<string | null>(null);
   const [levelUpMessage, setLevelUpMessage] = useState<string | null>(null);
+  const [cardRewardMessage, setCardRewardMessage] = useState<string | null>(null);
   const pendingRef = useRef<Set<number>>(new Set());
 
   const reload = useCallback(async () => {
@@ -107,6 +109,7 @@ export function useTodayQuests() {
         return {
           ...prev,
           progress: result.progress,
+          stamp_card: result.stamp_card,
           stage_ready: result.stage_ready,
           stage_ready_milestone: result.stage_ready_milestone,
           quests: prev.quests.map((q) => (q.id === questId ? result.quest : q)),
@@ -114,6 +117,9 @@ export function useTodayQuests() {
       });
       if (result.leveled_up && result.level_up_message) {
         setLevelUpMessage(result.level_up_message);
+      }
+      if (result.card_completed && result.card_reward_message) {
+        setCardRewardMessage(result.card_reward_message);
       }
     } catch (err) {
       console.error('Could not toggle quest completion:', err);
@@ -140,6 +146,7 @@ export function useTodayQuests() {
   const todayDate: string | null = data?.window_start ?? null;
   const todayQuests: Quest[] = data ? filterQuestsDueToday(data) : [];
   const progress: UserProgress | null = data?.progress ?? null;
+  const stampCard: StampCard | null = data?.stamp_card ?? null;
 
   let status: TodayViewStatus;
   if (loading) {
@@ -163,10 +170,13 @@ export function useTodayQuests() {
     todayDate,
     todayQuests,
     progress,
+    stampCard,
     stageReady: Boolean(data?.stage_ready && data.stage_ready_milestone),
     stageReadyMilestone: data?.stage_ready_milestone ?? null,
     levelUpMessage,
     dismissLevelUp: () => setLevelUpMessage(null),
+    cardRewardMessage,
+    dismissCardReward: () => setCardRewardMessage(null),
     loading,
     error,
     pendingQuestIds,
