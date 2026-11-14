@@ -15,9 +15,13 @@ export {
 } from './schemas/auth.js';
 
 export {
+  ConfirmWeekPlanBodySchema,
+  ConfirmWeekPlanResponseSchema,
   CurrentMilestoneQuestsResponseSchema,
   IsoDateSchema,
   IsoDateTimeSchema,
+  ProposeWeekPlanBodySchema,
+  ProposeWeekPlanResponseSchema,
   ProposedQuestListSchema,
   ProposedQuestSchema,
   QUEST_GENERATION_WINDOW_DAYS,
@@ -27,11 +31,18 @@ export {
   TodayQuestsResponseSchema,
   ToggleQuestCompletionBodySchema,
   ToggleQuestCompletionResponseSchema,
+  WEEK_PLAN_WINDOW_DAYS,
+  WeekPlanAiResponseSchema,
   calendarDayDiff,
   createQuestProposalListSchema,
   isLocalDateWithinOneDay,
   isRealCalendarDate,
+  normalizeQuestTitle,
+  type ConfirmWeekPlanBody,
+  type ConfirmWeekPlanResponse,
   type CurrentMilestoneQuestsResponse,
+  type ProposeWeekPlanBody,
+  type ProposeWeekPlanResponse,
   type ProposedQuest,
   type ProposedQuestList,
   type Quest,
@@ -41,6 +52,7 @@ export {
   type TodayQuestsResponse,
   type ToggleQuestCompletionBody,
   type ToggleQuestCompletionResponse,
+  type WeekPlanAiResponse,
 } from './schemas/quest.js';
 
 export {

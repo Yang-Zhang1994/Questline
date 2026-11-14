@@ -555,99 +555,44 @@ paths:
         '401':
           $ref: '#/components/responses/UnauthorizedError'
 
-  /api/quests/week-plan:
-    get:
-      tags: [Quests]
-      summary: Load week-plan draft + existing milestone quests
-      operationId: getWeekPlan
-      parameters:
-        - $ref: '#/components/parameters/LocalDateQuery'
-      responses:
-        '200':
-          description: Week plan snapshot
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WeekPlanResponse'
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
+  /api/quests/week-plan/propose:
     post:
       tags: [Quests]
-      summary: Propose week-plan draft (no INSERT)
+      summary: Propose or adjust a 7-day quest draft for the current milestone (no quest row writes)
       operationId: proposeWeekPlan
-      parameters:
-        - $ref: '#/components/parameters/LocalDateQuery'
       requestBody:
         required: false
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                local_date:
-                  $ref: '#/components/schemas/IsoDate'
+              $ref: '#/components/schemas/ProposeWeekPlanBody'
       responses:
         '200':
-          description: No new draft needed
+          description: Proposed or adjusted 7-day quest draft
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WeekPlanResponse'
-        '201':
-          description: Draft stored on `goals.week_plan_draft`
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WeekPlanResponse'
+                $ref: '#/components/schemas/ProposeWeekPlanResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
-        '503':
-          $ref: '#/components/responses/AiUnavailableError'
-
-  /api/quests/week-plan/revise:
-    post:
-      tags: [Quests]
-      summary: Revise week-plan draft
-      operationId: reviseWeekPlan
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              allOf:
-                - $ref: '#/components/schemas/FeedbackBody'
-                - type: object
-                  properties:
-                    local_date:
-                      $ref: '#/components/schemas/IsoDate'
-      responses:
-        '200':
-          description: Updated draft
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WeekPlanResponse'
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
         '503':
           $ref: '#/components/responses/AiUnavailableError'
 
   /api/quests/week-plan/confirm:
     post:
       tags: [Quests]
-      summary: Confirm week plan — INSERTs new quest rows
+      summary: Confirm week plan — re-validates and INSERTs new quest rows in one locked transaction
       operationId: confirmWeekPlan
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              allOf:
-                - $ref: '#/components/schemas/ConfirmWeekPlanBody'
-                - type: object
-                  properties:
-                    local_date:
-                      $ref: '#/components/schemas/IsoDate'
+              $ref: '#/components/schemas/ConfirmWeekPlanBody'
       responses:
         '201':
           description: New quests inserted
@@ -659,6 +604,10 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
 
   /api/quests/{questId}/completion:
     patch:
@@ -1714,69 +1663,89 @@ components:
         mochi_message:
           type: string
 
-    WeekPlanDraft:
+    ProposeWeekPlanBody:
       type: object
-      required: [week_start, week_end, quests, mochi_message]
       properties:
-        week_start:
+        local_date:
           $ref: '#/components/schemas/IsoDate'
-        week_end:
-          $ref: '#/components/schemas/IsoDate'
-        quests:
-          type: array
-          minItems: 1
-          maxItems: 21
-          items:
-            $ref: '#/components/schemas/QuestDraftItem'
-        mochi_message:
+        feedback:
           type: string
           minLength: 1
-          maxLength: 1000
+          maxLength: 2000
+        current_draft:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/QuestDraftItem'
 
-    WeekPlanResponse:
+    ProposeWeekPlanResponse:
       type: object
-      required: [draft, existing_quests, goal, milestone, applied]
+      required:
+        - goal
+        - milestone
+        - window_start
+        - window_end
+        - time_budget_minutes_per_day
+        - existing_quests
+        - quests
+        - mochi_message
+        - user_message
       properties:
-        draft:
-          allOf:
-            - $ref: '#/components/schemas/WeekPlanDraft'
-          nullable: true
+        goal:
+          $ref: '#/components/schemas/Goal'
+        milestone:
+          $ref: '#/components/schemas/Milestone'
+        window_start:
+          $ref: '#/components/schemas/IsoDate'
+        window_end:
+          $ref: '#/components/schemas/IsoDate'
+        time_budget_minutes_per_day:
+          type: integer
+          minimum: 1
         existing_quests:
           type: array
           items:
             $ref: '#/components/schemas/Quest'
-        goal:
+        quests:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/QuestDraftItem'
+        mochi_message:
+          $ref: '#/components/schemas/ChatMessage'
+        user_message:
           allOf:
-            - $ref: '#/components/schemas/MilestoneGoalSummary'
+            - $ref: '#/components/schemas/ChatMessage'
           nullable: true
-        milestone:
-          allOf:
-            - $ref: '#/components/schemas/Milestone'
-          nullable: true
-        applied:
-          type: boolean
 
     ConfirmWeekPlanBody:
       type: object
-      required: [draft]
+      required: [quests]
       properties:
-        draft:
-          $ref: '#/components/schemas/WeekPlanDraft'
+        local_date:
+          $ref: '#/components/schemas/IsoDate'
+        quests:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/QuestDraftItem'
 
     ConfirmWeekPlanResponse:
       type: object
-      required: [goal, milestone, quests, mochi_message]
+      required: [goal, milestone, window_start, window_end, quests]
       properties:
         goal:
-          $ref: '#/components/schemas/MilestoneGoalSummary'
+          $ref: '#/components/schemas/Goal'
         milestone:
           $ref: '#/components/schemas/Milestone'
+        window_start:
+          $ref: '#/components/schemas/IsoDate'
+        window_end:
+          $ref: '#/components/schemas/IsoDate'
         quests:
           type: array
           items:
             $ref: '#/components/schemas/Quest'
-        mochi_message:
-          type: string
 
     ChatRole:
       type: string

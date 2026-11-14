@@ -1,7 +1,7 @@
 import type { ProposedQuest } from '@questline/shared';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ChatAiClient } from '../ai/client.js';
+import { createEchoChatClient, type ChatAiClient } from '../ai/client.js';
 import { createApp } from '../app.js';
 import type { Clock } from '../clock.js';
 import { openDatabase, resetDatabase, type Db } from '../db/connection.js';
@@ -722,6 +722,252 @@ describe('GET /api/quests & POST /api/quests/generate (Issue #7)', () => {
         filled_count: 0,
         past_cards: [],
       });
+    });
+  });
+
+  describe('POST /api/quests/week-plan/propose & POST /api/quests/week-plan/confirm (Issue #15)', () => {
+    it('proposes a 7-day plan using the echo client without saving quests until confirm, and supports adjustments', async () => {
+      const { ProposeWeekPlanResponseSchema, ConfirmWeekPlanResponseSchema } = await import(
+        '@questline/shared'
+      );
+      const echo = createEchoChatClient();
+      const app = buildApp(echo);
+      const token = await loginAsDemo(app);
+
+      // Seed 1 completed quest and 1 scheduled quest on the current milestone (milestone_id = 1)
+      await db.query(
+        `INSERT INTO quests (milestone_id, title, due_date, estimated_minutes, completed_at)
+         VALUES
+           (1, 'Completed reading warmup', '2026-11-10', 10, '2026-11-10T10:00:00Z'),
+           (1, 'Scheduled grammar review', '2026-11-11', 15, NULL)`,
+      );
+
+      // 1. Propose week plan -> 7-day window 2026-11-10..2026-11-16
+      const proposeRes = await request(app)
+        .post('/api/quests/week-plan/propose')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ local_date: '2026-11-10' })
+        .expect(200);
+
+      expect(ProposeWeekPlanResponseSchema.safeParse(proposeRes.body).success).toBe(true);
+      expect(proposeRes.body.window_start).toBe('2026-11-10');
+      expect(proposeRes.body.window_end).toBe('2026-11-16');
+      expect(proposeRes.body.existing_quests).toHaveLength(2);
+      expect(proposeRes.body.quests.length).toBeGreaterThan(0);
+
+      // Nothing was saved to DB yet (still only the 2 seeded quests)
+      const countBeforeConfirm = await db.query<{ c: number }>(
+        `SELECT COUNT(*)::int AS c FROM quests`,
+      );
+      expect(countBeforeConfirm.rows[0].c).toBe(2);
+
+      // 2. Ask Mochi for changes -> sends current_draft + feedback
+      const adjustRes = await request(app)
+        .post('/api/quests/week-plan/propose')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          local_date: '2026-11-10',
+          current_draft: proposeRes.body.quests,
+          feedback: 'Make the first task focus on vocabulary cards',
+        })
+        .expect(200);
+
+      expect(ProposeWeekPlanResponseSchema.safeParse(adjustRes.body).success).toBe(true);
+      expect(adjustRes.body.user_message.content).toBe(
+        'Make the first task focus on vocabulary cards',
+      );
+      expect(adjustRes.body.quests[0].title).toContain('Make the first task focus on vocabulary cards');
+
+      // Still nothing saved before accepting
+      const countAfterAdjust = await db.query<{ c: number }>(
+        `SELECT COUNT(*)::int AS c FROM quests`,
+      );
+      expect(countAfterAdjust.rows[0].c).toBe(2);
+
+      // 3. Confirm week plan -> saves new quests alongside existing quests
+      const confirmRes = await request(app)
+        .post('/api/quests/week-plan/confirm')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          local_date: '2026-11-10',
+          quests: adjustRes.body.quests,
+        })
+        .expect(201);
+
+      expect(ConfirmWeekPlanResponseSchema.safeParse(confirmRes.body).success).toBe(true);
+      expect(confirmRes.body.quests).toHaveLength(2 + adjustRes.body.quests.length);
+      expect(
+        confirmRes.body.quests.some((q: { title: string }) => q.title === 'Completed reading warmup'),
+      ).toBe(true);
+      expect(
+        confirmRes.body.quests.some((q: { title: string }) => q.title === 'Scheduled grammar review'),
+      ).toBe(true);
+    });
+
+    it('cuts off the 7-day window at milestone.target_date when sooner, and uses the full 7-day window when target_date has already passed', async () => {
+      const echo = createEchoChatClient();
+      const app = buildApp(echo);
+      const token = await loginAsDemo(app);
+
+      // 1. Cut off at target_date = 2026-11-12
+      await db.query(`UPDATE milestones SET target_date = '2026-11-12' WHERE id = 1`);
+
+      const cutOffRes = await request(app)
+        .post('/api/quests/week-plan/propose')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ local_date: '2026-11-10' })
+        .expect(200);
+
+      expect(cutOffRes.body.window_start).toBe('2026-11-10');
+      expect(cutOffRes.body.window_end).toBe('2026-11-12');
+      for (const q of cutOffRes.body.quests) {
+        expect(q.due_date >= '2026-11-10' && q.due_date <= '2026-11-12').toBe(true);
+      }
+
+      // 2. Passed target_date = 2026-11-01 (< 2026-11-10) -> full 7-day window 2026-11-10..2026-11-16
+      await db.query(`UPDATE milestones SET target_date = '2026-11-01' WHERE id = 1`);
+
+      const passedRes = await request(app)
+        .post('/api/quests/week-plan/propose')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ local_date: '2026-11-10' })
+        .expect(200);
+
+      expect(passedRes.body.window_start).toBe('2026-11-10');
+      expect(passedRes.body.window_end).toBe('2026-11-16');
+      expect(
+        passedRes.body.quests.some((q: { due_date: string }) => q.due_date === '2026-11-16'),
+      ).toBe(true);
+    });
+
+    it('prevents a double accept or concurrent confirm requests from adding the week plan twice', async () => {
+      const echo = createEchoChatClient();
+      const app = buildApp(echo);
+      const token = await loginAsDemo(app);
+
+      const proposeRes = await request(app)
+        .post('/api/quests/week-plan/propose')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ local_date: '2026-11-10' })
+        .expect(200);
+
+      const draftQuests = proposeRes.body.quests as ProposedQuest[];
+
+      const [resA, resB] = await Promise.all([
+        request(app)
+          .post('/api/quests/week-plan/confirm')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ local_date: '2026-11-10', quests: draftQuests }),
+        request(app)
+          .post('/api/quests/week-plan/confirm')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ local_date: '2026-11-10', quests: draftQuests }),
+      ]);
+
+      const statuses = [resA.status, resB.status].sort();
+      expect(statuses).toEqual([201, 409]);
+
+      const dbCount = await db.query<{ c: number }>(`SELECT COUNT(*)::int AS c FROM quests`);
+      expect(dbCount.rows[0].c).toBe(draftQuests.length);
+    });
+
+    it('validates daily budget including existing quests, duplicate titles, and window dates on confirm', async () => {
+      const echo = createEchoChatClient();
+      const app = buildApp(echo);
+      const token = await loginAsDemo(app);
+
+      // Existing quest taking 20 of the 30 daily minutes on 2026-11-10
+      await db.query(
+        `INSERT INTO quests (milestone_id, title, due_date, estimated_minutes, completed_at)
+         VALUES (1, 'Existing 20m quest', '2026-11-10', 20, NULL)`,
+      );
+
+      // 1. Over budget on 2026-11-10 (20 + 15 = 35 > 30) -> 400 VALIDATION_ERROR
+      const overBudgetRes = await request(app)
+        .post('/api/quests/week-plan/confirm')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          local_date: '2026-11-10',
+          quests: [
+            { title: 'Extra 15m quest', due_date: '2026-11-10', estimated_minutes: 15 },
+          ],
+        })
+        .expect(400);
+      expect(overBudgetRes.body.error.code).toBe('VALIDATION_ERROR');
+
+      // 2. Duplicate of existing quest title -> 409 CONFLICT
+      const dupTitleRes = await request(app)
+        .post('/api/quests/week-plan/confirm')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          local_date: '2026-11-10',
+          quests: [
+            { title: 'Existing 20m quest', due_date: '2026-11-11', estimated_minutes: 10 },
+          ],
+        })
+        .expect(409);
+      expect(dupTitleRes.body.error.code).toBe('CONFLICT');
+
+      // 3. Date outside 7-day window -> 400 VALIDATION_ERROR
+      const outOfWindowRes = await request(app)
+        .post('/api/quests/week-plan/confirm')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          local_date: '2026-11-10',
+          quests: [
+            { title: 'Far future quest', due_date: '2026-11-25', estimated_minutes: 10 },
+          ],
+        })
+        .expect(400);
+      expect(outOfWindowRes.body.error.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('handles invalid AI output gracefully with 503 AI_UNAVAILABLE and rejects another user with 404 NOT_FOUND', async () => {
+      const badAi: ChatAiClient = {
+        completeChat: vi.fn(),
+        evaluateInterviewAnswer: vi.fn(),
+        proposeGoalDraft: vi.fn(),
+        reviseGoalDraft: vi.fn(),
+        proposeMilestones: vi.fn(),
+        generateDailyQuests,
+        proposeWeekPlan: vi.fn(async () => ({
+          mochi_message: 'Bad AI output',
+          quests: [
+            { title: 'Way over budget', due_date: '2026-11-10', estimated_minutes: 999 },
+          ],
+        })),
+      };
+      const app = buildApp(badAi);
+      const demoToken = await loginAsDemo(app);
+
+      const badAiRes = await request(app)
+        .post('/api/quests/week-plan/propose')
+        .set('Authorization', `Bearer ${demoToken}`)
+        .send({ local_date: '2026-11-10' })
+        .expect(503);
+      expect(badAiRes.body.error.code).toBe('AI_UNAVAILABLE');
+
+      // Register a second user who has no active goal/milestone -> 404 NOT_FOUND
+      const registerRes = await request(app)
+        .post('/api/auth/register')
+        .send({ email: 'weekplan-other@questline.local', password: 'other-password-123' })
+        .expect(201);
+      const otherToken = registerRes.body.token as string;
+
+      await request(app)
+        .post('/api/quests/week-plan/propose')
+        .set('Authorization', `Bearer ${otherToken}`)
+        .send({ local_date: '2026-11-10' })
+        .expect(404);
+
+      await request(app)
+        .post('/api/quests/week-plan/confirm')
+        .set('Authorization', `Bearer ${otherToken}`)
+        .send({
+          local_date: '2026-11-10',
+          quests: [{ title: 'Some quest', due_date: '2026-11-10', estimated_minutes: 15 }],
+        })
+        .expect(404);
     });
   });
 });

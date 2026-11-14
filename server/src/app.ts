@@ -89,6 +89,13 @@ export function createApp(options: CreateAppOptions) {
           }
           return cached.generateDailyQuests(input);
         },
+        async proposeWeekPlan(input) {
+          cached ??= createClaudeClient();
+          if (!cached.proposeWeekPlan) {
+            throw new Error('Week plan proposal is not configured on AI client');
+          }
+          return cached.proposeWeekPlan(input);
+        },
       };
     })();
   const chatService = createChatService({ chat, interviews, ai, clock });
@@ -101,7 +108,7 @@ export function createApp(options: CreateAppOptions) {
   });
   const milestoneService = createMilestoneService({ milestones, chat, ai, clock });
   const milestoneAdvanceService = createMilestoneAdvanceService({ milestones });
-  const questService = createQuestService({ quests, progress, ai, clock });
+  const questService = createQuestService({ quests, progress, chat, ai, clock });
 
   const app = express();
   // express-rate-limit needs a stable IP behind proxies / Vitest.

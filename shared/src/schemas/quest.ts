@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ChatMessageSchema } from './chat.js';
 import { StampCardSchema, UserProgressSchema } from './progress.js';
 import { MilestoneSchema, RoadmapGoalSchema } from './roadmap.js';
 
@@ -54,6 +55,13 @@ export const IsoDateTimeSchema = z.string().datetime({ offset: true });
 /** Default starting window length in days (today + next 2 days = 3 days). */
 export const QUEST_GENERATION_WINDOW_DAYS = 3;
 
+/** Week-plan window length in days (today + next 6 days = 7 days) — Issue #15. */
+export const WEEK_PLAN_WINDOW_DAYS = 7;
+
+export function normalizeQuestTitle(title: string): string {
+  return title.trim().toLowerCase();
+}
+
 export const QuestSchema = z.object({
   id: z.number().int().positive(),
   milestone_id: z.number().int().positive(),
@@ -91,20 +99,48 @@ export type QuestProposalValidationOptions = {
   windowEnd: string;
   milestoneTargetDate?: string | null;
   timeBudgetMinutesPerDay: number;
+  existingQuests?: ReadonlyArray<{
+    title: string;
+    due_date: string;
+    estimated_minutes: number | null;
+  }>;
+  enforceNoDuplicates?: boolean;
 };
 
 /**
  * Builds a Zod schema for AI-proposed daily quests that enforces:
  * - non-empty title and positive integer estimated_minutes (via ProposedQuestSchema)
  * - each quest `due_date` is within `[windowStart, windowEnd]`
- * - each quest `due_date` is not after `milestoneTargetDate` (when present)
- * - total `estimated_minutes` per `due_date` does not exceed `timeBudgetMinutesPerDay`
+ * - each quest `due_date` is not after `milestoneTargetDate` (when `milestoneTargetDate >= windowStart`)
+ * - total `estimated_minutes` per `due_date` (including any `existingQuests` on that date) does not exceed `timeBudgetMinutesPerDay`
+ * - when `enforceNoDuplicates` is true (or `existingQuests` is provided), proposed quest titles must not duplicate existing titles or each other
  */
 export function createQuestProposalListSchema(options: QuestProposalValidationOptions) {
-  const { windowStart, windowEnd, milestoneTargetDate, timeBudgetMinutesPerDay } = options;
+  const {
+    windowStart,
+    windowEnd,
+    milestoneTargetDate,
+    timeBudgetMinutesPerDay,
+    existingQuests = [],
+    enforceNoDuplicates = false,
+  } = options;
+
+  // Like computeQuestGenerationWindow (#7): only cut off at milestoneTargetDate when it hasn't already passed relative to windowStart.
+  const effectiveTargetDate =
+    milestoneTargetDate && milestoneTargetDate >= windowStart ? milestoneTargetDate : null;
 
   return ProposedQuestListSchema.superRefine((quests, ctx) => {
     const minutesByDate = new Map<string, number>();
+    for (const existing of existingQuests) {
+      if (existing.due_date >= windowStart && existing.due_date <= windowEnd) {
+        const mins = existing.estimated_minutes && existing.estimated_minutes > 0 ? existing.estimated_minutes : 0;
+        minutesByDate.set(existing.due_date, (minutesByDate.get(existing.due_date) ?? 0) + mins);
+      }
+    }
+
+    const checkDuplicates = enforceNoDuplicates || existingQuests.length > 0;
+    const existingTitles = new Set(existingQuests.map((q) => normalizeQuestTitle(q.title)));
+    const seenProposedTitles = new Set<string>();
 
     for (let i = 0; i < quests.length; i += 1) {
       const quest = quests[i];
@@ -117,12 +153,30 @@ export function createQuestProposalListSchema(options: QuestProposalValidationOp
         });
       }
 
-      if (milestoneTargetDate && quest.due_date > milestoneTargetDate) {
+      if (effectiveTargetDate && quest.due_date > effectiveTargetDate) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: [i, 'due_date'],
-          message: `Quest due_date (${quest.due_date}) must not be after the milestone target date (${milestoneTargetDate})`,
+          message: `Quest due_date (${quest.due_date}) must not be after the milestone target date (${effectiveTargetDate})`,
         });
+      }
+
+      if (checkDuplicates) {
+        const normalized = normalizeQuestTitle(quest.title);
+        if (existingTitles.has(normalized)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [i, 'title'],
+            message: `Quest title "${quest.title}" duplicates an existing quest on this milestone`,
+          });
+        } else if (seenProposedTitles.has(normalized)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [i, 'title'],
+            message: `Quest title "${quest.title}" is duplicated in the proposed plan`,
+          });
+        }
+        seenProposedTitles.add(normalized);
       }
 
       const nextTotal = (minutesByDate.get(quest.due_date) ?? 0) + quest.estimated_minutes;
@@ -140,6 +194,57 @@ export function createQuestProposalListSchema(options: QuestProposalValidationOp
     }
   });
 }
+
+export const WeekPlanAiResponseSchema = z.object({
+  mochi_message: z.string().trim().min(1, 'Mochi message is required').max(1000),
+  quests: ProposedQuestListSchema,
+});
+
+export type WeekPlanAiResponse = z.infer<typeof WeekPlanAiResponseSchema>;
+
+export const ProposeWeekPlanBodySchema = z.object({
+  local_date: IsoDateSchema.optional(),
+  feedback: z
+    .string()
+    .trim()
+    .min(1, 'Adjustment request cannot be empty')
+    .max(2000, 'Adjustment request is too long (max 2000 characters)')
+    .optional(),
+  current_draft: ProposedQuestListSchema.optional(),
+});
+
+export type ProposeWeekPlanBody = z.infer<typeof ProposeWeekPlanBodySchema>;
+
+export const ProposeWeekPlanResponseSchema = z.object({
+  goal: RoadmapGoalSchema,
+  milestone: MilestoneSchema,
+  window_start: IsoDateSchema,
+  window_end: IsoDateSchema,
+  time_budget_minutes_per_day: z.number().int().positive(),
+  existing_quests: z.array(QuestSchema),
+  quests: ProposedQuestListSchema,
+  mochi_message: ChatMessageSchema,
+  user_message: ChatMessageSchema.nullable(),
+});
+
+export type ProposeWeekPlanResponse = z.infer<typeof ProposeWeekPlanResponseSchema>;
+
+export const ConfirmWeekPlanBodySchema = z.object({
+  local_date: IsoDateSchema.optional(),
+  quests: ProposedQuestListSchema,
+});
+
+export type ConfirmWeekPlanBody = z.infer<typeof ConfirmWeekPlanBodySchema>;
+
+export const ConfirmWeekPlanResponseSchema = z.object({
+  goal: RoadmapGoalSchema,
+  milestone: MilestoneSchema,
+  window_start: IsoDateSchema,
+  window_end: IsoDateSchema,
+  quests: z.array(QuestSchema),
+});
+
+export type ConfirmWeekPlanResponse = z.infer<typeof ConfirmWeekPlanResponseSchema>;
 
 export const QuestGenerationAiResponseSchema = z.object({
   quests: ProposedQuestListSchema,

@@ -4,10 +4,12 @@ import { createManualPlan } from '../api/goals';
 import { ChatWindow } from '../components/ChatWindow/ChatWindow';
 import { ManualPlanForm } from '../components/ManualPlanForm/ManualPlanForm';
 import { MilestonePlanEditor } from '../components/MilestonePlanEditor/MilestonePlanEditor';
+import { WeekPlanPreview } from '../components/WeekPlanPreview/WeekPlanPreview';
 import { BottomDock } from '../components/BottomDock/BottomDock';
 import { useChat } from '../hooks/useChat';
 import { useGoals } from '../hooks/useGoals';
 import { useMilestonePlan } from '../hooks/useMilestonePlan';
+import { useWeekPlan } from '../hooks/useWeekPlan';
 
 export type TalkPageProps = {
   userEmail?: string | null;
@@ -39,6 +41,11 @@ export function TalkPage({ userEmail = null, onLogout }: TalkPageProps) {
   } = useChat();
   const { beginNewGoal, busy: goalsBusy } = useGoals();
   const milestonePlan = useMilestonePlan({ onChatMessagesAdded: appendMessages });
+  const weekPlan = useWeekPlan({ onChatMessagesAdded: appendMessages });
+  const currentMilestone =
+    weekPlan.milestone ??
+    milestonePlan.savedMilestones.find((m) => m.status === 'current') ??
+    null;
 
   const [showManualForm, setShowManualForm] = useState(false);
   const [aiFallback, setAiFallback] = useState(false);
@@ -92,6 +99,7 @@ export function TalkPage({ userEmail = null, onLogout }: TalkPageProps) {
             void (async () => {
               await beginNewGoal();
               milestonePlan.reset();
+              weekPlan.reset();
               setShowManualForm(false);
               setAiFallback(false);
               setManualError(null);
@@ -194,6 +202,23 @@ export function TalkPage({ userEmail = null, onLogout }: TalkPageProps) {
             onPropose={milestonePlan.propose}
             onAdjust={milestonePlan.adjust}
             onConfirm={milestonePlan.confirm}
+          />
+
+          <WeekPlanPreview
+            goal={weekPlan.goal ?? milestonePlan.goal ?? confirmedGoal}
+            milestone={currentMilestone}
+            windowStart={weekPlan.windowStart}
+            windowEnd={weekPlan.windowEnd}
+            timeBudgetMinutesPerDay={weekPlan.timeBudgetMinutesPerDay}
+            existingQuests={weekPlan.existingQuests}
+            draftQuests={weekPlan.draftQuests}
+            proposing={weekPlan.proposing}
+            confirming={weekPlan.confirming}
+            confirmed={weekPlan.confirmed}
+            error={weekPlan.error}
+            onPropose={weekPlan.propose}
+            onAdjust={weekPlan.adjust}
+            onConfirm={weekPlan.confirm}
           />
         </>
       )}

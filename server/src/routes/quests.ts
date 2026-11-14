@@ -1,4 +1,9 @@
-import { IsoDateSchema, ToggleQuestCompletionBodySchema } from '@questline/shared';
+import {
+  ConfirmWeekPlanBodySchema,
+  IsoDateSchema,
+  ProposeWeekPlanBodySchema,
+  ToggleQuestCompletionBodySchema,
+} from '@questline/shared';
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
@@ -55,6 +60,41 @@ export function createQuestsRouter(questService: QuestService): Router {
       const body = LocalDateQuerySchema.parse(req.body ?? {});
       const payload = await questService.generateCurrentMilestoneQuests(user.id, body.local_date);
       res.status(200).json(payload);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/week-plan/propose', questGenerateLimiter, async (req, res, next) => {
+    try {
+      const user = getRequestUser(req);
+      if (!user) {
+        throw unauthorized();
+      }
+      const body = ProposeWeekPlanBodySchema.parse(req.body ?? {});
+      const payload = await questService.proposeWeekPlan(user.id, {
+        local_date: body.local_date,
+        feedback: body.feedback,
+        current_draft: body.current_draft,
+      });
+      res.status(200).json(payload);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/week-plan/confirm', questGenerateLimiter, async (req, res, next) => {
+    try {
+      const user = getRequestUser(req);
+      if (!user) {
+        throw unauthorized();
+      }
+      const body = ConfirmWeekPlanBodySchema.parse(req.body);
+      const payload = await questService.confirmWeekPlan(user.id, {
+        local_date: body.local_date,
+        quests: body.quests,
+      });
+      res.status(201).json(payload);
     } catch (err) {
       next(err);
     }
