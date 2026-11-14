@@ -1,0 +1,29 @@
+# Questline — single Web Service (Express API + Vite SPA) + Render Postgres.
+# Blueprint: https://dashboard.render.com/blueprints/new?repo=https://github.com/Yang-Zhang1994/Questline
+databases:
+  - name: questline-db
+    plan: free
+
+services:
+  - type: web
+    name: questline
+    runtime: node
+    plan: free
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: questline-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL
+        sync: false

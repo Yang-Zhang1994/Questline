@@ -79,6 +79,7 @@ questline/
 │   └── src/schemas/
 ├── docs/                   # PRD, data model, design, screenshots
 ├── AGENTS.md               # agent / contributor instructions
+├── render.yaml             # Render Blueprint (web + Postgres)
 ├── .env.example
 └── package.json            # npm workspaces root
 ```
@@ -145,6 +146,46 @@ npm test             # uses DATABASE_URL (Vitest targets questline_test in CI)
 
 Migrations live in `server/src/db/migrations/` and apply automatically when the server (or tests) open the pool.
 
+### Production build (local smoke)
+
+```bash
+npm run build        # Vite → client/dist
+NODE_ENV=production DATABASE_URL=... JWT_SECRET=... npm start
+# API + SPA on http://localhost:3001 (or $PORT)
+```
+
+In production the Express server serves `client/dist` and falls back to `index.html` for non-`/api` routes. The SPA already calls relative `/api/...` URLs (Vite proxies `/api` only in dev), so one origin works.
+
+## Deployment (Render)
+
+Single **Web Service** + **Render Postgres**. Blueprint file: [`render.yaml`](render.yaml).
+
+**Production URL (fill after live):** `_https://YOUR-SERVICE.onrender.com_`
+
+### One-click Blueprint
+
+1. Open [New Blueprint → Yang-Zhang1994/Questline](https://dashboard.render.com/blueprints/new?repo=https://github.com/Yang-Zhang1994/Questline).
+2. Sign in to Render (owner account) and connect the GitHub repo if prompted.
+3. Apply the Blueprint (`questline` web service + `questline-db` Postgres).
+4. When prompted for sync env vars, set:
+   - `ANTHROPIC_API_KEY` — your Claude API key (optional until you want live Mochi chat)
+   - `ANTHROPIC_MODEL` — model id from Anthropic (e.g. the same value you use locally)
+5. Wait for the first deploy. Migrations run automatically on boot via `openDatabase` (no separate migrate step).
+
+Blueprint already sets `NODE_ENV=production`, wires `DATABASE_URL` from `questline-db`, and generates `JWT_SECRET`. Build: `npm ci --include=dev && npm run build`. Start: `npm start` (Node 22).
+
+Frontend and API share the **same URL** (Express serves the Vite build).
+
+### Smoke checklist
+
+After deploy:
+
+- [ ] `GET /api/health` → `{ "ok": true }`
+- [ ] Open `/` — SPA loads (login / demo)
+- [ ] Log in with demo credentials (seeded when `users` is empty) or register
+- [ ] **Today** / **Map** / **Talk** navigate without a separate frontend host
+- [ ] With `ANTHROPIC_*` set, send a Talk message; without keys, use the manual plan fallback
+
 ## Demo login
 
 On first boot with an empty `users` table, the API seeds:
@@ -193,7 +234,7 @@ JWT notes: the API returns a token in the JSON body; the SPA sends `Authorizatio
 - Optional OAuth alongside JWT.
 - Rest-day streak forgiveness after classmate trials.
 - Richer inline Quest editing (titles/due dates beyond add/delete).
-- Hosted deploy + production secrets management.
+- Custom domain / paid Render plans once the free Blueprint is proven.
 - Deeper Map animations and more Mochi moods.
 - Optional multi-device sync beyond the current JWT SPA session.
 

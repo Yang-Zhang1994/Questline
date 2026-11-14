@@ -1,3 +1,5 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
@@ -30,6 +32,10 @@ import { createMilestoneAdvanceService } from './services/milestoneAdvanceServic
 import { createMilestoneService } from './services/milestoneService.js';
 import { createQuestService } from './services/questService.js';
 import { createRoadmapService } from './services/roadmapService.js';
+
+/** Monorepo root (`questline/`), resolved from `server/src/`. */
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const DEFAULT_CLIENT_DIST = path.join(REPO_ROOT, 'client', 'dist');
 
 export type CreateAppOptions = {
   db: Db;
@@ -128,6 +134,25 @@ export function createApp(options: CreateAppOptions) {
   app.use('/api/roadmap', createRoadmapRouter(roadmapService));
   app.use('/api/goals', createGoalsRouter(goalService));
   app.use('/api/diary-notes', createDiaryNotesRouter(diaryService));
+
+  // Production: same-origin SPA — Vite build under client/dist (Render single Web Service).
+  if (process.env.NODE_ENV === 'production') {
+    const clientDist = DEFAULT_CLIENT_DIST;
+    app.use(express.static(clientDist));
+    app.use((req, res, next) => {
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        next();
+        return;
+      }
+      if (req.path.startsWith('/api')) {
+        next();
+        return;
+      }
+      res.sendFile(path.join(clientDist, 'index.html'), (err) => {
+        if (err) next(err);
+      });
+    });
+  }
 
   app.use(errorHandler);
   return app;
