@@ -1,17 +1,23 @@
 import {
   QuestGenerationAiResponseSchema,
+  WeekPlanAiResponseSchema,
   createQuestProposalListSchema,
+  type ChatMessage,
+  type ConfirmWeekPlanResponse,
   type CurrentMilestoneQuestsResponse,
+  type ProposeWeekPlanResponse,
   type ProposedQuest,
   type StageReadySummary,
   type StampCard,
   type ToggleQuestCompletionResponse,
   type UserProgress,
 } from '@questline/shared';
-import type { ChatAiClient } from '../ai/client.js';
+import type { ChatAiClient, ClaudeChatTurn } from '../ai/client.js';
 import {
   buildDefaultQuestProposal,
+  buildDefaultWeekPlanProposal,
   computeQuestGenerationWindow,
+  computeWeekPlanWindow,
 } from '../ai/prompts/mochiQuests.js';
 import type { Clock } from '../clock.js';
 import { resolveClientLocalDate, toIsoDateTime } from '../clock.js';
@@ -21,17 +27,39 @@ import {
   cardCompletedMessage,
   levelUpMessage,
 } from '../config/game.js';
+import type { ChatRepository } from '../repositories/chatRepository.js';
 import { mapGoalRowToRoadmapGoal } from '../repositories/goalRepository.js';
 import type { ProgressRepository } from '../repositories/progressRepository.js';
 import type { QuestRepository } from '../repositories/questRepository.js';
-import { aiUnavailable, notFound } from './errors.js';
+import { aiUnavailable, notFound, validationError } from './errors.js';
 
 export type QuestServiceDeps = {
   quests: QuestRepository;
   progress: ProgressRepository;
+  chat?: ChatRepository;
   ai: ChatAiClient;
   clock: Clock;
 };
+
+export type ProposeWeekPlanOptions = {
+  local_date?: string;
+  feedback?: string;
+  current_draft?: ProposedQuest[];
+};
+
+export type ConfirmWeekPlanOptions = {
+  local_date?: string;
+  quests: ProposedQuest[];
+};
+
+function toClaudeHistory(messages: ChatMessage[]): ClaudeChatTurn[] {
+  return messages
+    .filter((m) => m.role === 'user' || m.role === 'mochi')
+    .map((m) => ({
+      role: m.role === 'user' ? ('user' as const) : ('assistant' as const),
+      content: m.content,
+    }));
+}
 
 type StageReadiness = {
   stage_ready: boolean;
@@ -325,10 +353,232 @@ export function createQuestService(deps: QuestServiceDeps) {
     );
   }
 
+  /**
+   * Proposes or adjusts the next 7 days of quests for the current milestone without saving
+   * any quests to the database (Issue #15).
+   */
+  async function proposeWeekPlan(
+    userId: number,
+    options: ProposeWeekPlanOptions = {},
+  ): Promise<ProposeWeekPlanResponse> {
+    const today = resolveClientLocalDate(options.local_date, deps.clock);
+    const { goal: rawGoal, milestone } = await deps.quests.getCurrentMilestoneContextForUser(userId);
+    const goal = normalizeGoal(rawGoal);
+
+    if (!goal) {
+      throw notFound('Confirm a goal first before planning the week.');
+    }
+    if (!milestone) {
+      throw notFound('Confirm a milestone plan with a current stage before planning the week.');
+    }
+
+    const { windowStart, windowEnd } = computeWeekPlanWindow(today, milestone.target_date);
+    const timeBudgetMinutesPerDay =
+      goal.time_budget_minutes_per_day && goal.time_budget_minutes_per_day > 0
+        ? goal.time_budget_minutes_per_day
+        : DEFAULT_TIME_BUDGET_MINUTES;
+
+    const existingQuests = await deps.quests.listForMilestone(userId, milestone.id);
+    const history = deps.chat ? toClaudeHistory(await deps.chat.listForUser(userId)) : [];
+
+    const requestInput = {
+      goal,
+      milestone,
+      windowStart,
+      windowEnd,
+      timeBudgetMinutesPerDay,
+      existingQuests,
+      history,
+      current_draft: options.current_draft,
+      feedback: options.feedback,
+    };
+
+    let rawProposal;
+    try {
+      rawProposal = deps.ai.proposeWeekPlan
+        ? await deps.ai.proposeWeekPlan(requestInput)
+        : buildDefaultWeekPlanProposal(requestInput);
+    } catch {
+      throw aiUnavailable();
+    }
+
+    const validationSchema = WeekPlanAiResponseSchema.extend({
+      quests: createQuestProposalListSchema({
+        windowStart,
+        windowEnd,
+        milestoneTargetDate: milestone.target_date,
+        timeBudgetMinutesPerDay,
+        existingQuests,
+        enforceNoDuplicates: true,
+      }),
+    });
+
+    const parsed = validationSchema.safeParse(rawProposal);
+    if (!parsed.success) {
+      throw aiUnavailable(
+        'Mochi got a little tangled while sketching your weekly quest plan. Please try again in a moment.',
+      );
+    }
+
+    const now = deps.clock.now();
+    const userCreatedAt = toIsoDateTime(now);
+    const mochiCreatedAt = toIsoDateTime(new Date(now.getTime() + 1000));
+    const trimmedFeedback = options.feedback?.trim();
+
+    if (deps.chat) {
+      if (trimmedFeedback) {
+        const pair = await deps.chat.insertPair(
+          userId,
+          trimmedFeedback,
+          parsed.data.mochi_message,
+          userCreatedAt,
+          mochiCreatedAt,
+          goal.id,
+        );
+        return {
+          goal,
+          milestone,
+          window_start: windowStart,
+          window_end: windowEnd,
+          time_budget_minutes_per_day: timeBudgetMinutesPerDay,
+          existing_quests: existingQuests,
+          quests: parsed.data.quests,
+          user_message: pair.userMessage,
+          mochi_message: pair.mochiMessage,
+        };
+      }
+
+      const mochiMessage = await deps.chat.insert(
+        userId,
+        'mochi',
+        parsed.data.mochi_message,
+        userCreatedAt,
+        goal.id,
+      );
+      return {
+        goal,
+        milestone,
+        window_start: windowStart,
+        window_end: windowEnd,
+        time_budget_minutes_per_day: timeBudgetMinutesPerDay,
+        existing_quests: existingQuests,
+        quests: parsed.data.quests,
+        user_message: null,
+        mochi_message: mochiMessage,
+      };
+    }
+
+    return {
+      goal,
+      milestone,
+      window_start: windowStart,
+      window_end: windowEnd,
+      time_budget_minutes_per_day: timeBudgetMinutesPerDay,
+      existing_quests: existingQuests,
+      quests: parsed.data.quests,
+      user_message: trimmedFeedback
+        ? {
+            id: 1,
+            user_id: userId,
+            goal_id: goal.id,
+            role: 'user',
+            content: trimmedFeedback,
+            created_at: userCreatedAt,
+          }
+        : null,
+      mochi_message: {
+        id: 2,
+        user_id: userId,
+        goal_id: goal.id,
+        role: 'mochi',
+        content: parsed.data.mochi_message,
+        created_at: mochiCreatedAt,
+      },
+    };
+  }
+
+  /**
+   * Re-validates and saves the accepted weekly quest plan in one locked transaction (Issue #15).
+   * Preserves all existing quests and rejects duplicate submits.
+   */
+  async function confirmWeekPlan(
+    userId: number,
+    options: ConfirmWeekPlanOptions,
+  ): Promise<ConfirmWeekPlanResponse> {
+    const today = resolveClientLocalDate(options.local_date, deps.clock);
+    const { goal: rawGoal, milestone } = await deps.quests.getCurrentMilestoneContextForUser(userId);
+    const goal = normalizeGoal(rawGoal);
+
+    if (!goal) {
+      throw notFound('No active goal found to confirm a week plan for.');
+    }
+    if (!milestone) {
+      throw notFound('No current milestone found to confirm a week plan for.');
+    }
+
+    const { windowStart, windowEnd } = computeWeekPlanWindow(today, milestone.target_date);
+    const timeBudgetMinutesPerDay =
+      goal.time_budget_minutes_per_day && goal.time_budget_minutes_per_day > 0
+        ? goal.time_budget_minutes_per_day
+        : DEFAULT_TIME_BUDGET_MINUTES;
+
+    const existingQuests = await deps.quests.listForMilestone(userId, milestone.id);
+
+    // 1. Validate format, window, target_date cut-off, daily budget (existing + proposed), and self-duplicates via Zod.
+    // Note: if all proposed quests already exist on the milestone (e.g. a double-click or second tab confirming the same plan),
+    // `saveConfirmedWeekPlanQuests` will catch the duplicate title under the row lock and throw 409 CONFLICT.
+    // So we validate the proposed batch's own structure/window/self-duplicates first, then check daily budget against non-duplicate existing quests.
+    const proposedNormalizedSet = new Set(
+      options.quests.map((q) => (typeof q?.title === 'string' ? q.title.trim().toLowerCase() : '')),
+    );
+    const nonOverlappingExisting = existingQuests.filter(
+      (q) => !proposedNormalizedSet.has(q.title.trim().toLowerCase()),
+    );
+    const listSchema = createQuestProposalListSchema({
+      windowStart,
+      windowEnd,
+      milestoneTargetDate: milestone.target_date,
+      timeBudgetMinutesPerDay,
+      existingQuests: nonOverlappingExisting,
+      enforceNoDuplicates: true,
+    });
+
+    const parsed = listSchema.safeParse(options.quests);
+    if (!parsed.success) {
+      const firstMessage = parsed.error.issues[0]?.message ?? 'Invalid weekly quest plan';
+      throw validationError(firstMessage);
+    }
+
+    const savedQuests = await deps.quests.saveConfirmedWeekPlanQuests(
+      userId,
+      milestone.id,
+      windowStart,
+      windowEnd,
+      timeBudgetMinutesPerDay,
+      parsed.data,
+    );
+
+    const updatedMilestone = {
+      ...milestone,
+      total_quests: savedQuests.length,
+      done_quests: savedQuests.filter((q) => q.completed_at !== null).length,
+    };
+
+    return {
+      goal,
+      milestone: updatedMilestone,
+      window_start: windowStart,
+      window_end: windowEnd,
+      quests: savedQuests,
+    };
+  }
+
   return {
     getCurrentMilestoneQuests,
     generateCurrentMilestoneQuests,
     toggleQuestCompletion,
+    proposeWeekPlan,
+    confirmWeekPlan,
   };
 }
 

@@ -152,6 +152,69 @@ describe('questService (Issue #7)', () => {
           (a, b) => a.due_date.localeCompare(b.due_date) || a.id - b.id,
         );
       },
+      async saveConfirmedWeekPlanQuests(
+        userId: number,
+        milestoneId: number,
+        windowStart: string,
+        windowEnd: string,
+        timeBudgetMinutesPerDay: number,
+        proposed: ProposedQuest[],
+      ) {
+        if (userId !== 1 || !milestoneForUser1 || milestoneForUser1.id !== milestoneId) {
+          throw new AppError('NOT_FOUND', 'No current milestone found for active goal.', 404);
+        }
+        const existingTitles = new Set(savedRows.map((q) => q.title.trim().toLowerCase()));
+        const seenProposedTitles = new Set<string>();
+        const minutesByDate = new Map<string, number>();
+        for (const existing of savedRows) {
+          if (existing.due_date >= windowStart && existing.due_date <= windowEnd) {
+            minutesByDate.set(
+              existing.due_date,
+              (minutesByDate.get(existing.due_date) ?? 0) + (existing.estimated_minutes ?? 0),
+            );
+          }
+        }
+        for (const item of proposed) {
+          const norm = item.title.trim().toLowerCase();
+          if (existingTitles.has(norm)) {
+            throw new AppError(
+              'CONFLICT',
+              `Quest "${item.title}" has already been added to this stage.`,
+              409,
+            );
+          }
+          if (seenProposedTitles.has(norm)) {
+            throw new AppError(
+              'VALIDATION_ERROR',
+              `Quest title "${item.title}" is duplicated in the proposed plan.`,
+              400,
+            );
+          }
+          seenProposedTitles.add(norm);
+          const nextMins = (minutesByDate.get(item.due_date) ?? 0) + item.estimated_minutes;
+          if (nextMins > timeBudgetMinutesPerDay) {
+            throw new AppError(
+              'VALIDATION_ERROR',
+              `Total estimated_minutes on ${item.due_date} (${nextMins}) exceeds daily time budget (${timeBudgetMinutesPerDay})`,
+              400,
+            );
+          }
+          minutesByDate.set(item.due_date, nextMins);
+        }
+        for (const item of proposed) {
+          savedRows.push({
+            id: nextId++,
+            milestone_id: milestoneId,
+            title: item.title,
+            due_date: item.due_date,
+            estimated_minutes: item.estimated_minutes,
+            completed_at: null,
+          });
+        }
+        return [...savedRows].sort(
+          (a, b) => a.due_date.localeCompare(b.due_date) || a.id - b.id,
+        );
+      },
       async findByIdForUser(userId: number, id: number) {
         if (userId !== 1) return null;
         return savedRows.find((q) => q.id === id) ?? null;
@@ -305,13 +368,17 @@ describe('questService (Issue #7)', () => {
     };
   }
 
-  function buildAi(generateDailyQuests?: ChatAiClient['generateDailyQuests']): ChatAiClient {
+  function buildAi(
+    generateDailyQuests?: ChatAiClient['generateDailyQuests'],
+    proposeWeekPlan?: ChatAiClient['proposeWeekPlan'],
+  ): ChatAiClient {
     return {
       completeChat: vi.fn(),
       evaluateInterviewAnswer: vi.fn(),
       proposeGoalDraft: vi.fn(),
       reviseGoalDraft: vi.fn(),
       generateDailyQuests,
+      proposeWeekPlan,
     };
   }
 
@@ -912,6 +979,359 @@ describe('questService (Issue #7)', () => {
       expect(undone.stamp_card.card_number).toBe(1);
       expect(undone.stamp_card.filled_count).toBe(9);
       expect(undone.stamp_card.past_cards).toEqual([]);
+    });
+  });
+
+  describe('proposeWeekPlan & confirmWeekPlan (Issue #15)', () => {
+    it('proposes a 7-day plan starting from local_date without saving anything before accepting', async () => {
+      const questsRepo = buildQuestRepo({
+        initialQuests: [
+          {
+            id: 1,
+            milestone_id: currentMilestone.id,
+            title: 'Done quest from today',
+            due_date: '2026-11-10',
+            estimated_minutes: 10,
+            completed_at: '2026-11-10T10:00:00Z',
+          },
+        ],
+      });
+      const proposeWeekPlan = vi.fn(async () => ({
+        mochi_message: 'Here is your 7-day plan ♡',
+        quests: [
+          {
+            title: 'Remaining 15 min task on 2026-11-10',
+            due_date: '2026-11-10',
+            estimated_minutes: 15,
+          },
+          {
+            title: 'Next step on 2026-11-16 (7th day)',
+            due_date: '2026-11-16',
+            estimated_minutes: 20,
+          },
+        ],
+      }));
+      const service = createQuestService({
+        quests: questsRepo,
+        progress: buildProgress(),
+        ai: buildAi(undefined, proposeWeekPlan),
+        clock,
+      });
+
+      const proposal = await service.proposeWeekPlan(1, { local_date: '2026-11-10' });
+
+      expect(proposal.window_start).toBe('2026-11-10');
+      expect(proposal.window_end).toBe('2026-11-16');
+      expect(proposal.time_budget_minutes_per_day).toBe(25);
+      expect(proposal.existing_quests).toHaveLength(1);
+      expect(proposal.quests).toHaveLength(2);
+      expect(proposal.mochi_message.content).toContain('7-day plan');
+      expect(proposeWeekPlan).toHaveBeenCalledWith(
+        expect.objectContaining({
+          windowStart: '2026-11-10',
+          windowEnd: '2026-11-16',
+          timeBudgetMinutesPerDay: 25,
+          existingQuests: expect.arrayContaining([
+            expect.objectContaining({ title: 'Done quest from today' }),
+          ]),
+        }),
+      );
+      // Nothing saved before accepting
+      expect(questsRepo.savedRows).toHaveLength(1);
+    });
+
+    it('cuts off the 7-day window at milestone.target_date when target_date comes sooner, and uses the full 7-day window when target_date has already passed (like #7)', async () => {
+      // 1. Milestone target_date is 2026-11-13 (3 days after 2026-11-10) -> cut off at 2026-11-13
+      const soonMilestone: Milestone = {
+        ...currentMilestone,
+        target_date: '2026-11-13',
+      };
+      const soonRepo = buildQuestRepo({ milestone: soonMilestone });
+      const echo = createEchoChatClient();
+      const soonService = createQuestService({
+        quests: soonRepo,
+        progress: buildProgress(),
+        ai: echo,
+        clock,
+      });
+
+      const soonProposal = await soonService.proposeWeekPlan(1, { local_date: '2026-11-10' });
+      expect(soonProposal.window_start).toBe('2026-11-10');
+      expect(soonProposal.window_end).toBe('2026-11-13');
+      for (const q of soonProposal.quests) {
+        expect(q.due_date >= '2026-11-10' && q.due_date <= '2026-11-13').toBe(true);
+      }
+
+      // 2. Milestone target_date has already passed (2026-11-05 < 2026-11-10) -> full 7-day window 2026-11-10..2026-11-16
+      const passedMilestone: Milestone = {
+        ...currentMilestone,
+        target_date: '2026-11-05',
+      };
+      const passedRepo = buildQuestRepo({ milestone: passedMilestone });
+      const passedService = createQuestService({
+        quests: passedRepo,
+        progress: buildProgress(),
+        ai: echo,
+        clock,
+      });
+
+      const passedProposal = await passedService.proposeWeekPlan(1, { local_date: '2026-11-10' });
+      expect(passedProposal.window_start).toBe('2026-11-10');
+      expect(passedProposal.window_end).toBe('2026-11-16');
+      expect(passedProposal.quests.some((q) => q.due_date === '2026-11-16')).toBe(true);
+
+      const confirmedPassed = await passedService.confirmWeekPlan(1, {
+        local_date: '2026-11-10',
+        quests: passedProposal.quests,
+      });
+      expect(confirmedPassed.window_start).toBe('2026-11-10');
+      expect(confirmedPassed.window_end).toBe('2026-11-16');
+      expect(confirmedPassed.quests.length).toBeGreaterThanOrEqual(7);
+    });
+
+    it('enforces daily time budget including existing quests (and defaults budget to 30 when missing)', async () => {
+      const goalNoBudget: RoadmapGoal = {
+        ...activeGoal,
+        time_budget_minutes_per_day: null, // defaults to 30
+      };
+      const questsRepo = buildQuestRepo({
+        goal: goalNoBudget,
+        initialQuests: [
+          {
+            id: 1,
+            milestone_id: currentMilestone.id,
+            title: 'Already scheduled 20m quest',
+            due_date: '2026-11-10',
+            estimated_minutes: 20,
+            completed_at: null,
+          },
+        ],
+      });
+
+      // AI proposes 15m on 2026-11-10 -> 20 + 15 = 35 > 30 default budget -> 503 AI_UNAVAILABLE
+      const overBudgetService = createQuestService({
+        quests: questsRepo,
+        progress: buildProgress(),
+        ai: buildAi(undefined, async () => ({
+          mochi_message: 'Over budget',
+          quests: [
+            {
+              title: 'New 15m quest on same day',
+              due_date: '2026-11-10',
+              estimated_minutes: 15,
+            },
+          ],
+        })),
+        clock,
+      });
+
+      await expect(overBudgetService.proposeWeekPlan(1)).rejects.toMatchObject({
+        code: 'AI_UNAVAILABLE',
+        status: 503,
+      } satisfies Partial<AppError>);
+
+      // Confirm also rejects over-budget quests with 400 VALIDATION_ERROR
+      await expect(
+        overBudgetService.confirmWeekPlan(1, {
+          quests: [
+            {
+              title: 'New 15m quest on same day',
+              due_date: '2026-11-10',
+              estimated_minutes: 15,
+            },
+          ],
+        }),
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_ERROR',
+        status: 400,
+      } satisfies Partial<AppError>);
+
+      // Fitting within remaining 10m (20 + 10 = 30 <= 30) succeeds
+      const fittingService = createQuestService({
+        quests: questsRepo,
+        progress: buildProgress(),
+        ai: buildAi(undefined, async () => ({
+          mochi_message: 'Fits remaining 10 minutes ♡',
+          quests: [
+            {
+              title: 'New 10m quest on 2026-11-10',
+              due_date: '2026-11-10',
+              estimated_minutes: 10,
+            },
+          ],
+        })),
+        clock,
+      });
+
+      const proposal = await fittingService.proposeWeekPlan(1);
+      expect(proposal.time_budget_minutes_per_day).toBe(30);
+      expect(proposal.quests).toHaveLength(1);
+    });
+
+    it('rejects duplicate titles against existing quests or within the proposed plan', async () => {
+      const questsRepo = buildQuestRepo({
+        initialQuests: [
+          {
+            id: 1,
+            milestone_id: currentMilestone.id,
+            title: 'Practice 10 katakana characters',
+            due_date: '2026-11-10',
+            estimated_minutes: 10,
+            completed_at: '2026-11-10T12:00:00Z',
+          },
+        ],
+      });
+
+      // 1. AI duplicates existing quest title (case-insensitive) -> 503 AI_UNAVAILABLE
+      const dupExistingAiService = createQuestService({
+        quests: questsRepo,
+        progress: buildProgress(),
+        ai: buildAi(undefined, async () => ({
+          mochi_message: 'Dup existing',
+          quests: [
+            {
+              title: '  practice 10 KATAKANA characters ',
+              due_date: '2026-11-11',
+              estimated_minutes: 15,
+            },
+          ],
+        })),
+        clock,
+      });
+
+      await expect(dupExistingAiService.proposeWeekPlan(1)).rejects.toMatchObject({
+        code: 'AI_UNAVAILABLE',
+        status: 503,
+      } satisfies Partial<AppError>);
+
+      // 2. Duplicate titles within the proposed list -> 400 VALIDATION_ERROR on confirm
+      await expect(
+        dupExistingAiService.confirmWeekPlan(1, {
+          quests: [
+            { title: 'Brand new step', due_date: '2026-11-11', estimated_minutes: 10 },
+            { title: 'brand new step', due_date: '2026-11-12', estimated_minutes: 10 },
+          ],
+        }),
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_ERROR',
+        status: 400,
+      } satisfies Partial<AppError>);
+    });
+
+    it('saves confirmed quests while preserving existing quests and rejects a double accept with 409 CONFLICT', async () => {
+      const questsRepo = buildQuestRepo({
+        initialQuests: [
+          {
+            id: 1,
+            milestone_id: currentMilestone.id,
+            title: 'Completed day 1 quest',
+            due_date: '2026-11-10',
+            estimated_minutes: 10,
+            completed_at: '2026-11-10T09:00:00Z',
+          },
+        ],
+      });
+      const echo = createEchoChatClient();
+      const service = createQuestService({
+        quests: questsRepo,
+        progress: buildProgress(),
+        ai: echo,
+        clock,
+      });
+
+      const proposal = await service.proposeWeekPlan(1, { local_date: '2026-11-10' });
+      expect(questsRepo.savedRows).toHaveLength(1);
+
+      const confirmed = await service.confirmWeekPlan(1, {
+        local_date: '2026-11-10',
+        quests: proposal.quests,
+      });
+      expect(confirmed.quests).toHaveLength(1 + proposal.quests.length);
+      expect(confirmed.quests[0].title).toBe('Completed day 1 quest');
+
+      // Double accept of the same draft is rejected with 409 CONFLICT and does not add quests twice
+      await expect(
+        service.confirmWeekPlan(1, {
+          local_date: '2026-11-10',
+          quests: proposal.quests,
+        }),
+      ).rejects.toMatchObject({
+        code: 'CONFLICT',
+        status: 409,
+      } satisfies Partial<AppError>);
+      expect(questsRepo.savedRows).toHaveLength(1 + proposal.quests.length);
+    });
+
+    it('rejects another user from proposing or confirming for user 1’s milestone with 404 NOT_FOUND', async () => {
+      const questsRepo = buildQuestRepo();
+      const service = createQuestService({
+        quests: questsRepo,
+        progress: buildProgress(),
+        ai: createEchoChatClient(),
+        clock,
+      });
+
+      await expect(service.proposeWeekPlan(2)).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+        status: 404,
+      } satisfies Partial<AppError>);
+
+      await expect(
+        service.confirmWeekPlan(2, {
+          quests: [{ title: 'Intruder quest', due_date: '2026-11-10', estimated_minutes: 15 }],
+        }),
+      ).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+        status: 404,
+      } satisfies Partial<AppError>);
+      expect(questsRepo.savedRows).toHaveLength(0);
+    });
+
+    it('retries once in createClaudeClient.proposeWeekPlan when the first reply is malformed JSON', async () => {
+      const createMock = vi
+        .fn()
+        .mockResolvedValueOnce({
+          content: [{ type: 'text', text: 'oops not json' }],
+        })
+        .mockResolvedValueOnce({
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                mochi_message: 'Recovered week plan ♡',
+                quests: [
+                  {
+                    title: 'Fresh katakana drill',
+                    due_date: '2026-11-10',
+                    estimated_minutes: 15,
+                  },
+                ],
+              }),
+            },
+          ],
+        });
+
+      const claudeClient = createClaudeClient({
+        model: 'claude-test-model',
+        anthropic: {
+          messages: { create: createMock },
+        } as unknown as Parameters<typeof createClaudeClient>[0] extends { anthropic?: infer A }
+          ? A
+          : never,
+      });
+
+      const response = await claudeClient.proposeWeekPlan!({
+        goal: activeGoal,
+        milestone: currentMilestone,
+        windowStart: '2026-11-10',
+        windowEnd: '2026-11-16',
+        timeBudgetMinutesPerDay: 25,
+        existingQuests: [],
+      });
+
+      expect(createMock).toHaveBeenCalledTimes(2);
+      expect(response.mochi_message).toBe('Recovered week plan ♡');
+      expect(response.quests).toHaveLength(1);
     });
   });
 });

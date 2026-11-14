@@ -1,10 +1,11 @@
-import type {
-  Milestone,
-  ProposedQuest,
-  Quest,
-  RoadmapGoal,
-  StampCard,
-  UserProgress,
+import {
+  normalizeQuestTitle,
+  type Milestone,
+  type ProposedQuest,
+  type Quest,
+  type RoadmapGoal,
+  type StampCard,
+  type UserProgress,
 } from '@questline/shared';
 import { toIsoDateTime } from '../clock.js';
 import {
@@ -18,7 +19,7 @@ import {
   type StreakState,
 } from '../config/game.js';
 import type { Db } from '../db/connection.js';
-import { notFound } from '../services/errors.js';
+import { conflict, notFound, validationError } from '../services/errors.js';
 import { mapGoalRowToRoadmapGoal, type RoadmapGoalRow } from './goalRepository.js';
 
 type QuestRow = {
@@ -218,6 +219,110 @@ export function createQuestRepository(db: Db) {
               [milestoneId, item.title, item.due_date, item.estimated_minutes],
             );
           }
+        }
+
+        const allForMilestone = await client.query<QuestRow>(
+          `SELECT id, milestone_id, title, due_date, estimated_minutes, completed_at
+           FROM quests
+           WHERE milestone_id = $1
+           ORDER BY due_date ASC, id ASC`,
+          [milestoneId],
+        );
+
+        await client.query('COMMIT');
+        return allForMilestone.rows.map(mapQuest);
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+    },
+
+    /**
+     * Transactionally locks the current milestone row (`FOR UPDATE`), re-validates that
+     * `proposed` does not duplicate any existing quest title on the milestone and does not
+     * push any day's total minutes over `timeBudgetMinutesPerDay`, and inserts the new quests.
+     * Existing quests are preserved untouched (#15).
+     */
+    async saveConfirmedWeekPlanQuests(
+      userId: number,
+      milestoneId: number,
+      windowStart: string,
+      windowEnd: string,
+      timeBudgetMinutesPerDay: number,
+      proposed: ProposedQuest[],
+    ): Promise<Quest[]> {
+      const client = await db.connect();
+      try {
+        await client.query('BEGIN');
+
+        const lockResult = await client.query<{ id: number }>(
+          `SELECT m.id
+           FROM milestones m
+           INNER JOIN goals g ON g.id = m.goal_id
+           WHERE m.id = $1
+             AND g.user_id = $2
+             AND g.status = 'active'
+             AND m.status = 'current'
+           FOR UPDATE OF m, g`,
+          [milestoneId, userId],
+        );
+        if (lockResult.rows.length === 0) {
+          throw notFound('No current milestone found for active goal.');
+        }
+
+        const existingRows = await client.query<QuestRow>(
+          `SELECT id, milestone_id, title, due_date, estimated_minutes, completed_at
+           FROM quests
+           WHERE milestone_id = $1
+           ORDER BY due_date ASC, id ASC`,
+          [milestoneId],
+        );
+        const existingQuests = existingRows.rows.map(mapQuest);
+        const existingTitles = new Set(existingQuests.map((q) => normalizeQuestTitle(q.title)));
+        const seenProposedTitles = new Set<string>();
+
+        const minutesByDate = new Map<string, number>();
+        for (const existing of existingQuests) {
+          if (existing.due_date >= windowStart && existing.due_date <= windowEnd) {
+            const mins =
+              existing.estimated_minutes && existing.estimated_minutes > 0
+                ? existing.estimated_minutes
+                : 0;
+            minutesByDate.set(existing.due_date, (minutesByDate.get(existing.due_date) ?? 0) + mins);
+          }
+        }
+
+        for (const item of proposed) {
+          const normalized = normalizeQuestTitle(item.title);
+          if (existingTitles.has(normalized)) {
+            throw conflict(
+              `Quest "${item.title}" has already been added to this stage.`,
+            );
+          }
+          if (seenProposedTitles.has(normalized)) {
+            throw validationError(
+              `Quest title "${item.title}" is duplicated in the proposed plan.`,
+            );
+          }
+          seenProposedTitles.add(normalized);
+
+          const nextMinutes = (minutesByDate.get(item.due_date) ?? 0) + item.estimated_minutes;
+          if (nextMinutes > timeBudgetMinutesPerDay) {
+            throw validationError(
+              `Total estimated_minutes on ${item.due_date} (${nextMinutes}) exceeds daily time budget (${timeBudgetMinutesPerDay})`,
+            );
+          }
+          minutesByDate.set(item.due_date, nextMinutes);
+        }
+
+        for (const item of proposed) {
+          await client.query(
+            `INSERT INTO quests (milestone_id, title, due_date, estimated_minutes, completed_at)
+             VALUES ($1, $2, $3, $4, NULL)`,
+            [milestoneId, item.title, item.due_date, item.estimated_minutes],
+          );
         }
 
         const allForMilestone = await client.query<QuestRow>(

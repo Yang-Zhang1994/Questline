@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { InterviewStateSchema } from './interview.js';
-import { IsoDateTimeSchema } from './quest.js';
 
 export const ChatRoleSchema = z.enum(['user', 'mochi']);
 
@@ -12,7 +11,7 @@ export const ChatMessageSchema = z.object({
   goal_id: z.number().int().positive().nullable(),
   role: ChatRoleSchema,
   content: z.string().min(1),
-  created_at: IsoDateTimeSchema,
+  created_at: z.string().datetime({ offset: true }),
 });
 
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;

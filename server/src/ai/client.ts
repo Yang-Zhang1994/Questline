@@ -2,11 +2,13 @@ import Anthropic from '@anthropic-ai/sdk';
 import {
   MilestonePlanAiResponseSchema,
   QuestGenerationAiResponseSchema,
+  WeekPlanAiResponseSchema,
   createMilestoneProposalListSchema,
   createQuestProposalListSchema,
   type InterviewTopic,
   type MilestonePlanAiResponse,
   type QuestGenerationAiResponse,
+  type WeekPlanAiResponse,
 } from '@questline/shared';
 import {
   type GoalDraft,
@@ -36,9 +38,13 @@ import {
 } from './prompts/mochiMilestones.js';
 import {
   MOCHI_QUESTS_SYSTEM_PROMPT,
+  MOCHI_WEEK_PLAN_SYSTEM_PROMPT,
   buildDefaultQuestProposal,
+  buildDefaultWeekPlanProposal,
   buildQuestGenerationUserPayload,
+  buildWeekPlanUserPayload,
   type QuestGenerationAiRequest,
+  type WeekPlanAiRequest,
 } from './prompts/mochiQuests.js';
 import {
   type InterviewAiRequest,
@@ -72,6 +78,7 @@ export type ChatAiClient = {
   reviseGoalDraft(input: ReviseGoalDraftRequest): Promise<GoalDraft>;
   proposeMilestones?(input: MilestonePlanAiRequest): Promise<MilestonePlanAiResponse>;
   generateDailyQuests?(input: QuestGenerationAiRequest): Promise<QuestGenerationAiResponse>;
+  proposeWeekPlan?(input: WeekPlanAiRequest): Promise<WeekPlanAiResponse>;
 };
 
 function normalizeGoalDraft(raw: GoalDraft, answers: ProposeGoalDraftRequest['answers']): GoalDraft {
@@ -249,6 +256,10 @@ export function createEchoChatClient(): ChatAiClient {
 
     async generateDailyQuests(input: QuestGenerationAiRequest): Promise<QuestGenerationAiResponse> {
       return buildDefaultQuestProposal(input);
+    },
+
+    async proposeWeekPlan(input: WeekPlanAiRequest): Promise<WeekPlanAiResponse> {
+      return buildDefaultWeekPlanProposal(input);
     },
   };
 }
@@ -458,6 +469,51 @@ export function createClaudeClient(options: CreateClaudeClientOptions = {}): Cha
       }
       return parsed;
     },
+
+    async proposeWeekPlan(input: WeekPlanAiRequest): Promise<WeekPlanAiResponse> {
+      const payload = buildWeekPlanUserPayload(input);
+      const messages: ClaudeChatTurn[] = [
+        ...(input.history ?? []),
+        {
+          role: 'user',
+          content: `Propose or adjust the next week of daily quests for the current milestone and reply with JSON only.\n${payload}`,
+        },
+      ];
+
+      const schema = WeekPlanAiResponseSchema.extend({
+        quests: createQuestProposalListSchema({
+          windowStart: input.windowStart,
+          windowEnd: input.windowEnd,
+          milestoneTargetDate: input.milestone.target_date,
+          timeBudgetMinutesPerDay: input.timeBudgetMinutesPerDay,
+          existingQuests: input.existingQuests,
+          enforceNoDuplicates: true,
+        }),
+      }) satisfies z.ZodType<WeekPlanAiResponse>;
+
+      const first = await completeOnce(MOCHI_WEEK_PLAN_SYSTEM_PROMPT, messages, 1024);
+      let parsed = parseModelJson(first, schema);
+      if (!parsed) {
+        const retry = await completeOnce(
+          MOCHI_WEEK_PLAN_SYSTEM_PROMPT,
+          [
+            ...messages,
+            { role: 'assistant', content: first },
+            {
+              role: 'user',
+              content:
+                'Your previous reply was not valid JSON matching the week-plan schema (mochi_message + quests with unique titles not duplicating existing quests, positive integer estimated_minutes, due_date within the window, and daily total minutes including existing quests within time_budget_minutes_per_day). Reply again with ONLY the JSON object.',
+            },
+          ],
+          1024,
+        );
+        parsed = parseModelJson(retry, schema);
+      }
+      if (!parsed) {
+        throw new Error('Claude week plan proposal failed schema validation');
+      }
+      return parsed;
+    },
   };
 }
 
@@ -473,6 +529,7 @@ export function createTemplateInterviewClient(
     reviseGoalDraft: echo.reviseGoalDraft,
     proposeMilestones: echo.proposeMilestones,
     generateDailyQuests: echo.generateDailyQuests,
+    proposeWeekPlan: echo.proposeWeekPlan,
     async evaluateInterviewAnswer(input) {
       const forced = decisions[i++];
       if (forced === 'vague') {
@@ -501,4 +558,6 @@ export type {
   MilestonePlanAiResponse,
   QuestGenerationAiRequest,
   QuestGenerationAiResponse,
+  WeekPlanAiRequest,
+  WeekPlanAiResponse,
 };
