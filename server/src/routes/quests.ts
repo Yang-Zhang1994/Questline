@@ -15,21 +15,20 @@ const LocalDateQuerySchema = z.object({
   local_date: IsoDateSchema.optional(),
 });
 
-const questGenerateLimiter = rateLimit({
-  windowMs: 60_000,
-  limit: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    error: {
-      code: 'VALIDATION_ERROR',
-      message: 'Too many quest requests — take a soft breath and try again in a minute.',
-    },
-  },
-});
-
 export function createQuestsRouter(questService: QuestService): Router {
   const router = Router();
+  const questGenerateLimiter = rateLimit({
+    windowMs: 60_000,
+    limit: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Too many quest requests — take a soft breath and try again in a minute.',
+      },
+    },
+  });
 
   router.use(requireAuth);
 

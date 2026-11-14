@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { UserProgressSchema } from './progress.js';
+import { StampCardSchema, UserProgressSchema } from './progress.js';
 import { MilestoneSchema, RoadmapGoalSchema } from './roadmap.js';
 
 export function isRealCalendarDate(value: string): boolean {
@@ -155,6 +155,8 @@ export const CurrentMilestoneQuestsResponseSchema = z.object({
   quests: z.array(QuestSchema),
   /** XP / level HUD snapshot (Issue #11). */
   progress: UserProgressSchema,
+  /** Stamp card snapshot + past cards (Issue #13). */
+  stamp_card: StampCardSchema,
   /** True when every quest on the current milestone is done (#10). */
   stage_ready: z.boolean().default(false),
   stage_ready_milestone: StageReadySummarySchema.nullable().default(null),
@@ -176,7 +178,7 @@ export type TodayQuestsResponse = z.infer<typeof TodayQuestsResponseSchema>;
 
 export const ToggleQuestCompletionBodySchema = z.object({
   completed: z.boolean(),
-  /** User's local calendar date — drives streak (#12); falls back to injectable clock. */
+  /** User's local calendar date — drives streak (#12) and stamps (#13); falls back to injectable clock. */
   local_date: IsoDateSchema.optional(),
 });
 
@@ -187,6 +189,12 @@ export const ToggleQuestCompletionResponseSchema = z.object({
   progress: UserProgressSchema,
   leveled_up: z.boolean(),
   level_up_message: z.string().nullable(),
+  /** Stamp card snapshot after check-off / undo (Issue #13). */
+  stamp_card: StampCardSchema,
+  /** True when this completion just filled the last slot of a stamp card (#13). */
+  card_completed: z.boolean().default(false),
+  /** Mochi celebration message when a stamp card is completed (#13). */
+  card_reward_message: z.string().nullable().default(null),
   /** True when every quest on the current milestone is done (#10). */
   stage_ready: z.boolean().default(false),
   stage_ready_milestone: StageReadySummarySchema.nullable().default(null),

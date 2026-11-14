@@ -31,6 +31,9 @@ export const DEFAULT_TIME_BUDGET_MINUTES = 30;
 /** Soft upper bound for one sitting — keeps AI quests small (#7). */
 export const MAX_QUEST_MINUTES = 45;
 
+/** Fixed number of stamp slots on each stamp card (#13). */
+export const STAMPS_PER_CARD = 10;
+
 /** Cumulative XP required to reach `level` (level ≤ 1 → 0). */
 export function xpToReachLevel(level: number): number {
   if (level <= 1) return 0;
@@ -174,3 +177,93 @@ export function stageClearedMessage(stageTitle: string, nextTitle: string | null
 export function goalCompletedMessage(goalTitle: string): string {
   return `★ You did it! “${goalTitle}” is complete. Mochi is so proud of this gentle journey — celebrate softly. ♡`;
 }
+
+export type StampRowInput = {
+  card_number: number;
+  stamp_date: string;
+};
+
+export type StampPastCardSnapshot = {
+  card_number: number;
+  stamp_dates: string[];
+  stamp_count: number;
+};
+
+export type StampCardSnapshot = {
+  card_number: number;
+  stamps_per_card: number;
+  stamped_dates: string[];
+  filled_count: number;
+  past_cards: StampPastCardSnapshot[];
+};
+
+/** Warm Mochi celebration when a stamp card fills all slots (#13). */
+export function cardCompletedMessage(cardNumber: number): string {
+  return `★ Stamp Card #${cardNumber} is full! Mochi tucked it into your collection and opened a fresh card for you. ♡`;
+}
+
+/**
+ * Builds the active stamp card + past cards history from a user's saved stamp rows (#13).
+ *
+ * - When the user has no stamps yet, Card #1 is active with 0 stamps.
+ * - When the highest `card_number` has `STAMPS_PER_CARD` stamps (and no newer card has stamps yet),
+ *   that full card is archived in `past_cards` and `highestCardNumber + 1` is shown as the fresh active card.
+ * - If an undo removes the 10th stamp from that card, it drops to 9 stamps and seamlessly becomes
+ *   the active card again.
+ */
+export function buildStampCardSnapshot(
+  rows: readonly StampRowInput[],
+  stampsPerCard: number = STAMPS_PER_CARD,
+): StampCardSnapshot {
+  if (rows.length === 0) {
+    return {
+      card_number: 1,
+      stamps_per_card: stampsPerCard,
+      stamped_dates: [],
+      filled_count: 0,
+      past_cards: [],
+    };
+  }
+
+  const byCard = new Map<number, string[]>();
+  let maxCardNumber = 1;
+  for (const row of rows) {
+    if (row.card_number > maxCardNumber) {
+      maxCardNumber = row.card_number;
+    }
+    const dates = byCard.get(row.card_number) ?? [];
+    dates.push(row.stamp_date);
+    byCard.set(row.card_number, dates);
+  }
+
+  for (const dates of byCard.values()) {
+    dates.sort();
+  }
+
+  const highestDates = byCard.get(maxCardNumber) ?? [];
+  const highestIsFull = highestDates.length >= stampsPerCard;
+
+  const activeCardNumber = highestIsFull ? maxCardNumber + 1 : maxCardNumber;
+  const activeDates = highestIsFull ? [] : highestDates;
+
+  const pastCards: StampPastCardSnapshot[] = [];
+  const cardNumbers = [...byCard.keys()].sort((a, b) => a - b);
+  for (const cardNum of cardNumbers) {
+    if (cardNum === activeCardNumber) continue;
+    const dates = byCard.get(cardNum) ?? [];
+    pastCards.push({
+      card_number: cardNum,
+      stamp_dates: dates,
+      stamp_count: dates.length,
+    });
+  }
+
+  return {
+    card_number: activeCardNumber,
+    stamps_per_card: stampsPerCard,
+    stamped_dates: activeDates,
+    filled_count: activeDates.length,
+    past_cards: pastCards,
+  };
+}
+

@@ -41,6 +41,19 @@ describe('App auth gate & Today greeting note (Issues #8 & #9)', () => {
             }),
         };
       }
+      if (url === '/api/diary-notes' || url.startsWith('/api/diary-notes?')) {
+        return {
+          ok: true,
+          text: async () =>
+            JSON.stringify({
+              id: null,
+              goal_id: 1,
+              note_date: '2026-11-10',
+              content: '',
+              updated_at: null,
+            }),
+        };
+      }
       if (url === '/api/quests' || url.startsWith('/api/quests?')) {
         return {
           ok: true,
@@ -73,6 +86,13 @@ describe('App auth gate & Today greeting note (Issues #8 & #9)', () => {
                 current_streak: 0,
                 best_streak: 0,
                 last_active_date: null,
+              },
+              stamp_card: {
+                card_number: 1,
+                stamps_per_card: 10,
+                stamped_dates: [],
+                filled_count: 0,
+                past_cards: [],
               },
               stage_ready: false,
               stage_ready_milestone: null,
@@ -145,6 +165,13 @@ describe('App auth gate & Today greeting note (Issues #8 & #9)', () => {
                 current_streak: 0,
                 best_streak: 0,
                 last_active_date: null,
+              },
+              stamp_card: {
+                card_number: 1,
+                stamps_per_card: 10,
+                stamped_dates: [],
+                filled_count: 0,
+                past_cards: [],
               },
               stage_ready: false,
               stage_ready_milestone: null,

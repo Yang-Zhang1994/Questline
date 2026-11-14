@@ -52,7 +52,14 @@ export {
   type UpsertDiaryNoteBody,
 } from './schemas/diary.js';
 
-export { UserProgressSchema, type UserProgress } from './schemas/progress.js';
+export {
+  StampCardSchema,
+  StampPastCardSchema,
+  UserProgressSchema,
+  type StampCard,
+  type StampPastCard,
+  type UserProgress,
+} from './schemas/progress.js';
 
 export {
   GoalStatusSchema,

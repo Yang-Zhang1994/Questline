@@ -1,7 +1,9 @@
-import type { UserProgress } from '@questline/shared';
+import type { StampCard, UserProgress } from '@questline/shared';
 import {
   applyMissedDayReset,
+  buildStampCardSnapshot,
   progressSnapshotFromXp,
+  type StampRowInput,
   type StreakState,
 } from '../config/game.js';
 import type { Db } from '../db/connection.js';
@@ -74,6 +76,21 @@ export function createProgressRepository(db: Db) {
         [userId],
       );
       return toSnapshot(inserted.rows[0]);
+    },
+
+    /**
+     * Load the stamp card + past cards history for `userId` (Issue #13).
+     * Always scoped strictly by `user_id = $1`.
+     */
+    async getStampCard(userId: number): Promise<StampCard> {
+      const result = await db.query<StampRowInput>(
+        `SELECT card_number, stamp_date
+         FROM stamps
+         WHERE user_id = $1
+         ORDER BY card_number ASC, stamp_date ASC, id ASC`,
+        [userId],
+      );
+      return buildStampCardSnapshot(result.rows);
     },
   };
 }

@@ -4,6 +4,7 @@ import {
   type CurrentMilestoneQuestsResponse,
   type ProposedQuest,
   type StageReadySummary,
+  type StampCard,
   type ToggleQuestCompletionResponse,
   type UserProgress,
 } from '@questline/shared';
@@ -14,7 +15,12 @@ import {
 } from '../ai/prompts/mochiQuests.js';
 import type { Clock } from '../clock.js';
 import { resolveClientLocalDate, toIsoDateTime } from '../clock.js';
-import { DEFAULT_TIME_BUDGET_MINUTES, XP_PER_QUEST, levelUpMessage } from '../config/game.js';
+import {
+  DEFAULT_TIME_BUDGET_MINUTES,
+  XP_PER_QUEST,
+  cardCompletedMessage,
+  levelUpMessage,
+} from '../config/game.js';
 import { mapGoalRowToRoadmapGoal } from '../repositories/goalRepository.js';
 import type { ProgressRepository } from '../repositories/progressRepository.js';
 import type { QuestRepository } from '../repositories/questRepository.js';
@@ -54,6 +60,9 @@ function completionPayload(
   quest: ToggleQuestCompletionResponse['quest'],
   progress: UserProgress,
   leveledUp: boolean,
+  stampCard: StampCard,
+  cardCompleted: boolean,
+  completedCardNumber: number | null,
   stage: StageReadiness,
 ): ToggleQuestCompletionResponse {
   return {
@@ -61,6 +70,12 @@ function completionPayload(
     progress,
     leveled_up: leveledUp,
     level_up_message: leveledUp ? levelUpMessage(progress.level) : null,
+    stamp_card: stampCard,
+    card_completed: cardCompleted,
+    card_reward_message:
+      cardCompleted && completedCardNumber !== null
+        ? cardCompletedMessage(completedCardNumber)
+        : null,
     stage_ready: stage.stage_ready,
     stage_ready_milestone: stage.stage_ready_milestone,
   };
@@ -91,7 +106,10 @@ export function createQuestService(deps: QuestServiceDeps) {
     const today = resolveClientLocalDate(localDate, deps.clock);
     const { goal: rawGoal, milestone } = await deps.quests.getCurrentMilestoneContextForUser(userId);
     const goal = normalizeGoal(rawGoal);
-    const progress = await deps.progress.getOrCreate(userId, today);
+    const [progress, stampCard] = await Promise.all([
+      deps.progress.getOrCreate(userId, today),
+      deps.progress.getStampCard(userId),
+    ]);
 
     const { windowStart, windowEnd } = computeQuestGenerationWindow(
       today,
@@ -106,6 +124,7 @@ export function createQuestService(deps: QuestServiceDeps) {
         window_end: windowEnd,
         quests: [],
         progress,
+        stamp_card: stampCard,
         ...NOT_READY,
       };
     }
@@ -119,6 +138,7 @@ export function createQuestService(deps: QuestServiceDeps) {
       window_end: windowEnd,
       quests,
       progress,
+      stamp_card: stampCard,
       ...stage,
     };
   }
@@ -134,7 +154,10 @@ export function createQuestService(deps: QuestServiceDeps) {
     const today = resolveClientLocalDate(localDate, deps.clock);
     const { goal: rawGoal, milestone } = await deps.quests.getCurrentMilestoneContextForUser(userId);
     const goal = normalizeGoal(rawGoal);
-    const progress = await deps.progress.getOrCreate(userId, today);
+    const [progress, stampCard] = await Promise.all([
+      deps.progress.getOrCreate(userId, today),
+      deps.progress.getStampCard(userId),
+    ]);
 
     if (!goal) {
       throw notFound('Confirm a goal first before generating quests.');
@@ -162,6 +185,7 @@ export function createQuestService(deps: QuestServiceDeps) {
         window_end: windowEnd,
         quests,
         progress,
+        stamp_card: stampCard,
         ...stage,
       };
     }
@@ -230,6 +254,7 @@ export function createQuestService(deps: QuestServiceDeps) {
       window_end: windowEnd,
       quests,
       progress,
+      stamp_card: stampCard,
       ...stage,
     };
   }
@@ -243,7 +268,7 @@ export function createQuestService(deps: QuestServiceDeps) {
 
   /**
    * Toggles quest completion for a quest owned by `userId`.
-   * Checking awards XP + streak; undoing reverses both — same transaction (#11 / #12).
+   * Checking awards XP + streak + stamp; undoing reverses them — same transaction (#11 / #12 / #13).
    * Stage-ready detection runs after that transaction (#10).
    */
   async function toggleQuestCompletion(
@@ -258,16 +283,22 @@ export function createQuestService(deps: QuestServiceDeps) {
       throw notFound('Quest not found.');
     }
 
-    // Idempotent no-ops: still return current progress for the HUD.
+    // Idempotent no-ops: still return current progress + stamp card for the HUD.
     if (completed && existing.completed_at !== null) {
-      const progress = await deps.progress.getOrCreate(userId, date);
-      const stage = await stageReadiness(userId);
-      return completionPayload(existing, progress, false, stage);
+      const [progress, stampCard, stage] = await Promise.all([
+        deps.progress.getOrCreate(userId, date),
+        deps.progress.getStampCard(userId),
+        stageReadiness(userId),
+      ]);
+      return completionPayload(existing, progress, false, stampCard, false, null, stage);
     }
     if (!completed && existing.completed_at === null) {
-      const progress = await deps.progress.getOrCreate(userId, date);
-      const stage = await stageReadiness(userId);
-      return completionPayload(existing, progress, false, stage);
+      const [progress, stampCard, stage] = await Promise.all([
+        deps.progress.getOrCreate(userId, date),
+        deps.progress.getStampCard(userId),
+        stageReadiness(userId),
+      ]);
+      return completionPayload(existing, progress, false, stampCard, false, null, stage);
     }
 
     const result = await deps.quests.setCompletionWithXp(
@@ -283,7 +314,15 @@ export function createQuestService(deps: QuestServiceDeps) {
 
     const leveledUp = completed && result.progress.level > result.previousLevel;
     const stage = await stageReadiness(userId);
-    return completionPayload(result.quest, result.progress, leveledUp, stage);
+    return completionPayload(
+      result.quest,
+      result.progress,
+      leveledUp,
+      result.stampCard,
+      result.cardCompleted,
+      result.completedCardNumber,
+      stage,
+    );
   }
 
   return {
