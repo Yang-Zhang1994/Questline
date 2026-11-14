@@ -1,8 +1,38 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { BrowserRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { CurrentMilestoneQuestsResponse, ToggleQuestCompletionResponse } from '@questline/shared';
+import type {
+  CurrentMilestoneQuestsResponse,
+  DiaryNote,
+  ToggleQuestCompletionResponse,
+} from '@questline/shared';
+import * as diaryApi from '../api/diary';
 import { TodayPage } from './TodayPage';
+
+vi.mock('../api/diary', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/diary')>();
+  return {
+    ...actual,
+    fetchDiaryNote: vi.fn(
+      async (localDate?: string): Promise<DiaryNote> => ({
+        id: null,
+        goal_id: 1,
+        note_date: localDate ?? '2026-11-10',
+        content: '',
+        updated_at: null,
+      }),
+    ),
+    saveDiaryNote: vi.fn(
+      async (content: string, localDate?: string): Promise<DiaryNote> => ({
+        id: 1,
+        goal_id: 1,
+        note_date: localDate ?? '2026-11-10',
+        content,
+        updated_at: '2026-11-10T15:00:00Z',
+      }),
+    ),
+  };
+});
 
 vi.mock('../hooks/useGoals', () => ({
   useGoals: () => ({
@@ -547,6 +577,70 @@ describe('TodayPage (Issue #8)', () => {
       const items = screen.getAllByTestId('today-quest-item');
       expect(items[0]).toHaveAttribute('data-completed', 'true');
       expect(items[1]).toHaveAttribute('data-completed', 'false');
+    });
+  });
+
+  describe('Diary note for today (Issue #19)', () => {
+    it('does not show the diary note card when there is no active goal', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        text: async () =>
+          JSON.stringify({
+            ...basePayload,
+            goal: null,
+            milestone: null,
+            quests: [],
+          } satisfies CurrentMilestoneQuestsResponse),
+      } as Response);
+
+      render(
+        <BrowserRouter>
+          <TodayPage />
+        </BrowserRouter>,
+      );
+
+      expect(await screen.findByRole('link', { name: /plan a goal with mochi/i })).toBeInTheDocument();
+      expect(screen.queryByTestId('diary-note-card')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText(/diary note for today/i)).not.toBeInTheDocument();
+    });
+
+    it('shows the diary note for the active goal, loads saved note, and autosaves on blur', async () => {
+      vi.mocked(diaryApi.fetchDiaryNote).mockResolvedValueOnce({
+        id: 12,
+        goal_id: 1,
+        note_date: '2026-11-10',
+        content: 'Morning reading session went smoothly ♡',
+        updated_at: '2026-11-10T10:00:00Z',
+      });
+
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        text: async () => JSON.stringify(basePayload),
+      } as Response);
+
+      render(
+        <BrowserRouter>
+          <TodayPage />
+        </BrowserRouter>,
+      );
+
+      const textarea = await screen.findByLabelText(/diary note for today/i);
+      await waitFor(() => {
+        expect(textarea).toHaveValue('Morning reading session went smoothly ♡');
+      });
+
+      fireEvent.change(textarea, {
+        target: { value: 'Morning reading session went smoothly + 3 new words!' },
+      });
+      fireEvent.blur(textarea);
+
+      await waitFor(() => {
+        expect(diaryApi.saveDiaryNote).toHaveBeenCalledWith(
+          'Morning reading session went smoothly + 3 new words!',
+          '2026-11-10',
+        );
+      });
+      expect(screen.getByTestId('diary-save-status')).toHaveTextContent('Saved ♡');
     });
   });
 });

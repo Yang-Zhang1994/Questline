@@ -13,7 +13,7 @@ import {
   computeQuestGenerationWindow,
 } from '../ai/prompts/mochiQuests.js';
 import type { Clock } from '../clock.js';
-import { formatLocalDate, toIsoDateTime } from '../clock.js';
+import { resolveClientLocalDate, toIsoDateTime } from '../clock.js';
 import { DEFAULT_TIME_BUDGET_MINUTES, XP_PER_QUEST, levelUpMessage } from '../config/game.js';
 import { mapGoalRowToRoadmapGoal } from '../repositories/goalRepository.js';
 import type { ProgressRepository } from '../repositories/progressRepository.js';
@@ -88,7 +88,7 @@ export function createQuestService(deps: QuestServiceDeps) {
     userId: number,
     localDate?: string,
   ): Promise<CurrentMilestoneQuestsResponse> {
-    const today = localDate ?? formatLocalDate(deps.clock.now());
+    const today = resolveClientLocalDate(localDate, deps.clock);
     const { goal: rawGoal, milestone } = await deps.quests.getCurrentMilestoneContextForUser(userId);
     const goal = normalizeGoal(rawGoal);
     const progress = await deps.progress.getOrCreate(userId, today);
@@ -131,7 +131,7 @@ export function createQuestService(deps: QuestServiceDeps) {
     userId: number,
     localDate?: string,
   ): Promise<CurrentMilestoneQuestsResponse> {
-    const today = localDate ?? formatLocalDate(deps.clock.now());
+    const today = resolveClientLocalDate(localDate, deps.clock);
     const { goal: rawGoal, milestone } = await deps.quests.getCurrentMilestoneContextForUser(userId);
     const goal = normalizeGoal(rawGoal);
     const progress = await deps.progress.getOrCreate(userId, today);
@@ -252,12 +252,11 @@ export function createQuestService(deps: QuestServiceDeps) {
     completed: boolean,
     localDate?: string,
   ): Promise<ToggleQuestCompletionResponse> {
+    const date = resolveClientLocalDate(localDate, deps.clock);
     const existing = await deps.quests.findByIdForUser(userId, questId);
     if (!existing) {
       throw notFound('Quest not found.');
     }
-
-    const date = localDate ?? formatLocalDate(deps.clock.now());
 
     // Idempotent no-ops: still return current progress for the HUD.
     if (completed && existing.completed_at !== null) {

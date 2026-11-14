@@ -1,15 +1,18 @@
 import { useNavigate } from 'react-router';
 import { BottomDock } from '../components/BottomDock/BottomDock';
 import { DailyNote } from '../components/DailyNote/DailyNote';
+import { DiaryNoteCard } from '../components/DiaryNoteCard/DiaryNoteCard';
 import { GoalCelebration } from '../components/GoalCelebration/GoalCelebration';
 import { GoalSelector } from '../components/GoalSelector/GoalSelector';
 import { LevelUpToast } from '../components/LevelUpToast/LevelUpToast';
 import { StageCompletePrompt } from '../components/StageCompletePrompt/StageCompletePrompt';
 import { StreakCounter } from '../components/StreakCounter/StreakCounter';
 import { XpBar } from '../components/XpBar/XpBar';
+import { useDiaryNote } from '../hooks/useDiaryNote';
 import { useGoals } from '../hooks/useGoals';
 import { useStageAdvance } from '../hooks/useStageAdvance';
 import { useTodayQuests } from '../hooks/useTodayQuests';
+import { todayLocalDate } from '../lib/localDate';
 
 export type TodayPageProps = {
   userEmail?: string | null;
@@ -54,6 +57,11 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
     confirm: confirmStage,
     dismissResult: dismissStageResult,
   } = useStageAdvance();
+
+  const diary = useDiaryNote({
+    goalId: goal?.id ?? null,
+    localDate: todayDate ?? todayLocalDate(),
+  });
 
   const showStagePrompt = stageReady && stageReadyMilestone && !stageResult;
   const stageAdvanceToast =
@@ -154,6 +162,17 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
                 }
               })();
             }}
+          />
+        ) : null}
+
+        {goal ? (
+          <DiaryNoteCard
+            content={diary.content}
+            loading={diary.loading}
+            saveStatus={diary.saveStatus}
+            saveError={diary.saveError}
+            onChange={diary.updateContent}
+            onBlur={diary.flushSave}
           />
         ) : null}
       </main>
