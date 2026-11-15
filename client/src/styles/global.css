@@ -12,6 +12,10 @@
     @apply min-h-full;
   }
 
+  html {
+    scroll-padding-bottom: var(--dock-clearance);
+  }
+
   body {
     @apply m-0 bg-sky-meadow bg-fixed font-body text-ink;
   }

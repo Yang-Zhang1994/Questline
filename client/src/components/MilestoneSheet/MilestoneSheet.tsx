@@ -232,7 +232,7 @@ export function MilestoneSheet({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-ink/35 px-3 pb-24 pt-6 sm:items-center sm:pb-6"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-ink/35 px-3 pb-4 pt-6 sm:items-center sm:pb-6"
       onClick={(e) => {
         if (e.target === e.currentTarget) {
           onClose();
@@ -251,7 +251,7 @@ export function MilestoneSheet({
             onClose();
           }
         }}
-        className="flex max-h-[calc(100vh-7.5rem)] w-full max-w-[540px] flex-col overflow-hidden rounded-window border-2 border-pink/40 bg-panel shadow-window"
+        className="flex max-h-[calc(100vh-2.5rem)] w-full max-w-[540px] flex-col overflow-hidden rounded-window border-2 border-pink/40 bg-panel shadow-window"
       >
         <header className="flex items-center justify-between gap-2 bg-gel-pink px-4 py-2.5 text-white">
           <div className="flex items-center gap-2 min-w-0">

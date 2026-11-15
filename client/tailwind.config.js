@@ -39,6 +39,9 @@ export default {
         window: 'var(--radius-window)',
         pill: 'var(--radius-pill)',
       },
+      spacing: {
+        'dock-safe': 'var(--dock-clearance)',
+      },
       boxShadow: {
         window: 'var(--shadow-window)',
         polaroid: '0 4px 0 rgba(61, 53, 112, 0.08)',
