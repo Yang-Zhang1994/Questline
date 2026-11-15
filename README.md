@@ -1,5 +1,7 @@
 # Questline — Mochi's Quest Diary
 
+**Live App:** https://questline-lgbi.onrender.com
+
 Cozy life-sim goal tracker: chat with **Mochi**, confirm a measurable **Goal**, walk a game-style roadmap of **Milestones**, and complete small daily **Quests** with XP, streaks, and stamps.
 
 ## The Ambition-Action Gap
@@ -98,6 +100,7 @@ Copy `.env.example` → `.env` and adjust as needed:
 
 | Variable | Required | Purpose |
 | -------- | -------- | ------- |
+| `NODE_ENV` | no | Set `production` in prod to serve `client/dist`, enforce strict env checks, disable CORS reflection, and gate demo seeding |
 | `DATABASE_URL` | yes | Postgres connection string |
 | `DATABASE_SSL` | no | Set `true` when Postgres requires TLS (`ssl: { rejectUnauthorized: false }`) |
 | `JWT_SECRET` | yes | Signs auth tokens (production requires ≥32 chars and rejects `change-me-in-local-dev`) |
@@ -175,23 +178,29 @@ In production the Express server:
 
 ## Deployment (Render)
 
-Single **Web Service** + **Render Postgres**. Blueprint file: [`render.yaml`](render.yaml).
+**Live URL:** https://questline-lgbi.onrender.com
 
-**Production URL (fill after live):** `_https://YOUR-SERVICE.onrender.com_`
+Production is deployed on Render as a single **Web Service** + **Render Postgres** from the fork [`Yifeicarrots/Questline1`](https://github.com/Yifeicarrots/Questline1) using [`render.yaml`](render.yaml). Frontend and API share the **same URL** (Express serves the Vite build from `client/dist`).
 
-### One-click Blueprint
+### Updating the deployment (Sync fork)
 
-1. Open [New Blueprint → Yang-Zhang1994/Questline](https://dashboard.render.com/blueprints/new?repo=https://github.com/Yang-Zhang1994/Questline).
-2. Sign in to Render (owner account) and connect the GitHub repo if prompted.
+When new commits land on upstream `Yang-Zhang1994/Questline` (`main`):
+
+1. Open [`Yifeicarrots/Questline1`](https://github.com/Yifeicarrots/Questline1) on GitHub.
+2. Click **Sync fork** → **Update branch** to fast-forward/merge upstream `main` into the fork.
+3. Render automatically redeploys from `Yifeicarrots/Questline1` (or click **Manual Deploy → Deploy latest commit** in the Render dashboard).
+
+### One-click Blueprint (fresh deploy)
+
+1. Open [New Blueprint → Yifeicarrots/Questline1](https://dashboard.render.com/blueprints/new?repo=https://github.com/Yifeicarrots/Questline1).
+2. Sign in to Render and connect the GitHub repo if prompted.
 3. Apply the Blueprint (`questline` web service + `questline-db` Postgres).
 4. When prompted for sync env vars, set:
    - `ANTHROPIC_API_KEY` — your Claude API key (required in production unless `ALLOW_ECHO_AI=true` is set)
    - `ANTHROPIC_MODEL` — model id from Anthropic (e.g. the same value you use locally)
-5. Wait for the first deploy. Migrations run automatically on boot via `openDatabase` (no separate migrate step).
+5. Wait for the first deploy. Migrations (`001`–`005`) run automatically on boot via `openDatabase` (no separate migrate step).
 
 Blueprint already sets `NODE_ENV=production`, wires `DATABASE_URL` from `questline-db`, generates a random `JWT_SECRET` (≥32 chars), and sets `SEED_DEMO_DATA=true` so the course demo account is seeded on first boot. Optional production knobs: `DATABASE_SSL=true` (when connecting to an external Postgres URL that requires TLS), `CORS_ORIGIN` (if serving the frontend from a separate origin), and `ALLOW_ECHO_AI=true` (only if deploying without Anthropic keys). Build: `npm ci --include=dev && npm run build`. Start: `npm start` (Node 22).
-
-Frontend and API share the **same URL** (Express serves the Vite build).
 
 ### Smoke checklist
 
@@ -214,7 +223,7 @@ On first boot with an empty `users` table (automatic outside production, or in p
 
 Demo data includes an active Goal (“Read a Japanese novel on my own”), a current Milestone, today’s Quests, a paused second Goal (for the selector), and zeroed XP/streak/stamps so you can earn rewards by checking quests off.
 
-Open http://localhost:5173 → log in with the demo credentials → **Today** loads Mochi’s note + quests.
+Open the live URL (or `http://localhost:5173` locally) → log in with the demo credentials → **Today** loads Mochi’s note + quests.
 
 ## High-level usage
 
@@ -237,18 +246,17 @@ JWT notes: the API returns a token in the JSON body; the SPA sends `Authorizatio
 
 ## Known limitations
 
-- **Today quest UI (#8 / #9) was reverted** from `main` so Yanni can re-own those issues. Until they land again, Today shows a placeholder; screenshots above still show the intended daily-note / check-off experience.
-- **One active Goal** drives Today/Map at a time (multi-goal selector can switch; only one is active).
-- Live Mochi chat needs `ANTHROPIC_*`; without keys, use the manual plan form / seeded demo Goal.
-- Streak miss = break (no “rest day” forgiveness yet).
-- SQLite / Next.js paths are **not** supported for new work — stack is Postgres + Vite.
-- No native apps, push/email, calendar sync, payments, or social sharing.
-- Playwright E2E suite is planned; CI today covers lint, typecheck, production client build, Vitest (mocked Claude), and a non-blocking `npm audit --audit-level=high` (see below).
-- Some Map / XP / stamp / diary flows documented here land in other open PRs; this docs PR may sit above GoalConfirm while those restack.
+- **Demo login hint shown on purpose for grading:** The login screen intentionally displays the demo credentials (`demo@questline.local` / `demo-password-123`) so instructors/graders can sign in immediately without creating an account.
+- **Streak limitation:** Missing a day breaks the streak (no “rest day” forgiveness yet), and streak/day rollovers use the server’s local calendar date rather than a per-user timezone setting.
+- **No diary history yet:** **Today** supports writing and autosaving today’s diary note (`diary_notes`, one per goal per day), but there is no UI yet to browse or edit past diary entries.
+- **One active Goal** drives Today/Map at a time (the multi-goal selector can switch goals, and only one is active).
+- **Live Mochi chat** needs `ANTHROPIC_API_KEY` + `ANTHROPIC_MODEL`; without keys (or with `ALLOW_ECHO_AI=true`), use the manual plan form or seeded demo Goal.
+- **Scope:** SQLite / Next.js paths are **not** supported for new work (stack is Postgres + Vite). No native apps, push/email notifications, calendar sync, payments, or social sharing.
+- **Testing:** Playwright E2E suite is planned; CI currently covers ESLint, TypeScript typecheck, production client build, Vitest + Supertest/RTL (mocked Claude), and a non-blocking `npm audit --audit-level=high` (see below).
 
 ### Known security advisories
 
-CI runs `npm audit --audit-level=high` with `continue-on-error: true` until these major upgrades land (both need a breaking-version bump, so `npm audit fix` without `--force` can't resolve them):
+CI runs `npm audit --audit-level=high` with `continue-on-error: true` until these two security Issues are resolved (both require a breaking major-version bump, so `npm audit fix` without `--force` cannot resolve them):
 
 | Advisory | Package (path) | Scope | Tracking |
 | -------- | -------------- | ----- | -------- |
