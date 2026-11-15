@@ -246,6 +246,113 @@ export const ConfirmWeekPlanResponseSchema = z.object({
 
 export type ConfirmWeekPlanResponse = z.infer<typeof ConfirmWeekPlanResponseSchema>;
 
+export const RescheduleMoveSchema = z.object({
+  quest_id: z.number().int().positive(),
+  title: z
+    .string()
+    .trim()
+    .min(1, 'Quest title is required')
+    .max(200, 'Quest title is too long (max 200 characters)'),
+  from_date: IsoDateSchema,
+  to_date: IsoDateSchema,
+  estimated_minutes: z
+    .number()
+    .int('Quest estimated_minutes must be a whole number')
+    .positive('Quest estimated_minutes must be positive'),
+});
+
+export type RescheduleMove = z.infer<typeof RescheduleMoveSchema>;
+
+export const RescheduleMoveListSchema = z
+  .array(RescheduleMoveSchema)
+  .min(1, 'At least one quest move is required');
+
+export type RescheduleMoveList = z.infer<typeof RescheduleMoveListSchema>;
+
+export type RescheduleValidationOptions = {
+  windowStart: string;
+  windowEnd: string;
+  milestoneTargetDate?: string | null;
+  timeBudgetMinutesPerDay: number;
+  overdueQuests: ReadonlyArray<{
+    id: number;
+    title: string;
+    due_date: string;
+    estimated_minutes: number | null;
+  }>;
+  existingScheduledQuests?: ReadonlyArray<{
+    id?: number;
+    title: string;
+    due_date: string;
+    estimated_minutes: number | null;
+  }>;
+};
+
+/**
+ * Stub for Phase 2 TDD — validates reschedule moves (#14).
+ */
+export function createRescheduleMovesSchema(_options: RescheduleValidationOptions) {
+  return RescheduleMoveListSchema.superRefine((_moves, ctx) => {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['moves'],
+      message: 'createRescheduleMovesSchema not implemented (#14)',
+    });
+  });
+}
+
+export const RescheduleAiResponseSchema = z.object({
+  mochi_message: z.string().trim().min(1, 'Mochi message is required').max(1000),
+  moves: RescheduleMoveListSchema,
+});
+
+export type RescheduleAiResponse = z.infer<typeof RescheduleAiResponseSchema>;
+
+export const ProposeRescheduleBodySchema = z.object({
+  local_date: IsoDateSchema.optional(),
+  feedback: z
+    .string()
+    .trim()
+    .min(1, 'Adjustment request cannot be empty')
+    .max(2000, 'Adjustment request is too long (max 2000 characters)')
+    .optional(),
+  current_draft: RescheduleMoveListSchema.optional(),
+});
+
+export type ProposeRescheduleBody = z.infer<typeof ProposeRescheduleBodySchema>;
+
+export const ProposeRescheduleResponseSchema = z.object({
+  goal: RoadmapGoalSchema,
+  milestone: MilestoneSchema,
+  window_start: IsoDateSchema,
+  window_end: IsoDateSchema,
+  time_budget_minutes_per_day: z.number().int().positive(),
+  overdue_quests: z.array(QuestSchema),
+  existing_quests: z.array(QuestSchema),
+  moves: RescheduleMoveListSchema,
+  mochi_message: ChatMessageSchema,
+  user_message: ChatMessageSchema.nullable(),
+});
+
+export type ProposeRescheduleResponse = z.infer<typeof ProposeRescheduleResponseSchema>;
+
+export const ConfirmRescheduleBodySchema = z.object({
+  local_date: IsoDateSchema.optional(),
+  moves: RescheduleMoveListSchema,
+});
+
+export type ConfirmRescheduleBody = z.infer<typeof ConfirmRescheduleBodySchema>;
+
+export const ConfirmRescheduleResponseSchema = z.object({
+  goal: RoadmapGoalSchema,
+  milestone: MilestoneSchema,
+  window_start: IsoDateSchema,
+  window_end: IsoDateSchema,
+  quests: z.array(QuestSchema),
+});
+
+export type ConfirmRescheduleResponse = z.infer<typeof ConfirmRescheduleResponseSchema>;
+
 export const QuestGenerationAiResponseSchema = z.object({
   quests: ProposedQuestListSchema,
 });

@@ -43,6 +43,10 @@ export function filterQuestsDueToday(payload: CurrentMilestoneQuestsResponse): Q
   return payload.quests.filter((quest) => quest.due_date === payload.window_start);
 }
 
+export function filterEarlierQuests(_payload: CurrentMilestoneQuestsResponse): Quest[] {
+  return [];
+}
+
 export function useTodayQuests() {
   const [data, setData] = useState<CurrentMilestoneQuestsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -145,6 +149,7 @@ export function useTodayQuests() {
   const milestone: Milestone | null = data?.milestone ?? null;
   const todayDate: string | null = data?.window_start ?? null;
   const todayQuests: Quest[] = data ? filterQuestsDueToday(data) : [];
+  const earlierQuests: Quest[] = data ? filterEarlierQuests(data) : [];
   const progress: UserProgress | null = data?.progress ?? null;
   const stampCard: StampCard | null = data?.stamp_card ?? null;
 
@@ -169,6 +174,7 @@ export function useTodayQuests() {
     milestone,
     todayDate,
     todayQuests,
+    earlierQuests,
     progress,
     stampCard,
     stageReady: Boolean(data?.stage_ready && data.stage_ready_milestone),

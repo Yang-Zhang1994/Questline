@@ -71,6 +71,9 @@ export type DailyNoteProps = {
   milestone: Milestone | null;
   todayDate: string | null;
   todayQuests: Quest[];
+  earlierQuests?: Quest[];
+  onRescheduleRequest?: () => void;
+  rescheduling?: boolean;
   error?: string | null;
   onRetry?: () => void;
   pendingQuestIds?: ReadonlySet<number>;

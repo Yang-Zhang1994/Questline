@@ -3,9 +3,13 @@ import {
   CurrentMilestoneQuestsResponseSchema,
   ProposeWeekPlanResponseSchema,
   ToggleQuestCompletionResponseSchema,
+  type ConfirmRescheduleBody,
+  type ConfirmRescheduleResponse,
   type ConfirmWeekPlanBody,
   type ConfirmWeekPlanResponse,
   type CurrentMilestoneQuestsResponse,
+  type ProposeRescheduleBody,
+  type ProposeRescheduleResponse,
   type ProposeWeekPlanBody,
   type ProposeWeekPlanResponse,
   type ToggleQuestCompletionResponse,
@@ -21,6 +25,9 @@ export const FRIENDLY_QUEST_TOGGLE_ERROR =
 
 export const FRIENDLY_WEEK_PLAN_ERROR =
   "Mochi couldn't sketch your weekly quest plan right now. Take a gentle breath and try again in a moment ♡";
+
+export const FRIENDLY_RESCHEDULE_ERROR =
+  "Mochi couldn't rearrange your quest schedule right now. Take a gentle breath and try again in a moment ♡";
 
 async function parseJson(res: Response): Promise<unknown> {
   const text = await res.text();
@@ -172,4 +179,16 @@ export async function confirmWeekPlan(
     throw new Error(FRIENDLY_WEEK_PLAN_ERROR);
   }
   return parsed.data;
+}
+
+export async function proposeReschedule(
+  _options: ProposeRescheduleBody = {},
+): Promise<ProposeRescheduleResponse> {
+  throw new Error('proposeReschedule not implemented (#14)');
+}
+
+export async function confirmReschedule(
+  _options: ConfirmRescheduleBody,
+): Promise<ConfirmRescheduleResponse> {
+  throw new Error('confirmReschedule not implemented (#14)');
 }

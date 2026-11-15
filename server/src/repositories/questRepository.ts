@@ -3,6 +3,7 @@ import {
   type Milestone,
   type ProposedQuest,
   type Quest,
+  type RescheduleMove,
   type RoadmapGoal,
   type StampCard,
   type UserProgress,
@@ -341,6 +342,18 @@ export function createQuestRepository(db: Db) {
       } finally {
         client.release();
       }
+    },
+
+    async saveConfirmedRescheduleMoves(
+      _userId: number,
+      _milestoneId: number,
+      _today: string,
+      _windowStart: string,
+      _windowEnd: string,
+      _timeBudgetMinutesPerDay: number,
+      _moves: RescheduleMove[],
+    ): Promise<Quest[]> {
+      throw new Error('saveConfirmedRescheduleMoves not implemented (#14)');
     },
 
     async findByIdForUser(userId: number, id: number): Promise<Quest | null> {

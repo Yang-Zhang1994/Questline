@@ -8,6 +8,7 @@ import {
   type InterviewTopic,
   type MilestonePlanAiResponse,
   type QuestGenerationAiResponse,
+  type RescheduleAiResponse,
   type WeekPlanAiResponse,
 } from '@questline/shared';
 import {
@@ -40,10 +41,12 @@ import {
   MOCHI_QUESTS_SYSTEM_PROMPT,
   MOCHI_WEEK_PLAN_SYSTEM_PROMPT,
   buildDefaultQuestProposal,
+  buildDefaultRescheduleProposal,
   buildDefaultWeekPlanProposal,
   buildQuestGenerationUserPayload,
   buildWeekPlanUserPayload,
   type QuestGenerationAiRequest,
+  type RescheduleAiRequest,
   type WeekPlanAiRequest,
 } from './prompts/mochiQuests.js';
 import {
@@ -79,6 +82,7 @@ export type ChatAiClient = {
   proposeMilestones?(input: MilestonePlanAiRequest): Promise<MilestonePlanAiResponse>;
   generateDailyQuests?(input: QuestGenerationAiRequest): Promise<QuestGenerationAiResponse>;
   proposeWeekPlan?(input: WeekPlanAiRequest): Promise<WeekPlanAiResponse>;
+  proposeReschedule?(input: RescheduleAiRequest): Promise<RescheduleAiResponse>;
 };
 
 function normalizeGoalDraft(raw: GoalDraft, answers: ProposeGoalDraftRequest['answers']): GoalDraft {
@@ -260,6 +264,10 @@ export function createEchoChatClient(): ChatAiClient {
 
     async proposeWeekPlan(input: WeekPlanAiRequest): Promise<WeekPlanAiResponse> {
       return buildDefaultWeekPlanProposal(input);
+    },
+
+    async proposeReschedule(input: RescheduleAiRequest): Promise<RescheduleAiResponse> {
+      return buildDefaultRescheduleProposal(input);
     },
   };
 }
@@ -514,6 +522,10 @@ export function createClaudeClient(options: CreateClaudeClientOptions = {}): Cha
       }
       return parsed;
     },
+
+    async proposeReschedule(_input: RescheduleAiRequest): Promise<RescheduleAiResponse> {
+      throw new Error('createClaudeClient.proposeReschedule not implemented (#14)');
+    },
   };
 }
 
@@ -558,6 +570,8 @@ export type {
   MilestonePlanAiResponse,
   QuestGenerationAiRequest,
   QuestGenerationAiResponse,
+  RescheduleAiRequest,
+  RescheduleAiResponse,
   WeekPlanAiRequest,
   WeekPlanAiResponse,
 };

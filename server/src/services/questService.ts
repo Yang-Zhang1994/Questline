@@ -3,10 +3,13 @@ import {
   WeekPlanAiResponseSchema,
   createQuestProposalListSchema,
   type ChatMessage,
+  type ConfirmRescheduleResponse,
   type ConfirmWeekPlanResponse,
   type CurrentMilestoneQuestsResponse,
+  type ProposeRescheduleResponse,
   type ProposeWeekPlanResponse,
   type ProposedQuest,
+  type RescheduleMove,
   type StageReadySummary,
   type StampCard,
   type ToggleQuestCompletionResponse,
@@ -50,6 +53,17 @@ export type ProposeWeekPlanOptions = {
 export type ConfirmWeekPlanOptions = {
   local_date?: string;
   quests: ProposedQuest[];
+};
+
+export type ProposeRescheduleOptions = {
+  local_date?: string;
+  feedback?: string;
+  current_draft?: RescheduleMove[];
+};
+
+export type ConfirmRescheduleOptions = {
+  local_date?: string;
+  moves: RescheduleMove[];
 };
 
 function toClaudeHistory(messages: ChatMessage[]): ClaudeChatTurn[] {
@@ -573,12 +587,28 @@ export function createQuestService(deps: QuestServiceDeps) {
     };
   }
 
+  async function proposeReschedule(
+    _userId: number,
+    _options: ProposeRescheduleOptions = {},
+  ): Promise<ProposeRescheduleResponse> {
+    throw new Error('proposeReschedule not implemented (#14)');
+  }
+
+  async function confirmReschedule(
+    _userId: number,
+    _options: ConfirmRescheduleOptions,
+  ): Promise<ConfirmRescheduleResponse> {
+    throw new Error('confirmReschedule not implemented (#14)');
+  }
+
   return {
     getCurrentMilestoneQuests,
     generateCurrentMilestoneQuests,
     toggleQuestCompletion,
     proposeWeekPlan,
     confirmWeekPlan,
+    proposeReschedule,
+    confirmReschedule,
   };
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { Milestone, ProposedQuest, Quest, RoadmapGoal } from '@questline/shared';
+import type { Milestone, ProposedQuest, Quest, RescheduleMove, RoadmapGoal } from '@questline/shared';
 import { createClaudeClient, createEchoChatClient, type ChatAiClient } from '../ai/client.js';
 import type { Clock } from '../clock.js';
 import {
@@ -215,6 +215,76 @@ describe('questService (Issue #7)', () => {
           (a, b) => a.due_date.localeCompare(b.due_date) || a.id - b.id,
         );
       },
+      async saveConfirmedRescheduleMoves(
+        userId: number,
+        milestoneId: number,
+        today: string,
+        windowStart: string,
+        windowEnd: string,
+        timeBudgetMinutesPerDay: number,
+        moves: RescheduleMove[],
+      ) {
+        if (userId !== 1 || !milestoneForUser1 || milestoneForUser1.id !== milestoneId) {
+          throw new AppError('NOT_FOUND', 'No current milestone found for active goal.', 404);
+        }
+        const seenIds = new Set<number>();
+        const moveById = new Map<number, RescheduleMove>();
+        for (const m of moves) {
+          if (seenIds.has(m.quest_id)) {
+            throw new AppError('VALIDATION_ERROR', 'Duplicate quest_id in moves.', 400);
+          }
+          seenIds.add(m.quest_id);
+          moveById.set(m.quest_id, m);
+          const row = savedRows.find((q) => q.id === m.quest_id);
+          if (!row) {
+            throw new AppError(
+              'CONFLICT',
+              'One of those quests was updated or removed — let Mochi take a fresh peek first ♡',
+              409,
+            );
+          }
+          if (row.completed_at !== null || row.due_date >= today || row.due_date !== m.from_date) {
+            throw new AppError(
+              'CONFLICT',
+              'Some of your quests have already been checked off or moved — let Mochi refresh the schedule first ♡',
+              409,
+            );
+          }
+        }
+        const minutesByDate = new Map<string, number>();
+        for (const existing of savedRows) {
+          if (moveById.has(existing.id)) continue;
+          if (existing.due_date >= windowStart && existing.due_date <= windowEnd) {
+            minutesByDate.set(
+              existing.due_date,
+              (minutesByDate.get(existing.due_date) ?? 0) + (existing.estimated_minutes ?? 0),
+            );
+          }
+        }
+        for (const m of moves) {
+          const nextMins = (minutesByDate.get(m.to_date) ?? 0) + m.estimated_minutes;
+          if (nextMins > timeBudgetMinutesPerDay) {
+            throw new AppError(
+              'VALIDATION_ERROR',
+              `Total estimated_minutes on ${m.to_date} (${nextMins}) exceeds daily time budget (${timeBudgetMinutesPerDay})`,
+              400,
+            );
+          }
+          minutesByDate.set(m.to_date, nextMins);
+        }
+        for (const m of moves) {
+          const idx = savedRows.findIndex((q) => q.id === m.quest_id);
+          if (idx !== -1) {
+            savedRows[idx] = {
+              ...savedRows[idx],
+              due_date: m.to_date,
+            };
+          }
+        }
+        return [...savedRows].sort(
+          (a, b) => a.due_date.localeCompare(b.due_date) || a.id - b.id,
+        );
+      },
       async findByIdForUser(userId: number, id: number) {
         if (userId !== 1) return null;
         return savedRows.find((q) => q.id === id) ?? null;
@@ -371,6 +441,7 @@ describe('questService (Issue #7)', () => {
   function buildAi(
     generateDailyQuests?: ChatAiClient['generateDailyQuests'],
     proposeWeekPlan?: ChatAiClient['proposeWeekPlan'],
+    proposeReschedule?: ChatAiClient['proposeReschedule'],
   ): ChatAiClient {
     return {
       completeChat: vi.fn(),
@@ -379,6 +450,7 @@ describe('questService (Issue #7)', () => {
       reviseGoalDraft: vi.fn(),
       generateDailyQuests,
       proposeWeekPlan,
+      proposeReschedule,
     };
   }
 
@@ -1332,6 +1404,431 @@ describe('questService (Issue #7)', () => {
       expect(createMock).toHaveBeenCalledTimes(2);
       expect(response.mochi_message).toBe('Recovered week plan ♡');
       expect(response.quests).toHaveLength(1);
+    });
+  });
+
+  describe('proposeReschedule & confirmReschedule (Issue #14)', () => {
+    const GUILT_WORDS_REGEX = /\b(overdue|late|behind|failed|fail|failure)\b/i;
+
+    it('identifies only incomplete quests on the current milestone with due_date < local_date as needing rescheduling, and saves nothing before confirming', async () => {
+      const questsRepo = buildQuestRepo({
+        initialQuests: [
+          {
+            id: 1,
+            milestone_id: currentMilestone.id,
+            title: 'Earlier incomplete quest from Nov 8',
+            due_date: '2026-11-08',
+            estimated_minutes: 15,
+            completed_at: null,
+          },
+          {
+            id: 2,
+            milestone_id: currentMilestone.id,
+            title: 'Earlier completed quest from Nov 8 (must NOT be moved)',
+            due_date: '2026-11-08',
+            estimated_minutes: 10,
+            completed_at: '2026-11-08T12:00:00Z',
+          },
+          {
+            id: 3,
+            milestone_id: currentMilestone.id,
+            title: 'Today quest on Nov 10 (must NOT be treated as past-due)',
+            due_date: '2026-11-10',
+            estimated_minutes: 10,
+            completed_at: null,
+          },
+          {
+            id: 4,
+            milestone_id: currentMilestone.id,
+            title: 'Future quest on Nov 12',
+            due_date: '2026-11-12',
+            estimated_minutes: 15,
+            completed_at: null,
+          },
+        ],
+      });
+
+      const echo = createEchoChatClient();
+      const service = createQuestService({
+        quests: questsRepo,
+        progress: buildProgress(),
+        ai: echo,
+        clock,
+      });
+
+      const proposal = await service.proposeReschedule(1, { local_date: '2026-11-10' });
+
+      expect(proposal.overdue_quests.map((q) => q.id)).toEqual([1]);
+      expect(proposal.moves).toHaveLength(1);
+      expect(proposal.moves[0]).toMatchObject({
+        quest_id: 1,
+        title: 'Earlier incomplete quest from Nov 8',
+        from_date: '2026-11-08',
+        estimated_minutes: 15,
+      });
+      expect(proposal.moves[0].to_date >= '2026-11-10').toBe(true);
+      expect(proposal.mochi_message.content).not.toMatch(GUILT_WORDS_REGEX);
+
+      // Nothing saved before confirming
+      expect(questsRepo.savedRows.find((q) => q.id === 1)?.due_date).toBe('2026-11-08');
+    });
+
+    it('fits rescheduled quests around existing quests on each day within the daily time budget (defaulting to 30 when null)', async () => {
+      const goalNoBudget: RoadmapGoal = {
+        ...activeGoal,
+        time_budget_minutes_per_day: null, // defaults to 30
+      };
+      const questsRepo = buildQuestRepo({
+        goal: goalNoBudget,
+        initialQuests: [
+          {
+            id: 1,
+            milestone_id: currentMilestone.id,
+            title: 'Earlier 20m quest A',
+            due_date: '2026-11-08',
+            estimated_minutes: 20,
+            completed_at: null,
+          },
+          {
+            id: 2,
+            milestone_id: currentMilestone.id,
+            title: 'Earlier 15m quest B',
+            due_date: '2026-11-09',
+            estimated_minutes: 15,
+            completed_at: null,
+          },
+          {
+            id: 3,
+            milestone_id: currentMilestone.id,
+            title: 'Already on today (2026-11-10) taking 15m',
+            due_date: '2026-11-10',
+            estimated_minutes: 15,
+            completed_at: null,
+          },
+        ],
+      });
+
+      const echo = createEchoChatClient();
+      const service = createQuestService({
+        quests: questsRepo,
+        progress: buildProgress(),
+        ai: echo,
+        clock,
+      });
+
+      const proposal = await service.proposeReschedule(1, { local_date: '2026-11-10' });
+      expect(proposal.time_budget_minutes_per_day).toBe(30);
+      expect(proposal.moves).toHaveLength(2);
+
+      // Verify every day's total (existing + moved) is <= 30
+      const totalsByDate = new Map<string, number>();
+      totalsByDate.set('2026-11-10', 15);
+      for (const m of proposal.moves) {
+        totalsByDate.set(m.to_date, (totalsByDate.get(m.to_date) ?? 0) + m.estimated_minutes);
+      }
+      for (const total of totalsByDate.values()) {
+        expect(total).toBeLessThanOrEqual(30);
+      }
+
+      // Rejects AI or confirm moves that push a day over budget
+      await expect(
+        service.confirmReschedule(1, {
+          local_date: '2026-11-10',
+          moves: [
+            {
+              quest_id: 1,
+              title: 'Earlier 20m quest A',
+              from_date: '2026-11-08',
+              to_date: '2026-11-10', // 15 existing + 20 moved = 35 > 30
+              estimated_minutes: 20,
+            },
+          ],
+        }),
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_ERROR',
+        status: 400,
+      } satisfies Partial<AppError>);
+    });
+
+    it('respects the milestone target_date when in the future, and uses the full 7-day window when target_date has already passed (#7 / #15 rule)', async () => {
+      const echo = createEchoChatClient();
+
+      // 1. Target date is 2026-11-12 (within 7 days of 2026-11-10) -> window ends at 2026-11-12
+      const soonMilestone: Milestone = {
+        ...currentMilestone,
+        target_date: '2026-11-12',
+      };
+      const soonRepo = buildQuestRepo({
+        milestone: soonMilestone,
+        initialQuests: [
+          {
+            id: 1,
+            milestone_id: soonMilestone.id,
+            title: 'Earlier quest 1',
+            due_date: '2026-11-08',
+            estimated_minutes: 15,
+            completed_at: null,
+          },
+        ],
+      });
+      const soonService = createQuestService({
+        quests: soonRepo,
+        progress: buildProgress(),
+        ai: echo,
+        clock,
+      });
+
+      const soonProposal = await soonService.proposeReschedule(1, { local_date: '2026-11-10' });
+      expect(soonProposal.window_start).toBe('2026-11-10');
+      expect(soonProposal.window_end).toBe('2026-11-12');
+      for (const m of soonProposal.moves) {
+        expect(m.to_date >= '2026-11-10' && m.to_date <= '2026-11-12').toBe(true);
+      }
+
+      // 2. Target date has already passed (2026-11-05 < 2026-11-10) -> full 7-day window 2026-11-10..2026-11-16
+      const passedMilestone: Milestone = {
+        ...currentMilestone,
+        target_date: '2026-11-05',
+      };
+      const passedRepo = buildQuestRepo({
+        milestone: passedMilestone,
+        initialQuests: [
+          {
+            id: 1,
+            milestone_id: passedMilestone.id,
+            title: 'Earlier quest A',
+            due_date: '2026-11-03',
+            estimated_minutes: 25,
+            completed_at: null,
+          },
+          {
+            id: 2,
+            milestone_id: passedMilestone.id,
+            title: 'Earlier quest B',
+            due_date: '2026-11-04',
+            estimated_minutes: 25,
+            completed_at: null,
+          },
+        ],
+      });
+      const passedService = createQuestService({
+        quests: passedRepo,
+        progress: buildProgress(),
+        ai: echo,
+        clock,
+      });
+
+      const passedProposal = await passedService.proposeReschedule(1, {
+        local_date: '2026-11-10',
+      });
+      expect(passedProposal.window_start).toBe('2026-11-10');
+      expect(passedProposal.window_end).toBe('2026-11-16');
+      expect(passedProposal.moves).toHaveLength(2);
+    });
+
+    it('allows a partial reschedule when overdue quests exceed the available capacity in the window, leaving the rest unchanged and mentioning it kindly without guilt words', async () => {
+      // Milestone target_date is 2026-11-11 (2-day window: 2026-11-10 and 2026-11-11, budget 25 min/day = 50 min total capacity)
+      const tightMilestone: Milestone = {
+        ...currentMilestone,
+        target_date: '2026-11-11',
+      };
+      const questsRepo = buildQuestRepo({
+        milestone: tightMilestone,
+        initialQuests: [
+          {
+            id: 1,
+            milestone_id: tightMilestone.id,
+            title: 'Earlier quest 1 (20m)',
+            due_date: '2026-11-06',
+            estimated_minutes: 20,
+            completed_at: null,
+          },
+          {
+            id: 2,
+            milestone_id: tightMilestone.id,
+            title: 'Earlier quest 2 (20m)',
+            due_date: '2026-11-07',
+            estimated_minutes: 20,
+            completed_at: null,
+          },
+          {
+            id: 3,
+            milestone_id: tightMilestone.id,
+            title: 'Earlier quest 3 (20m — exceeds 2-day capacity)',
+            due_date: '2026-11-08',
+            estimated_minutes: 20,
+            completed_at: null,
+          },
+        ],
+      });
+
+      const echo = createEchoChatClient();
+      const service = createQuestService({
+        quests: questsRepo,
+        progress: buildProgress(),
+        ai: echo,
+        clock,
+      });
+
+      const proposal = await service.proposeReschedule(1, { local_date: '2026-11-10' });
+      expect(proposal.overdue_quests).toHaveLength(3);
+      // Only 2 of the 20m quests fit in the 2-day 25m/day window
+      expect(proposal.moves).toHaveLength(2);
+      expect(proposal.moves.map((m) => m.quest_id)).toEqual([1, 2]);
+      expect(proposal.mochi_message.content).not.toMatch(GUILT_WORDS_REGEX);
+
+      const confirmed = await service.confirmReschedule(1, {
+        local_date: '2026-11-10',
+        moves: proposal.moves,
+      });
+
+      // Quest 1 and 2 were moved; Quest 3 was left unchanged at 2026-11-08
+      expect(confirmed.quests.find((q) => q.id === 1)?.due_date).toBe('2026-11-10');
+      expect(confirmed.quests.find((q) => q.id === 2)?.due_date).toBe('2026-11-11');
+      expect(confirmed.quests.find((q) => q.id === 3)?.due_date).toBe('2026-11-08');
+    });
+
+    it('rejects a stale or completed quest on confirm, rejects a double confirm, and does not change check-off, stamps, completed_local_date, or XP', async () => {
+      const questsRepo = buildQuestRepo({
+        initialQuests: [
+          {
+            id: 1,
+            milestone_id: currentMilestone.id,
+            title: 'Earlier quest to move',
+            due_date: '2026-11-08',
+            estimated_minutes: 15,
+            completed_at: null,
+          },
+          {
+            id: 2,
+            milestone_id: currentMilestone.id,
+            title: 'Already completed quest',
+            due_date: '2026-11-09',
+            estimated_minutes: 10,
+            completed_at: '2026-11-09T18:00:00Z',
+          },
+        ],
+      });
+      const progress = buildProgress(20, [{ card_number: 1, stamp_date: '2026-11-09' }]);
+      const echo = createEchoChatClient();
+      const service = createQuestService({
+        quests: questsRepo,
+        progress,
+        ai: echo,
+        clock,
+      });
+
+      const proposal = await service.proposeReschedule(1, { local_date: '2026-11-10' });
+      expect(proposal.moves).toHaveLength(1);
+
+      // 1. Confirm succeeds and updates only due_date
+      const confirmed = await service.confirmReschedule(1, {
+        local_date: '2026-11-10',
+        moves: proposal.moves,
+      });
+      expect(confirmed.quests.find((q) => q.id === 1)?.due_date).toBe('2026-11-10');
+      expect(confirmed.quests.find((q) => q.id === 1)?.completed_at).toBeNull();
+      expect(confirmed.quests.find((q) => q.id === 2)?.completed_at).toBe('2026-11-09T18:00:00Z');
+      expect(progress.xp).toBe(20);
+      expect(progress.stamps).toEqual([{ card_number: 1, stamp_date: '2026-11-09' }]);
+
+      // 2. Double confirm of the same moves is rejected because quest 1 is no longer at from_date
+      await expect(
+        service.confirmReschedule(1, {
+          local_date: '2026-11-10',
+          moves: proposal.moves,
+        }),
+      ).rejects.toMatchObject({
+        code: 'CONFLICT',
+        status: 409,
+      } satisfies Partial<AppError>);
+
+      // 3. If a quest is completed after preview and before confirm, confirm rejects it
+      questsRepo.savedRows[0].due_date = '2026-11-08';
+      const secondProposal = await service.proposeReschedule(1, { local_date: '2026-11-10' });
+      questsRepo.savedRows[0].completed_at = '2026-11-10T15:00:00Z';
+
+      await expect(
+        service.confirmReschedule(1, {
+          local_date: '2026-11-10',
+          moves: secondProposal.moves,
+        }),
+      ).rejects.toMatchObject({
+        status: 409,
+      } satisfies Partial<AppError>);
+    });
+
+    it('rejects another user’s quests and ensures echo client messages never contain guilt words', async () => {
+      const questsRepo = buildQuestRepo({
+        initialQuests: [
+          {
+            id: 1,
+            milestone_id: currentMilestone.id,
+            title: 'User 1 past quest',
+            due_date: '2026-11-08',
+            estimated_minutes: 15,
+            completed_at: null,
+          },
+        ],
+      });
+      const echo = createEchoChatClient();
+      const service = createQuestService({
+        quests: questsRepo,
+        progress: buildProgress(),
+        ai: echo,
+        clock,
+      });
+
+      // User 2 cannot propose or confirm for User 1's quests
+      await expect(service.proposeReschedule(2, { local_date: '2026-11-10' })).rejects.toMatchObject(
+        {
+          code: 'NOT_FOUND',
+          status: 404,
+        } satisfies Partial<AppError>,
+      );
+
+      await expect(
+        service.confirmReschedule(2, {
+          local_date: '2026-11-10',
+          moves: [
+            {
+              quest_id: 1,
+              title: 'User 1 past quest',
+              from_date: '2026-11-08',
+              to_date: '2026-11-10',
+              estimated_minutes: 15,
+            },
+          ],
+        }),
+      ).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+        status: 404,
+      } satisfies Partial<AppError>);
+
+      // Echo client messages contain no guilt words across initial proposal, feedback adjustment, and partial reschedule
+      const initialRes = await echo.proposeReschedule!({
+        goal: activeGoal,
+        milestone: currentMilestone,
+        windowStart: '2026-11-10',
+        windowEnd: '2026-11-16',
+        timeBudgetMinutesPerDay: 25,
+        overdueQuests: questsRepo.savedRows,
+        existingQuests: questsRepo.savedRows,
+      });
+      expect(initialRes.mochi_message).not.toMatch(GUILT_WORDS_REGEX);
+
+      const adjustedRes = await echo.proposeReschedule!({
+        goal: activeGoal,
+        milestone: currentMilestone,
+        windowStart: '2026-11-10',
+        windowEnd: '2026-11-16',
+        timeBudgetMinutesPerDay: 25,
+        overdueQuests: questsRepo.savedRows,
+        existingQuests: questsRepo.savedRows,
+        current_draft: initialRes.moves,
+        feedback: 'Move it a day later please',
+      });
+      expect(adjustedRes.mochi_message).not.toMatch(GUILT_WORDS_REGEX);
     });
   });
 });

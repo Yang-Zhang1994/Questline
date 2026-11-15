@@ -6,6 +6,8 @@ import {
   type ProposedQuest,
   type Quest,
   type QuestGenerationAiResponse,
+  type RescheduleAiResponse,
+  type RescheduleMove,
   type RoadmapGoal,
   type WeekPlanAiResponse,
 } from '@questline/shared';
@@ -28,6 +30,19 @@ export type WeekPlanAiRequest = {
   existingQuests: Quest[];
   history?: ClaudeChatTurn[];
   current_draft?: ProposedQuest[];
+  feedback?: string;
+};
+
+export type RescheduleAiRequest = {
+  goal: RoadmapGoal;
+  milestone: Milestone;
+  windowStart: string;
+  windowEnd: string;
+  timeBudgetMinutesPerDay: number;
+  overdueQuests: Quest[];
+  existingQuests: Quest[];
+  history?: ClaudeChatTurn[];
+  current_draft?: RescheduleMove[];
   feedback?: string;
 };
 
@@ -401,4 +416,17 @@ export function buildDefaultWeekPlanProposal(
     mochi_message: `Here is a cozy week plan for "${stageTitle}" from ${input.windowStart} to ${input.windowEnd}, shaped around what you've already finished and your ${budget} min/day budget ♡`,
     quests,
   };
+}
+
+/** Stubs for Phase 2 TDD — Issue #14. */
+export const MOCHI_RESCHEDULE_SYSTEM_PROMPT = '';
+
+export function buildRescheduleUserPayload(_input: RescheduleAiRequest): string {
+  throw new Error('buildRescheduleUserPayload not implemented (#14)');
+}
+
+export function buildDefaultRescheduleProposal(
+  _input: RescheduleAiRequest,
+): RescheduleAiResponse {
+  throw new Error('buildDefaultRescheduleProposal not implemented (#14)');
 }
