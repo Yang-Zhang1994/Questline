@@ -102,7 +102,14 @@ export function createApp(options: CreateAppOptions) {
           }
           return cached.proposeWeekPlan(input);
         },
-      };
+        async proposeReschedule(input) {
+          cached ??= createClaudeClient();
+          if (!cached.proposeReschedule) {
+            throw new Error('Reschedule proposal is not configured on AI client');
+          }
+          return cached.proposeReschedule(input);
+        },
+      } satisfies Required<ChatAiClient>;
     })();
   const chatService = createChatService({ chat, interviews, ai, clock });
   const goalService = createGoalService({
