@@ -6,13 +6,8 @@ import {
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../app.js';
-import type { Clock } from '../clock.js';
 import { openDatabase, resetDatabase, type Db } from '../db/connection.js';
 import { DEMO_EMAIL, DEMO_PASSWORD, seedDemoDataIfEmpty } from '../db/seed.js';
-
-function fixedClock(iso: string): Clock {
-  return { now: () => new Date(iso) };
-}
 
 async function loginAsDemo(app: ReturnType<typeof createApp>): Promise<string> {
   const res = await request(app)

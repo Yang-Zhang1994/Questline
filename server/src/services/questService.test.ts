@@ -402,6 +402,126 @@ describe('questService (Issue #7)', () => {
           completedCardNumber,
         };
       },
+      async findMilestoneForActiveGoal(userId: number, milestoneId: number) {
+        if (
+          userId !== 1 ||
+          !goalForUser1 ||
+          goalForUser1.status !== 'active' ||
+          !milestoneForUser1 ||
+          milestoneForUser1.id !== milestoneId
+        ) {
+          return null;
+        }
+        return {
+          milestone: {
+            ...milestoneForUser1,
+            total_quests: savedRows.length,
+            done_quests: savedRows.filter((q) => q.completed_at !== null).length,
+          },
+          time_budget_minutes_per_day: goalForUser1.time_budget_minutes_per_day ?? null,
+        };
+      },
+      async createManualQuestForActiveGoal(
+        userId: number,
+        milestoneId: number,
+        title: string,
+        dueDate: string,
+        estimatedMinutes: number | null,
+      ) {
+        if (
+          userId !== 1 ||
+          !goalForUser1 ||
+          goalForUser1.status !== 'active' ||
+          !milestoneForUser1 ||
+          milestoneForUser1.id !== milestoneId
+        ) {
+          return null;
+        }
+        const quest: Quest = {
+          id: nextId++,
+          milestone_id: milestoneId,
+          title,
+          due_date: dueDate,
+          estimated_minutes: estimatedMinutes,
+          completed_at: null,
+        };
+        savedRows.push(quest);
+        const dailyMinutesOnDueDate = savedRows
+          .filter((q) => q.due_date === dueDate)
+          .reduce((sum, q) => sum + (q.estimated_minutes ?? 0), 0);
+        return {
+          quest,
+          dailyMinutesOnDueDate,
+          timeBudgetMinutesPerDay: goalForUser1.time_budget_minutes_per_day ?? null,
+        };
+      },
+      async deleteQuestWithXpReverse(userId: number, questId: number, xpToReverse: number) {
+        if (userId !== 1 || !goalForUser1 || goalForUser1.status !== 'active') {
+          return null;
+        }
+        const idx = savedRows.findIndex((q) => q.id === questId);
+        if (idx === -1) return null;
+        const [removed] = savedRows.splice(idx, 1);
+        const wasCompleted = removed.completed_at !== null;
+        const completedLocalDate = removed.completed_local_date ?? null;
+        const store = (globalThis as unknown as {
+          __xpStore?: {
+            xp: number;
+            current_streak: number;
+            best_streak: number;
+            last_active_date: string | null;
+            active_day_completions: number;
+            stamps: StampRowInput[];
+          };
+        }).__xpStore;
+        let nextXp = store?.xp ?? 0;
+        let streak = {
+          current_streak: store?.current_streak ?? 0,
+          best_streak: store?.best_streak ?? 0,
+          last_active_date: store?.last_active_date ?? null,
+        };
+        let activeDay = store?.active_day_completions ?? 0;
+        const stamps = store?.stamps ?? [];
+        if (wasCompleted) {
+          nextXp = Math.max(0, nextXp - xpToReverse);
+          if (completedLocalDate !== null) {
+            if (streak.last_active_date === completedLocalDate) {
+              activeDay = Math.max(0, activeDay - 1);
+              if (activeDay === 0) {
+                streak = revertActiveDay(streak, completedLocalDate);
+              }
+            }
+            const remaining = savedRows.filter(
+              (q) => q.completed_at !== null && q.completed_local_date === completedLocalDate,
+            );
+            if (remaining.length === 0) {
+              const sIdx = stamps.findIndex((s) => s.stamp_date === completedLocalDate);
+              if (sIdx !== -1) stamps.splice(sIdx, 1);
+            }
+          }
+          if (store) {
+            store.xp = nextXp;
+            store.current_streak = streak.current_streak;
+            store.best_streak = streak.best_streak;
+            store.last_active_date = streak.last_active_date;
+            store.active_day_completions = activeDay;
+            store.stamps = stamps;
+          }
+        }
+        return {
+          quest: {
+            id: removed.id,
+            milestone_id: removed.milestone_id,
+            title: removed.title,
+            due_date: removed.due_date,
+            estimated_minutes: removed.estimated_minutes,
+            completed_at: removed.completed_at,
+          },
+          xpReversed: wasCompleted,
+          progress: progressSnapshotFromXp(nextXp, streak),
+          stampCard: buildStampCardSnapshot(stamps),
+        };
+      },
     };
   }
 

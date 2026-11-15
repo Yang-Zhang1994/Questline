@@ -2,6 +2,7 @@ import {
   QuestGenerationAiResponseSchema,
   RescheduleAiResponseSchema,
   WeekPlanAiResponseSchema,
+  createManualQuestBodySchema,
   createQuestProposalListSchema,
   createRescheduleMovesSchema,
   type ChatMessage,
@@ -846,25 +847,93 @@ export function createQuestService(deps: QuestServiceDeps) {
   }
 
   async function listMilestoneQuests(
-    _userId: number,
-    _milestoneId: number,
+    userId: number,
+    milestoneId: number,
   ): Promise<MilestoneQuestsResponse> {
-    throw new Error('Not implemented: listMilestoneQuests');
+    const found = await deps.quests.findMilestoneForActiveGoal(userId, milestoneId);
+    if (!found) {
+      throw notFound('Milestone not found for your active goal.');
+    }
+    const quests = await deps.quests.listForMilestone(userId, milestoneId);
+    const doneCount = quests.filter((q) => q.completed_at !== null).length;
+    const budget =
+      found.time_budget_minutes_per_day && found.time_budget_minutes_per_day > 0
+        ? found.time_budget_minutes_per_day
+        : DEFAULT_TIME_BUDGET_MINUTES;
+
+    return {
+      milestone: {
+        id: found.milestone.id,
+        title: found.milestone.title,
+        description: found.milestone.description,
+        target_date: found.milestone.target_date,
+        status: found.milestone.status,
+        position: found.milestone.position,
+        time_budget_minutes_per_day: budget,
+      },
+      quests,
+      done_count: doneCount,
+      total_count: quests.length,
+    };
   }
 
   async function createManualQuest(
-    _userId: number,
-    _input: CreateQuestBody,
+    userId: number,
+    input: CreateQuestBody,
   ): Promise<CreateQuestResponse> {
-    throw new Error('Not implemented: createManualQuest');
+    const today = resolveClientLocalDate(input.local_date, deps.clock);
+    const schema = createManualQuestBodySchema(today);
+    const parsed = schema.safeParse(input);
+    if (!parsed.success) {
+      const firstMessage = parsed.error.issues[0]?.message ?? 'Invalid quest details';
+      throw validationError(firstMessage);
+    }
+
+    const created = await deps.quests.createManualQuestForActiveGoal(
+      userId,
+      parsed.data.milestone_id,
+      parsed.data.title,
+      parsed.data.due_date,
+      parsed.data.estimated_minutes ?? null,
+    );
+    if (!created) {
+      throw notFound('Milestone not found for your active goal.');
+    }
+
+    const timeBudgetMinutesPerDay =
+      created.timeBudgetMinutesPerDay && created.timeBudgetMinutesPerDay > 0
+        ? created.timeBudgetMinutesPerDay
+        : DEFAULT_TIME_BUDGET_MINUTES;
+    const overDailyBudget = created.dailyMinutesOnDueDate > timeBudgetMinutesPerDay;
+
+    return {
+      quest: created.quest,
+      daily_minutes_on_due_date: created.dailyMinutesOnDueDate,
+      time_budget_minutes_per_day: timeBudgetMinutesPerDay,
+      over_daily_budget: overDailyBudget,
+    };
   }
 
   async function deleteQuest(
-    _userId: number,
-    _questId: number,
-    _localDate?: string,
+    userId: number,
+    questId: number,
+    localDate?: string,
   ): Promise<DeleteQuestResponse> {
-    throw new Error('Not implemented: deleteQuest');
+    // Validate client local_date within ±1 day if provided
+    resolveClientLocalDate(localDate, deps.clock);
+
+    const deleted = await deps.quests.deleteQuestWithXpReverse(userId, questId, XP_PER_QUEST);
+    if (!deleted) {
+      throw notFound('Quest not found for your active goal.');
+    }
+
+    return {
+      ok: true,
+      quest: deleted.quest,
+      xp_reversed: deleted.xpReversed,
+      progress: deleted.progress,
+      stamp_card: deleted.stampCard,
+    };
   }
 
   return {
