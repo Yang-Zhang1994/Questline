@@ -5,12 +5,14 @@ import { DiaryNoteCard } from '../components/DiaryNoteCard/DiaryNoteCard';
 import { GoalCelebration } from '../components/GoalCelebration/GoalCelebration';
 import { GoalSelector } from '../components/GoalSelector/GoalSelector';
 import { LevelUpToast } from '../components/LevelUpToast/LevelUpToast';
+import { ReschedulePreview } from '../components/ReschedulePreview/ReschedulePreview';
 import { StageCompletePrompt } from '../components/StageCompletePrompt/StageCompletePrompt';
 import { StampCard } from '../components/StampCard/StampCard';
 import { StreakCounter } from '../components/StreakCounter/StreakCounter';
 import { XpBar } from '../components/XpBar/XpBar';
 import { useDiaryNote } from '../hooks/useDiaryNote';
 import { useGoals } from '../hooks/useGoals';
+import { useReschedule } from '../hooks/useReschedule';
 import { useStageAdvance } from '../hooks/useStageAdvance';
 import { useTodayQuests } from '../hooks/useTodayQuests';
 import { todayLocalDate } from '../lib/localDate';
@@ -28,6 +30,7 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
     milestone,
     todayDate,
     todayQuests,
+    earlierQuests,
     progress,
     stampCard,
     stageReady,
@@ -42,6 +45,10 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
     toggleQuest,
     reload,
   } = useTodayQuests();
+
+  const reschedule = useReschedule({
+    onConfirmed: reload,
+  });
 
   const {
     goals,
@@ -72,7 +79,7 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
     stageResult && !stageResult.goal_completed ? stageResult.mochi_message : null;
 
   return (
-    <div className="flex min-h-screen flex-col items-center px-4 pb-24 pt-6">
+    <div className="flex min-h-screen flex-col items-center px-4 pb-28 pt-6">
       <div
         className="pointer-events-none fixed inset-0 bg-sparkles opacity-70 animate-twinkle"
         aria-hidden="true"
@@ -140,6 +147,11 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
           milestone={milestone}
           todayDate={todayDate}
           todayQuests={todayQuests}
+          earlierQuests={earlierQuests}
+          rescheduling={reschedule.proposing}
+          onRescheduleRequest={() => {
+            void reschedule.propose();
+          }}
           error={error}
           pendingQuestIds={pendingQuestIds}
           toggleError={toggleError}
@@ -149,6 +161,26 @@ export function TodayPage({ userEmail = null, onLogout }: TodayPageProps) {
           onRetry={() => {
             void reload();
           }}
+        />
+
+        <ReschedulePreview
+          goal={reschedule.goal ?? goal}
+          milestone={reschedule.milestone ?? milestone}
+          windowStart={reschedule.windowStart}
+          windowEnd={reschedule.windowEnd}
+          timeBudgetMinutesPerDay={reschedule.timeBudgetMinutesPerDay}
+          overdueQuests={reschedule.overdueQuests}
+          existingQuests={reschedule.existingQuests}
+          draftMoves={reschedule.draftMoves}
+          mochiMessage={reschedule.mochiMessage}
+          proposing={reschedule.proposing}
+          confirming={reschedule.confirming}
+          confirmed={reschedule.confirmed}
+          error={reschedule.error}
+          onPropose={reschedule.propose}
+          onAdjust={reschedule.adjust}
+          onConfirm={reschedule.confirm}
+          onCancel={reschedule.reset}
         />
 
         {showStagePrompt && stageReadyMilestone ? (

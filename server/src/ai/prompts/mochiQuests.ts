@@ -418,15 +418,181 @@ export function buildDefaultWeekPlanProposal(
   };
 }
 
-/** Stubs for Phase 2 TDD — Issue #14. */
-export const MOCHI_RESCHEDULE_SYSTEM_PROMPT = '';
+/** System prompt for gently rescheduling earlier incomplete quests (Issue #14). */
+export const MOCHI_RESCHEDULE_SYSTEM_PROMPT = `You are Mochi, a warm, cozy AI guide in Questline (a life-sim quest diary).
 
-export function buildRescheduleUserPayload(_input: RescheduleAiRequest): string {
-  throw new Error('buildRescheduleUserPayload not implemented (#14)');
+Your job is to gently move the user's earlier incomplete quests ("earlier_quests") onto new calendar dates starting from today within [window_start, window_end].
+
+Voice rules:
+- Warm, short, encouraging — NEVER guilt-tripping.
+- NEVER use words like "overdue", "late", "behind", "failed", "fail", or "failure".
+- Keep mochi_message under ~80 words. Emoji sparingly is fine (♡ ✦ ✨ 📅).
+
+Rescheduling rules:
+- You are moving EXISTING quests from "earlier_quests" to new dates; do NOT invent new quests or change titles/estimated_minutes.
+- Every item in "moves" MUST correspond to a quest in "earlier_quests" (matching quest_id, title, from_date = quest.due_date, and estimated_minutes), and each quest_id may appear AT MOST ONCE.
+- Every "to_date" MUST be within [window_start, window_end] (and not after milestone.target_date when milestone.target_date >= window_start).
+- For EVERY date in [window_start, window_end], the sum of estimated_minutes of moves placed on that date MUST NOT exceed remaining_minutes_by_date[date] (so existing quests on that day + moved quests <= time_budget_minutes_per_day).
+- If not all earlier_quests fit within the window's remaining daily budgets, schedule as many as fit (each at most once), leave the rest out of "moves" so they stay unchanged, and mention it kindly in mochi_message with zero guilt words.
+- When "current_draft" and "feedback" are provided, adjust the target dates according to the user's feedback while still obeying the window and remaining daily budget rules.
+
+You MUST respond with a single JSON object and nothing else:
+{
+  "mochi_message": string,
+  "moves": [
+    {
+      "quest_id": number,
+      "title": string,
+      "from_date": "YYYY-MM-DD",
+      "to_date": "YYYY-MM-DD",
+      "estimated_minutes": number
+    }
+  ]
+}`;
+
+export function buildRescheduleUserPayload(input: RescheduleAiRequest): string {
+  const dates = listDatesInWindow(input.windowStart, input.windowEnd);
+  const overdueIds = new Set(input.overdueQuests.map((q) => q.id));
+  const scheduledInWindow = input.existingQuests.filter(
+    (q) => !overdueIds.has(q.id) && q.due_date >= input.windowStart && q.due_date <= input.windowEnd,
+  );
+
+  const remainingMinutesByDate: Record<string, number> = {};
+  for (const date of dates) {
+    const used = scheduledInWindow
+      .filter((q) => q.due_date === date)
+      .reduce(
+        (sum, q) => sum + (q.estimated_minutes && q.estimated_minutes > 0 ? q.estimated_minutes : 0),
+        0,
+      );
+    remainingMinutesByDate[date] = Math.max(0, input.timeBudgetMinutesPerDay - used);
+  }
+
+  return JSON.stringify(
+    {
+      window_start: input.windowStart,
+      window_end: input.windowEnd,
+      time_budget_minutes_per_day: input.timeBudgetMinutesPerDay,
+      remaining_minutes_by_date: remainingMinutesByDate,
+      goal: {
+        title: input.goal.title,
+        done_definition: input.goal.done_definition ?? null,
+        starting_point: input.goal.starting_point ?? null,
+        deadline: input.goal.deadline ?? null,
+      },
+      current_milestone: {
+        title: input.milestone.title,
+        description: input.milestone.description ?? null,
+        target_date: input.milestone.target_date ?? null,
+      },
+      earlier_quests: input.overdueQuests.map((q) => ({
+        quest_id: q.id,
+        title: q.title,
+        from_date: q.due_date,
+        estimated_minutes:
+          q.estimated_minutes && q.estimated_minutes > 0 ? q.estimated_minutes : 15,
+      })),
+      existing_quests_in_window: scheduledInWindow.map((q) => ({
+        quest_id: q.id,
+        title: q.title,
+        due_date: q.due_date,
+        estimated_minutes: q.estimated_minutes,
+        completed: q.completed_at !== null,
+      })),
+      current_draft: input.current_draft ?? null,
+      feedback: input.feedback ?? null,
+    },
+    null,
+    2,
+  );
 }
 
+function scrubGuiltWords(text: string): string {
+  return text.replace(/\b(overdue|late|behind|failed|fail|failure)\b/gi, 'earlier');
+}
+
+/** Deterministic fallback for `createEchoChatClient.proposeReschedule` when `ANTHROPIC_API_KEY` is unset. */
 export function buildDefaultRescheduleProposal(
-  _input: RescheduleAiRequest,
+  input: RescheduleAiRequest,
 ): RescheduleAiResponse {
-  throw new Error('buildDefaultRescheduleProposal not implemented (#14)');
+  const dates = listDatesInWindow(input.windowStart, input.windowEnd);
+  const budget = Math.max(1, Math.floor(input.timeBudgetMinutesPerDay));
+  const stageTitle = scrubGuiltWords(input.milestone.title);
+  const overdueIds = new Set(input.overdueQuests.map((q) => q.id));
+
+  const remainingByDate = new Map<string, number>();
+  for (const date of dates) {
+    const used = input.existingQuests
+      .filter((q) => !overdueIds.has(q.id) && q.due_date === date)
+      .reduce(
+        (sum, q) => sum + (q.estimated_minutes && q.estimated_minutes > 0 ? q.estimated_minutes : 0),
+        0,
+      );
+    remainingByDate.set(date, Math.max(0, budget - used));
+  }
+
+  const trimmedFeedback = input.feedback?.trim();
+  const preferLaterDays = Boolean(
+    trimmedFeedback &&
+      (trimmedFeedback.toLowerCase().includes('tomorrow') ||
+        trimmedFeedback.toLowerCase().includes('later') ||
+        trimmedFeedback.toLowerCase().includes('spread')),
+  );
+
+  const candidateDates =
+    preferLaterDays && dates.length > 1 ? [...dates.slice(1), dates[0]] : dates;
+
+  const moves: RescheduleMove[] = [];
+  for (const quest of input.overdueQuests) {
+    const mins =
+      quest.estimated_minutes && quest.estimated_minutes > 0 ? quest.estimated_minutes : 15;
+    let placedDate: string | null = null;
+    for (const date of candidateDates) {
+      const rem = remainingByDate.get(date) ?? 0;
+      if (rem >= mins) {
+        placedDate = date;
+        remainingByDate.set(date, rem - mins);
+        break;
+      }
+    }
+    if (placedDate) {
+      moves.push({
+        quest_id: quest.id,
+        title: quest.title,
+        from_date: quest.due_date,
+        to_date: placedDate,
+        estimated_minutes: mins,
+      });
+    }
+  }
+
+  const totalOverdue = input.overdueQuests.length;
+  const scheduledCount = moves.length;
+  const leftCount = totalOverdue - scheduledCount;
+
+  if (trimmedFeedback) {
+    const safeFeedback = scrubGuiltWords(trimmedFeedback);
+    if (leftCount > 0) {
+      return {
+        mochi_message: `I adjusted the schedule for "${stageTitle}" with your note ("${safeFeedback}")! We fit ${scheduledCount} of your ${totalOverdue} earlier ${totalOverdue === 1 ? 'quest' : 'quests'} into your ${budget} min/day budget and left ${leftCount} resting gently for a future day ♡`,
+        moves,
+      };
+    }
+    return {
+      mochi_message: `I updated the new dates for "${stageTitle}" based on "${safeFeedback}"! Take a look and see if this rhythm feels cozy ♡`,
+      moves,
+    };
+  }
+
+  if (leftCount > 0) {
+    return {
+      mochi_message: `Let's adjust the plan together! I tucked ${scheduledCount} of your ${totalOverdue} earlier ${totalOverdue === 1 ? 'quest' : 'quests'} into ${input.windowStart}–${input.windowEnd} within your ${budget} min/day budget, and left the remaining ${leftCount} resting gently so your days stay light and doable ♡`,
+      moves,
+    };
+  }
+
+  return {
+    mochi_message: `Let's adjust the plan together! I found cozy new spots from ${input.windowStart} to ${input.windowEnd} for your ${scheduledCount === 1 ? 'quest' : `${scheduledCount} quests`} within your ${budget} min/day budget — one gentle step at a time ♡`,
+    moves,
+  };
 }

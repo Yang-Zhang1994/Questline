@@ -892,11 +892,31 @@ describe('TodayPage (Issue #8)', () => {
       // Zero guilt words anywhere on the page
       expect(container.textContent ?? '').not.toMatch(GUILT_WORDS_REGEX);
 
-      // Click "Reschedule with Mochi" -> calls propose endpoint and shows preview
+      // Click "Reschedule with Mochi" -> calls propose endpoint, shows preview, scrolls into view, and moves focus to preview heading
+      const scrollIntoViewMock = vi.fn();
+      Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+        configurable: true,
+        writable: true,
+        value: scrollIntoViewMock,
+      });
+
       const rescheduleBtn = screen.getByRole('button', { name: /reschedule with mochi/i });
+      rescheduleBtn.focus();
+      expect(rescheduleBtn).toHaveFocus();
       fireEvent.click(rescheduleBtn);
 
       const preview = await screen.findByTestId('reschedule-preview');
+      const previewHeading = screen.getByRole('heading', {
+        name: /mochi's new schedule preview/i,
+      });
+      expect(previewHeading).toHaveFocus();
+      expect(preview.contains(document.activeElement)).toBe(true);
+      expect(scrollIntoViewMock).toHaveBeenCalledWith({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
+      expect(preview.className).toContain('scroll-mb-28');
+
       expect(preview).toHaveTextContent(/gently rearrange these 2 quests/i);
       expect(screen.getByTestId('reschedule-day-2026-11-11')).toHaveTextContent('2026-11-08');
       expect(screen.getByTestId('reschedule-day-2026-11-11')).toHaveTextContent('2026-11-11');

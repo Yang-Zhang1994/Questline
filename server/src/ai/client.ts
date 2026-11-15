@@ -2,9 +2,11 @@ import Anthropic from '@anthropic-ai/sdk';
 import {
   MilestonePlanAiResponseSchema,
   QuestGenerationAiResponseSchema,
+  RescheduleAiResponseSchema,
   WeekPlanAiResponseSchema,
   createMilestoneProposalListSchema,
   createQuestProposalListSchema,
+  createRescheduleMovesSchema,
   type InterviewTopic,
   type MilestonePlanAiResponse,
   type QuestGenerationAiResponse,
@@ -39,11 +41,13 @@ import {
 } from './prompts/mochiMilestones.js';
 import {
   MOCHI_QUESTS_SYSTEM_PROMPT,
+  MOCHI_RESCHEDULE_SYSTEM_PROMPT,
   MOCHI_WEEK_PLAN_SYSTEM_PROMPT,
   buildDefaultQuestProposal,
   buildDefaultRescheduleProposal,
   buildDefaultWeekPlanProposal,
   buildQuestGenerationUserPayload,
+  buildRescheduleUserPayload,
   buildWeekPlanUserPayload,
   type QuestGenerationAiRequest,
   type RescheduleAiRequest,
@@ -523,8 +527,52 @@ export function createClaudeClient(options: CreateClaudeClientOptions = {}): Cha
       return parsed;
     },
 
-    async proposeReschedule(_input: RescheduleAiRequest): Promise<RescheduleAiResponse> {
-      throw new Error('createClaudeClient.proposeReschedule not implemented (#14)');
+    async proposeReschedule(input: RescheduleAiRequest): Promise<RescheduleAiResponse> {
+      const payload = buildRescheduleUserPayload(input);
+      const messages: ClaudeChatTurn[] = [
+        ...(input.history ?? []),
+        {
+          role: 'user',
+          content: `Gently reschedule the earlier incomplete quests onto new dates in the window and reply with JSON only.\n${payload}`,
+        },
+      ];
+
+      const overdueIds = new Set(input.overdueQuests.map((q) => q.id));
+      const existingScheduledQuests = input.existingQuests.filter((q) => !overdueIds.has(q.id));
+
+      const schema = RescheduleAiResponseSchema.extend({
+        moves: createRescheduleMovesSchema({
+          windowStart: input.windowStart,
+          windowEnd: input.windowEnd,
+          milestoneTargetDate: input.milestone.target_date,
+          timeBudgetMinutesPerDay: input.timeBudgetMinutesPerDay,
+          overdueQuests: input.overdueQuests,
+          existingScheduledQuests,
+        }),
+      }) satisfies z.ZodType<RescheduleAiResponse>;
+
+      const first = await completeOnce(MOCHI_RESCHEDULE_SYSTEM_PROMPT, messages, 1024);
+      let parsed = parseModelJson(first, schema);
+      if (!parsed) {
+        const retry = await completeOnce(
+          MOCHI_RESCHEDULE_SYSTEM_PROMPT,
+          [
+            ...messages,
+            { role: 'assistant', content: first },
+            {
+              role: 'user',
+              content:
+                'Your previous reply was not valid JSON matching the reschedule schema (mochi_message with no guilt words + moves referencing valid earlier quest_ids at most once, with to_date within the window and daily total minutes within time_budget_minutes_per_day). Reply again with ONLY the JSON object.',
+            },
+          ],
+          1024,
+        );
+        parsed = parseModelJson(retry, schema);
+      }
+      if (!parsed) {
+        throw new Error('Claude reschedule proposal failed schema validation');
+      }
+      return parsed;
     },
   };
 }
@@ -542,6 +590,7 @@ export function createTemplateInterviewClient(
     proposeMilestones: echo.proposeMilestones,
     generateDailyQuests: echo.generateDailyQuests,
     proposeWeekPlan: echo.proposeWeekPlan,
+    proposeReschedule: echo.proposeReschedule,
     async evaluateInterviewAnswer(input) {
       const forced = decisions[i++];
       if (forced === 'vague') {

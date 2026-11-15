@@ -1,6 +1,8 @@
 import {
+  ConfirmRescheduleResponseSchema,
   ConfirmWeekPlanResponseSchema,
   CurrentMilestoneQuestsResponseSchema,
+  ProposeRescheduleResponseSchema,
   ProposeWeekPlanResponseSchema,
   ToggleQuestCompletionResponseSchema,
   type ConfirmRescheduleBody,
@@ -182,13 +184,59 @@ export async function confirmWeekPlan(
 }
 
 export async function proposeReschedule(
-  _options: ProposeRescheduleBody = {},
+  options: ProposeRescheduleBody = {},
 ): Promise<ProposeRescheduleResponse> {
-  throw new Error('proposeReschedule not implemented (#14)');
+  const res = await fetch('/api/quests/reschedule/propose', {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(options),
+  });
+  let body: unknown;
+  try {
+    body = await parseJson(res);
+  } catch {
+    throw new Error(FRIENDLY_RESCHEDULE_ERROR);
+  }
+  if (!res.ok) {
+    throw new ApiError(
+      errorMessage(body, FRIENDLY_RESCHEDULE_ERROR),
+      errorCode(body),
+      res.status,
+    );
+  }
+  const parsed = ProposeRescheduleResponseSchema.safeParse(body);
+  if (!parsed.success) {
+    console.error('Invalid proposeReschedule response payload:', parsed.error);
+    throw new Error(FRIENDLY_RESCHEDULE_ERROR);
+  }
+  return parsed.data;
 }
 
 export async function confirmReschedule(
-  _options: ConfirmRescheduleBody,
+  options: ConfirmRescheduleBody,
 ): Promise<ConfirmRescheduleResponse> {
-  throw new Error('confirmReschedule not implemented (#14)');
+  const res = await fetch('/api/quests/reschedule/confirm', {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(options),
+  });
+  let body: unknown;
+  try {
+    body = await parseJson(res);
+  } catch {
+    throw new Error(FRIENDLY_RESCHEDULE_ERROR);
+  }
+  if (!res.ok) {
+    throw new ApiError(
+      errorMessage(body, FRIENDLY_RESCHEDULE_ERROR),
+      errorCode(body),
+      res.status,
+    );
+  }
+  const parsed = ConfirmRescheduleResponseSchema.safeParse(body);
+  if (!parsed.success) {
+    console.error('Invalid confirmReschedule response payload:', parsed.error);
+    throw new Error(FRIENDLY_RESCHEDULE_ERROR);
+  }
+  return parsed.data;
 }

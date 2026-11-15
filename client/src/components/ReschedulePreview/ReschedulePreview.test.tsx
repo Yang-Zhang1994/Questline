@@ -156,4 +156,55 @@ describe('ReschedulePreview (Issue #14)', () => {
     await user.click(screen.getByTestId('accept-reschedule-button'));
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
+
+  it('scrolls smoothly into view and moves keyboard focus to its heading when the preview opens', () => {
+    const scrollIntoViewMock = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      writable: true,
+      value: scrollIntoViewMock,
+    });
+
+    const { rerender } = render(
+      <ReschedulePreview
+        goal={sampleGoal}
+        milestone={sampleMilestone}
+        draftMoves={null}
+        onPropose={vi.fn()}
+        onAdjust={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByTestId('reschedule-preview')).not.toBeInTheDocument();
+    expect(scrollIntoViewMock).not.toHaveBeenCalled();
+
+    rerender(
+      <ReschedulePreview
+        goal={sampleGoal}
+        milestone={sampleMilestone}
+        windowStart="2026-11-10"
+        windowEnd="2026-11-16"
+        timeBudgetMinutesPerDay={30}
+        overdueQuests={existingQuests.slice(0, 2)}
+        existingQuests={existingQuests}
+        draftMoves={sampleMoves}
+        mochiMessage="Here is a gentle new schedule for your quests ♡"
+        onPropose={vi.fn()}
+        onAdjust={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    );
+
+    const preview = screen.getByTestId('reschedule-preview');
+    const heading = screen.getByRole('heading', { name: /mochi's new schedule preview/i });
+
+    expect(heading).toHaveFocus();
+    expect(preview.contains(document.activeElement)).toBe(true);
+    expect(scrollIntoViewMock).toHaveBeenCalledWith({
+      behavior: 'smooth',
+      block: 'nearest',
+    });
+    expect(preview.className).toContain('scroll-mb-28');
+  });
 });

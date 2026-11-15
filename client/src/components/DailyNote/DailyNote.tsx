@@ -82,6 +82,7 @@ export type DailyNoteProps = {
 };
 
 const EMPTY_PENDING_IDS: ReadonlySet<number> = new Set();
+const EMPTY_EARLIER_QUESTS: Quest[] = [];
 
 export function DailyNote({
   status,
@@ -89,6 +90,9 @@ export function DailyNote({
   milestone,
   todayDate,
   todayQuests,
+  earlierQuests = EMPTY_EARLIER_QUESTS,
+  onRescheduleRequest,
+  rescheduling = false,
   error = null,
   onRetry,
   pendingQuestIds = EMPTY_PENDING_IDS,
@@ -281,6 +285,56 @@ export function DailyNote({
                       +{remainingCount} more {remainingCount === 1 ? 'quest' : 'quests'} due today
                     </p>
                   ) : null}
+                </div>
+              ) : null}
+
+              {earlierQuests.length > 0 ? (
+                <div
+                  data-testid="from-earlier-section"
+                  className="mt-3.5 rounded-[14px] border border-pink/30 bg-panel/90 px-3.5 py-3 text-left shadow-sm"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[0.8rem] font-bold uppercase tracking-wide text-ink-soft">
+                        From earlier
+                      </span>
+                      <span
+                        data-testid="from-earlier-count"
+                        className="rounded-pill bg-pink-pale px-2.5 py-0.5 text-[0.78rem] font-bold text-pink-ink"
+                      >
+                        {earlierQuests.length} {earlierQuests.length === 1 ? 'quest' : 'quests'}
+                      </span>
+                    </div>
+                    {onRescheduleRequest ? (
+                      <button
+                        type="button"
+                        data-testid="reschedule-with-mochi-button"
+                        onClick={onRescheduleRequest}
+                        disabled={rescheduling}
+                        className="rounded-pill bg-gel-pink px-3.5 py-1.5 text-[0.8rem] font-bold text-white shadow-sm hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {rescheduling ? 'Mochi is checking dates…' : '✨ Reschedule with Mochi'}
+                      </button>
+                    ) : null}
+                  </div>
+                  <p className="mt-1.5 mb-2 text-[0.83rem] text-ink-soft">
+                    Plans change! Want Mochi to tuck these gently into your upcoming days? ♡
+                  </p>
+                  <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+                    {earlierQuests.map((quest) => (
+                      <li
+                        key={quest.id}
+                        data-testid="earlier-quest-item"
+                        className="flex items-center justify-between gap-2 rounded-[10px] border border-pink/20 bg-pink-pale/50 px-3 py-1.5 text-[0.84rem] text-ink"
+                      >
+                        <span className="min-w-0 flex-1 font-bold">{quest.title}</span>
+                        <span className="shrink-0 text-[0.76rem] text-ink-soft">
+                          {quest.due_date}
+                          {quest.estimated_minutes != null ? ` · ~${quest.estimated_minutes} min` : ''}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               ) : null}
             </div>

@@ -1,6 +1,8 @@
 import {
+  ConfirmRescheduleBodySchema,
   ConfirmWeekPlanBodySchema,
   IsoDateSchema,
+  ProposeRescheduleBodySchema,
   ProposeWeekPlanBodySchema,
   ToggleQuestCompletionBodySchema,
 } from '@questline/shared';
@@ -95,6 +97,41 @@ export function createQuestsRouter(questService: QuestService): Router {
         quests: body.quests,
       });
       res.status(201).json(payload);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/reschedule/propose', questGenerateLimiter, async (req, res, next) => {
+    try {
+      const user = getRequestUser(req);
+      if (!user) {
+        throw unauthorized();
+      }
+      const body = ProposeRescheduleBodySchema.parse(req.body ?? {});
+      const payload = await questService.proposeReschedule(user.id, {
+        local_date: body.local_date,
+        feedback: body.feedback,
+        current_draft: body.current_draft,
+      });
+      res.status(200).json(payload);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/reschedule/confirm', questGenerateLimiter, async (req, res, next) => {
+    try {
+      const user = getRequestUser(req);
+      if (!user) {
+        throw unauthorized();
+      }
+      const body = ConfirmRescheduleBodySchema.parse(req.body);
+      const payload = await questService.confirmReschedule(user.id, {
+        local_date: body.local_date,
+        moves: body.moves,
+      });
+      res.status(200).json(payload);
     } catch (err) {
       next(err);
     }

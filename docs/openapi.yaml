@@ -450,102 +450,47 @@ paths:
         '401':
           $ref: '#/components/responses/UnauthorizedError'
 
-  /api/quests/reschedule:
-    get:
-      tags: [Quests]
-      summary: Load reschedule draft + overdue list
-      operationId: getReschedulePlan
-      parameters:
-        - $ref: '#/components/parameters/LocalDateQuery'
-      responses:
-        '200':
-          description: Reschedule snapshot
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RescheduleResponse'
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
+  /api/quests/reschedule/propose:
     post:
       tags: [Quests]
-      summary: Propose reschedule draft (no due_date writes)
+      summary: Propose or adjust a reschedule draft for incomplete earlier quests on the current milestone (no quest row writes)
       operationId: proposeReschedule
-      parameters:
-        - $ref: '#/components/parameters/LocalDateQuery'
       requestBody:
         required: false
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                local_date:
-                  $ref: '#/components/schemas/IsoDate'
+              $ref: '#/components/schemas/ProposeRescheduleBody'
       responses:
         '200':
-          description: No new draft needed
+          description: Proposed or adjusted reschedule draft
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RescheduleResponse'
-        '201':
-          description: Draft stored on `goals.reschedule_draft`
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RescheduleResponse'
+                $ref: '#/components/schemas/ProposeRescheduleResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
-        '503':
-          $ref: '#/components/responses/AiUnavailableError'
-
-  /api/quests/reschedule/revise:
-    post:
-      tags: [Quests]
-      summary: Revise reschedule draft
-      operationId: reviseReschedule
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              allOf:
-                - $ref: '#/components/schemas/FeedbackBody'
-                - type: object
-                  properties:
-                    local_date:
-                      $ref: '#/components/schemas/IsoDate'
-      responses:
-        '200':
-          description: Updated draft
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RescheduleResponse'
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
         '503':
           $ref: '#/components/responses/AiUnavailableError'
 
   /api/quests/reschedule/confirm:
     post:
       tags: [Quests]
-      summary: Confirm reschedule — UPDATEs quest due_dates
+      summary: Confirm reschedule — re-validates and UPDATEs quest due_dates in one locked transaction
       operationId: confirmReschedule
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              allOf:
-                - $ref: '#/components/schemas/ConfirmRescheduleBody'
-                - type: object
-                  properties:
-                    local_date:
-                      $ref: '#/components/schemas/IsoDate'
+              $ref: '#/components/schemas/ConfirmRescheduleBody'
       responses:
-        '201':
-          description: Due dates applied
+        '200':
+          description: Due dates updated
           content:
             application/json:
               schema:
@@ -554,6 +499,10 @@ paths:
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          $ref: '#/components/responses/ConflictError'
 
   /api/quests/week-plan/propose:
     post:
@@ -1601,67 +1550,95 @@ components:
           type: integer
           minimum: 1
           maximum: 120
-          nullable: true
 
-    RescheduleDraft:
+    ProposeRescheduleBody:
       type: object
-      required: [moves, mochi_message]
       properties:
-        moves:
-          type: array
-          minItems: 1
-          maxItems: 40
-          items:
-            $ref: '#/components/schemas/RescheduleMove'
-        mochi_message:
+        local_date:
+          $ref: '#/components/schemas/IsoDate'
+        feedback:
           type: string
           minLength: 1
-          maxLength: 1000
+          maxLength: 2000
+        current_draft:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/RescheduleMove'
 
-    RescheduleResponse:
+    ProposeRescheduleResponse:
       type: object
-      required: [draft, overdue, goal, milestone, applied]
+      required:
+        - goal
+        - milestone
+        - window_start
+        - window_end
+        - time_budget_minutes_per_day
+        - overdue_quests
+        - existing_quests
+        - moves
+        - mochi_message
+        - user_message
       properties:
-        draft:
-          allOf:
-            - $ref: '#/components/schemas/RescheduleDraft'
-          nullable: true
-        overdue:
+        goal:
+          $ref: '#/components/schemas/Goal'
+        milestone:
+          $ref: '#/components/schemas/Milestone'
+        window_start:
+          $ref: '#/components/schemas/IsoDate'
+        window_end:
+          $ref: '#/components/schemas/IsoDate'
+        time_budget_minutes_per_day:
+          type: integer
+          minimum: 1
+        overdue_quests:
           type: array
           items:
             $ref: '#/components/schemas/Quest'
-        goal:
+        existing_quests:
+          type: array
+          items:
+            $ref: '#/components/schemas/Quest'
+        moves:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/RescheduleMove'
+        mochi_message:
+          $ref: '#/components/schemas/ChatMessage'
+        user_message:
           allOf:
-            - $ref: '#/components/schemas/MilestoneGoalSummary'
+            - $ref: '#/components/schemas/ChatMessage'
           nullable: true
-        milestone:
-          allOf:
-            - $ref: '#/components/schemas/Milestone'
-          nullable: true
-        applied:
-          type: boolean
 
     ConfirmRescheduleBody:
       type: object
-      required: [draft]
+      required: [moves]
       properties:
-        draft:
-          $ref: '#/components/schemas/RescheduleDraft'
+        local_date:
+          $ref: '#/components/schemas/IsoDate'
+        moves:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/RescheduleMove'
 
     ConfirmRescheduleResponse:
       type: object
-      required: [goal, milestone, quests, mochi_message]
+      required: [goal, milestone, window_start, window_end, quests]
       properties:
         goal:
-          $ref: '#/components/schemas/MilestoneGoalSummary'
+          $ref: '#/components/schemas/Goal'
         milestone:
           $ref: '#/components/schemas/Milestone'
+        window_start:
+          $ref: '#/components/schemas/IsoDate'
+        window_end:
+          $ref: '#/components/schemas/IsoDate'
         quests:
           type: array
           items:
             $ref: '#/components/schemas/Quest'
-        mochi_message:
-          type: string
 
     ProposeWeekPlanBody:
       type: object

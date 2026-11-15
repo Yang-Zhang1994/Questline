@@ -43,8 +43,10 @@ export function filterQuestsDueToday(payload: CurrentMilestoneQuestsResponse): Q
   return payload.quests.filter((quest) => quest.due_date === payload.window_start);
 }
 
-export function filterEarlierQuests(_payload: CurrentMilestoneQuestsResponse): Quest[] {
-  return [];
+export function filterEarlierQuests(payload: CurrentMilestoneQuestsResponse): Quest[] {
+  return payload.quests.filter(
+    (quest) => quest.due_date < payload.window_start && quest.completed_at === null,
+  );
 }
 
 export function useTodayQuests() {
