@@ -26,6 +26,7 @@ export type ChatWindowProps = {
   restarting?: boolean;
   error?: string | null;
   onSend: (content: string) => void | Promise<void>;
+  onRetry?: () => void | Promise<void>;
   onRestart?: () => void | Promise<void>;
   /** Issue #4 — proposed goal after interview complete. */
   goalDraft?: GoalDraft | null;
@@ -46,6 +47,7 @@ export function ChatWindow({
   restarting = false,
   error = null,
   onSend,
+  onRetry,
   onRestart,
   goalDraft = null,
   confirmedGoal = null,
@@ -68,7 +70,7 @@ export function ChatWindow({
 
   async function submit() {
     const trimmed = draft.trim();
-    if (!trimmed || sending || loading || restarting) return;
+    if (!trimmed || busy || loading) return;
     setDraft('');
     await onSend(trimmed);
   }
@@ -167,27 +169,50 @@ export function ChatWindow({
         ))}
 
         {sending ? (
-          <div className="flex items-start gap-2.5" data-testid="mochi-typing" aria-label="Mochi is typing">
+          <div
+            className="flex items-start gap-2.5"
+            data-testid="mochi-typing"
+            role="status"
+            aria-live="polite"
+          >
             <div className="mt-0.5 h-11 w-11 shrink-0 overflow-hidden rounded-full border-2 border-pink/40 bg-panel [&>svg]:block [&>svg]:h-full [&>svg]:w-full">
               <MochiAvatar mood="think" />
             </div>
             <div className="rounded-[18px_18px_18px_6px] border border-pink/35 bg-panel px-3.5 py-3 text-ink-soft">
               <p className="mb-1 font-display text-[0.82rem] text-pink-ink">Mochi ♡</p>
-              <span className="inline-flex gap-1" aria-hidden="true">
-                <span className="h-2 w-2 animate-bounce rounded-full bg-pink [animation-delay:0ms]" />
-                <span className="h-2 w-2 animate-bounce rounded-full bg-pink [animation-delay:120ms]" />
-                <span className="h-2 w-2 animate-bounce rounded-full bg-pink [animation-delay:240ms]" />
-              </span>
-              <span className="sr-only">Mochi is typing</span>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex gap-1" aria-hidden="true">
+                  <span className="h-2 w-2 animate-bounce rounded-full bg-pink [animation-delay:0ms]" />
+                  <span className="h-2 w-2 animate-bounce rounded-full bg-pink [animation-delay:120ms]" />
+                  <span className="h-2 w-2 animate-bounce rounded-full bg-pink [animation-delay:240ms]" />
+                </span>
+                <span className="text-[0.88rem] italic text-ink-soft">Mochi is thinking…</span>
+              </div>
             </div>
           </div>
         ) : null}
       </div>
 
       {error ? (
-        <p className="m-0 border-t border-pink/20 bg-pink-pale px-4 py-2 text-[0.9rem] text-danger" role="alert">
-          {error}
-        </p>
+        <div
+          className="flex flex-wrap items-center justify-between gap-2 border-t border-pink/20 bg-pink-pale px-4 py-2 text-[0.9rem] text-danger"
+          role="alert"
+        >
+          <span>{error}</span>
+          {onRetry ? (
+            <button
+              type="button"
+              data-testid="chat-retry-button"
+              disabled={busy}
+              onClick={() => {
+                void onRetry();
+              }}
+              className="rounded-pill bg-gel-pink px-3 py-1 text-[0.8rem] font-bold text-white shadow-[inset_0_2px_0_rgba(255,255,255,0.45)] hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-55"
+            >
+              Retry
+            </button>
+          ) : null}
+        </div>
       ) : null}
 
       {showGoalConfirm ? (
@@ -234,7 +259,7 @@ export function ChatWindow({
         />
         <button
           type="submit"
-          disabled={busy || draft.trim().length === 0}
+          disabled={busy || loading || draft.trim().length === 0}
           className="shrink-0 rounded-pill bg-gel-pink px-4 py-2.5 font-bold text-white shadow-[inset_0_2px_0_rgba(255,255,255,0.45)] disabled:cursor-not-allowed disabled:opacity-55"
         >
           Send ♡

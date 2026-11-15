@@ -87,7 +87,7 @@ describe('ChatWindow (Issue #3 interview)', () => {
     expect(input).toHaveValue('line one\nline two');
   });
 
-  it('shows a typing indicator while Mochi is responding', () => {
+  it('shows a Mochi is thinking indicator with aria-live and disables Send while waiting', () => {
     render(
       <ChatWindow
         messages={[mochiWelcome]}
@@ -96,8 +96,30 @@ describe('ChatWindow (Issue #3 interview)', () => {
         onSend={vi.fn()}
       />,
     );
-    expect(screen.getByTestId('mochi-typing')).toBeInTheDocument();
-    expect(screen.getByLabelText(/mochi is typing/i)).toBeInTheDocument();
+    const indicator = screen.getByTestId('mochi-typing');
+    expect(indicator).toBeInTheDocument();
+    expect(indicator).toHaveAttribute('aria-live', 'polite');
+    expect(screen.getByText(/mochi is thinking…/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /send/i })).toBeDisabled();
+    expect(screen.getByLabelText(/message mochi/i)).toBeDisabled();
+  });
+
+  it('shows a friendly error and Retry button when onRetry is provided', async () => {
+    const user = userEvent.setup();
+    const onRetry = vi.fn();
+    render(
+      <ChatWindow
+        messages={[mochiWelcome, userMsg]}
+        interview={interviewInProgress}
+        error="Mochi couldn't reach the server right now. Please try again."
+        onSend={vi.fn()}
+        onRetry={onRetry}
+      />,
+    );
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/couldn't reach the server/i);
+    await user.click(screen.getByTestId('chat-retry-button'));
+    expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
   it('scrolls the transcript to the bottom when messages change', async () => {

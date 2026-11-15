@@ -26,7 +26,9 @@ export function TalkPage({ userEmail = null, onLogout }: TalkPageProps) {
     restarting,
     error,
     aiUnavailable: chatAiUnavailable,
+    canRetry,
     send,
+    retry,
     restart,
     reload,
     appendMessages,
@@ -129,6 +131,13 @@ export function TalkPage({ userEmail = null, onLogout }: TalkPageProps) {
             onSend={(content) => {
               void send(content);
             }}
+            onRetry={
+              canRetry
+                ? () => {
+                    void retry();
+                  }
+                : undefined
+            }
             onRestart={() => {
               void restart();
             }}
