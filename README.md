@@ -99,18 +99,26 @@ Copy `.env.example` → `.env` and adjust as needed:
 | Variable | Required | Purpose |
 | -------- | -------- | ------- |
 | `DATABASE_URL` | yes | Postgres connection string |
-| `JWT_SECRET` | yes | Signs auth tokens (use a long random string outside local demos) |
+| `DATABASE_SSL` | no | Set `true` when Postgres requires TLS (`ssl: { rejectUnauthorized: false }`) |
+| `JWT_SECRET` | yes | Signs auth tokens (production requires ≥32 chars and rejects `change-me-in-local-dev`) |
 | `PORT` | no | API port (default `3001`) |
-| `ANTHROPIC_API_KEY` | for live chat | Server-side Claude key — never expose to the client |
-| `ANTHROPIC_MODEL` | for live chat | Model id from env (never hard-coded) |
+| `CORS_ORIGIN` | no | Comma-separated allowed browser origin(s); in production, cross-origin reflection is disabled when unset |
+| `SEED_DEMO_DATA` | no | Demo seed runs automatically outside production; set `true` to opt in on production boot |
+| `ANTHROPIC_API_KEY` | yes in prod* | Server-side Claude key — never expose to the client (*unless `ALLOW_ECHO_AI=true`) |
+| `ANTHROPIC_MODEL` | yes in prod* | Model id from env, never hard-coded (*unless `ALLOW_ECHO_AI=true`) |
+| `ALLOW_ECHO_AI` | no | Set `true` in production only if you explicitly want the deterministic echo fallback without Anthropic keys |
 
 Example (matches `.env.example`):
 
 ```bash
 DATABASE_URL=postgres://questline:questline@localhost:5432/questline
+DATABASE_SSL=
 PORT=3001
+CORS_ORIGIN=
+SEED_DEMO_DATA=
 ANTHROPIC_API_KEY=
 ANTHROPIC_MODEL=
+ALLOW_ECHO_AI=
 JWT_SECRET=change-me-in-local-dev
 ```
 
@@ -150,11 +158,20 @@ Migrations live in `server/src/db/migrations/` and apply automatically when the 
 
 ```bash
 npm run build        # Vite → client/dist
-NODE_ENV=production DATABASE_URL=... JWT_SECRET=... npm start
+NODE_ENV=production \
+  DATABASE_URL=... \
+  JWT_SECRET=replace-with-at-least-32-random-characters \
+  ALLOW_ECHO_AI=true \
+  npm start
 # API + SPA on http://localhost:3001 (or $PORT)
 ```
 
-In production the Express server serves `client/dist` and falls back to `index.html` for non-`/api` routes. The SPA already calls relative `/api/...` URLs (Vite proxies `/api` only in dev), so one origin works.
+In production the Express server:
+
+- **Fails fast at startup** unless `JWT_SECRET` is at least 32 characters (and not `change-me-in-local-dev`) and both `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL` are set (or `ALLOW_ECHO_AI=true` is set explicitly).
+- **Disables cross-origin CORS reflection** unless `CORS_ORIGIN` is configured (the SPA and `/api/...` share the same origin when served from `client/dist`).
+- **Skips demo seeding** unless `SEED_DEMO_DATA=true` is set.
+- **Supports optional Postgres TLS** when `DATABASE_SSL=true` is set.
 
 ## Deployment (Render)
 
@@ -168,11 +185,11 @@ Single **Web Service** + **Render Postgres**. Blueprint file: [`render.yaml`](re
 2. Sign in to Render (owner account) and connect the GitHub repo if prompted.
 3. Apply the Blueprint (`questline` web service + `questline-db` Postgres).
 4. When prompted for sync env vars, set:
-   - `ANTHROPIC_API_KEY` — your Claude API key (optional until you want live Mochi chat)
+   - `ANTHROPIC_API_KEY` — your Claude API key (required in production unless `ALLOW_ECHO_AI=true` is set)
    - `ANTHROPIC_MODEL` — model id from Anthropic (e.g. the same value you use locally)
 5. Wait for the first deploy. Migrations run automatically on boot via `openDatabase` (no separate migrate step).
 
-Blueprint already sets `NODE_ENV=production`, wires `DATABASE_URL` from `questline-db`, and generates `JWT_SECRET`. Build: `npm ci --include=dev && npm run build`. Start: `npm start` (Node 22).
+Blueprint already sets `NODE_ENV=production`, wires `DATABASE_URL` from `questline-db`, generates a random `JWT_SECRET` (≥32 chars), and sets `SEED_DEMO_DATA=true` so the course demo account is seeded on first boot. Optional production knobs: `DATABASE_SSL=true` (when connecting to an external Postgres URL that requires TLS), `CORS_ORIGIN` (if serving the frontend from a separate origin), and `ALLOW_ECHO_AI=true` (only if deploying without Anthropic keys). Build: `npm ci --include=dev && npm run build`. Start: `npm start` (Node 22).
 
 Frontend and API share the **same URL** (Express serves the Vite build).
 
@@ -182,13 +199,13 @@ After deploy:
 
 - [ ] `GET /api/health` → `{ "ok": true }`
 - [ ] Open `/` — SPA loads (login / demo)
-- [ ] Log in with demo credentials (seeded when `users` is empty) or register
+- [ ] Log in with demo credentials (seeded when `SEED_DEMO_DATA=true` and `users` is empty) or register
 - [ ] **Today** / **Map** / **Talk** navigate without a separate frontend host
-- [ ] With `ANTHROPIC_*` set, send a Talk message; without keys, use the manual plan fallback
+- [ ] With `ANTHROPIC_*` set, send a Talk message (or if `ALLOW_ECHO_AI=true`, verify fallback / manual plan form)
 
 ## Demo login
 
-On first boot with an empty `users` table, the API seeds:
+On first boot with an empty `users` table (automatic outside production, or in production when `SEED_DEMO_DATA=true`), the API seeds:
 
 | Field | Value |
 | ----- | ----- |
@@ -226,8 +243,19 @@ JWT notes: the API returns a token in the JSON body; the SPA sends `Authorizatio
 - Streak miss = break (no “rest day” forgiveness yet).
 - SQLite / Next.js paths are **not** supported for new work — stack is Postgres + Vite.
 - No native apps, push/email, calendar sync, payments, or social sharing.
-- Playwright E2E suite is planned; CI today covers lint, typecheck, and Vitest (mocked Claude).
+- Playwright E2E suite is planned; CI today covers lint, typecheck, production client build, Vitest (mocked Claude), and a non-blocking `npm audit --audit-level=high` (see below).
 - Some Map / XP / stamp / diary flows documented here land in other open PRs; this docs PR may sit above GoalConfirm while those restack.
+
+### Known security advisories
+
+CI runs `npm audit --audit-level=high` with `continue-on-error: true` until these major upgrades land (both need a breaking-version bump, so `npm audit fix` without `--force` can't resolve them):
+
+| Advisory | Package (path) | Scope | Tracking |
+| -------- | -------------- | ----- | -------- |
+| [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) — memory exhaustion validating oversized constrained collections (high) | `zod@3.25.76` (server, client, shared, `@anthropic-ai/sdk`) | runtime | [#80](https://github.com/Yang-Zhang1994/Questline/issues/80) — upgrade zod to 4.x |
+| [GHSA-5gmw-xhrv-c9v3](https://github.com/advisories/GHSA-5gmw-xhrv-c9v3), [GHSA-85c8-ppgw-ccpr](https://github.com/advisories/GHSA-85c8-ppgw-ccpr) — prototype pollution → RCE (critical) | `tinypool@1.1.1` via `vitest@3.2.7` | dev only | [#81](https://github.com/Yang-Zhang1994/Questline/issues/81) — upgrade vitest to 5.x |
+
+The audit step goes back to blocking once both Issues are closed.
 
 ## Future ideas
 

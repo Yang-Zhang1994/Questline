@@ -10,15 +10,28 @@ export type Db = pg.Pool;
 export type OpenDbOptions = {
   /** Override process.env.DATABASE_URL (tests). */
   connectionString?: string;
+  /** Override process.env.DATABASE_SSL (tests). */
+  ssl?: boolean;
 };
 
-export async function openDatabase(options: OpenDbOptions = {}): Promise<Db> {
-  const connectionString = options.connectionString ?? process.env.DATABASE_URL;
+export function buildPoolConfig(
+  options: OpenDbOptions = {},
+  env: NodeJS.ProcessEnv = process.env,
+): pg.PoolConfig {
+  const connectionString = options.connectionString ?? env.DATABASE_URL;
   if (!connectionString) {
     throw new Error('DATABASE_URL is required (PostgreSQL connection string)');
   }
 
-  const pool = new pg.Pool({ connectionString });
+  const useSsl = options.ssl ?? env.DATABASE_SSL === 'true';
+  return {
+    connectionString,
+    ...(useSsl ? { ssl: { rejectUnauthorized: false } } : {}),
+  };
+}
+
+export async function openDatabase(options: OpenDbOptions = {}): Promise<Db> {
+  const pool = new pg.Pool(buildPoolConfig(options));
   await runMigrations(pool);
   return pool;
 }

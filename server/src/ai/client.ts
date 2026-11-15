@@ -280,8 +280,19 @@ export function createEchoChatClient(): ChatAiClient {
 export function createClaudeClient(options: CreateClaudeClientOptions = {}): ChatAiClient {
   const apiKey = options.apiKey ?? process.env.ANTHROPIC_API_KEY;
   const model = options.model ?? process.env.ANTHROPIC_MODEL;
+  const isProduction = process.env.NODE_ENV === 'production';
+  const allowEchoAi = process.env.ALLOW_ECHO_AI === 'true';
 
   if (!options.anthropic && (!apiKey || apiKey.trim().length === 0)) {
+    if (isProduction && !allowEchoAi) {
+      throw new Error(
+        'ANTHROPIC_API_KEY is required in production unless ALLOW_ECHO_AI=true is set explicitly',
+      );
+    }
+    return createEchoChatClient();
+  }
+
+  if (!options.anthropic && isProduction && allowEchoAi && (!model || model.trim().length === 0)) {
     return createEchoChatClient();
   }
 

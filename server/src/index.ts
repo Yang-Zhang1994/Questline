@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import { systemClock } from './clock.js';
 import { createApp } from './app.js';
+import { assertProductionEnv } from './config/env.js';
 import { openDatabase } from './db/connection.js';
 import { seedDemoDataIfEmpty } from './db/seed.js';
 
@@ -10,6 +11,8 @@ import { seedDemoDataIfEmpty } from './db/seed.js';
 const serverDir = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(serverDir, '../../.env') });
 dotenv.config();
+
+assertProductionEnv(process.env);
 
 const port = Number(process.env.PORT ?? 3001);
 const db = await openDatabase();
