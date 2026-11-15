@@ -123,7 +123,7 @@ export function ReschedulePreview({
     <section
       ref={sectionRef}
       data-testid="reschedule-preview"
-      className="mt-2 scroll-mb-28 scroll-mt-6 flex w-full max-w-[640px] flex-col overflow-hidden rounded-window border-[3px] border-pink bg-pink-pale shadow-window animate-rise-in"
+      className="mt-2 scroll-mt-6 flex w-full max-w-[640px] flex-col overflow-hidden rounded-window border-[3px] border-pink bg-pink-pale shadow-window animate-rise-in"
       aria-label="Mochi schedule preview"
     >
       <header className="flex flex-wrap items-center justify-between gap-2 bg-gel-pink px-4 py-[0.65rem] font-display text-[1rem] text-white">

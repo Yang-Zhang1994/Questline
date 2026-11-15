@@ -22,4 +22,11 @@
   --radius-window: 18px;
   --radius-pill: 999px;
   --shadow-window: 0 10px 0 rgba(61, 53, 112, 0.08), 0 18px 40px rgba(28, 127, 200, 0.18);
+
+  --dock-height: 3.75rem;
+  --dock-offset: 1rem;
+  --dock-gap: 2.25rem;
+  --dock-clearance: calc(
+    var(--dock-height) + var(--dock-offset) + var(--dock-gap) + env(safe-area-inset-bottom, 0px)
+  );
 }

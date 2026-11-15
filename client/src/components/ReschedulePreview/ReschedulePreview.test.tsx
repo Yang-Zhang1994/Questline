@@ -205,6 +205,6 @@ describe('ReschedulePreview (Issue #14)', () => {
       behavior: 'smooth',
       block: 'nearest',
     });
-    expect(preview.className).toContain('scroll-mb-28');
+    expect(preview.className).not.toContain('scroll-mb-28');
   });
 });

@@ -915,7 +915,8 @@ describe('TodayPage (Issue #8)', () => {
         behavior: 'smooth',
         block: 'nearest',
       });
-      expect(preview.className).toContain('scroll-mb-28');
+      expect(preview.className).not.toContain('scroll-mb-28');
+      expect(screen.getByTestId('page-shell').className).toContain('pb-dock-safe');
 
       expect(preview).toHaveTextContent(/gently rearrange these 2 quests/i);
       expect(screen.getByTestId('reschedule-day-2026-11-11')).toHaveTextContent('2026-11-08');
