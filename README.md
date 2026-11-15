@@ -1,5 +1,7 @@
 # Questline — Mochi's Quest Diary
 
+**Live App:** https://questline-lgbi.onrender.com
+
 Cozy life-sim goal tracker: chat with **Mochi**, confirm a measurable **Goal**, walk a game-style roadmap of **Milestones**, and complete small daily **Quests** with XP, streaks, and stamps.
 
 ## The Ambition-Action Gap
