@@ -6,6 +6,7 @@ import helmet from 'helmet';
 import { createClaudeClient, type ChatAiClient } from './ai/client.js';
 import type { Clock } from './clock.js';
 import { systemClock } from './clock.js';
+import { assertProductionEnv, resolveCorsOrigin } from './config/env.js';
 import type { Db } from './db/connection.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { createChatRepository } from './repositories/chatRepository.js';
@@ -45,6 +46,8 @@ export type CreateAppOptions = {
 };
 
 export function createApp(options: CreateAppOptions) {
+  assertProductionEnv(process.env, { hasInjectedAi: Boolean(options.ai) });
+
   const clock = options.clock ?? systemClock;
   const users = createUserRepository(options.db);
   const chat = createChatRepository(options.db);
@@ -127,7 +130,7 @@ export function createApp(options: CreateAppOptions) {
   // express-rate-limit needs a stable IP behind proxies / Vitest.
   app.set('trust proxy', 1);
   app.use(helmet({ contentSecurityPolicy: false }));
-  app.use(cors({ origin: true }));
+  app.use(cors({ origin: resolveCorsOrigin() }));
   app.use(express.json({ limit: '32kb' }));
 
   app.get('/api/health', (_req, res) => {

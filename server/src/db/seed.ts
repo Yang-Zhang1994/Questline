@@ -12,10 +12,24 @@ const DEMO_PAUSED_GOAL_TITLE = 'Run a gentle 5K';
 const DEMO_MILESTONE_TITLE = 'Build a tiny daily reading habit';
 
 /**
+ * Demo seed runs automatically outside production, or in production only when
+ * `SEED_DEMO_DATA=true` is explicitly set.
+ */
+export function shouldSeedDemoData(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.NODE_ENV !== 'production' || env.SEED_DEMO_DATA === 'true';
+}
+
+/**
  * Seeds one demo user, active goal, current milestone, and today's quests when
  * the DB has no users yet — enough to demo Today / check-off with JWT.
  */
-export async function seedDemoDataIfEmpty(db: Db, clock: Clock = systemClock): Promise<void> {
+export async function seedDemoDataIfEmpty(
+  db: Db,
+  clock: Clock = systemClock,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<void> {
+  if (!shouldSeedDemoData(env)) return;
+
   const count = await db.query<{ c: string }>('SELECT COUNT(*)::text AS c FROM users');
   if (Number(count.rows[0].c) > 0) return;
 

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { openDatabase, resetDatabase, type Db } from './connection.js';
-import { seedDemoDataIfEmpty } from './seed.js';
+import { buildPoolConfig, openDatabase, resetDatabase, type Db } from './connection.js';
+import { seedDemoDataIfEmpty, shouldSeedDemoData } from './seed.js';
 import { systemClock } from '../clock.js';
 
 const REQUIRED_TABLES = [
@@ -104,6 +104,25 @@ describe('Postgres persistence (Issue #17)', () => {
     expect(usersAgain.rowCount).toBe(1);
   });
 
+  it('skips demo seeding in production unless SEED_DEMO_DATA=true is set', async () => {
+    expect(shouldSeedDemoData({ NODE_ENV: 'development' })).toBe(true);
+    expect(shouldSeedDemoData({ NODE_ENV: 'test' })).toBe(true);
+    expect(shouldSeedDemoData({ NODE_ENV: 'production' })).toBe(false);
+    expect(shouldSeedDemoData({ NODE_ENV: 'production', SEED_DEMO_DATA: 'false' })).toBe(false);
+    expect(shouldSeedDemoData({ NODE_ENV: 'production', SEED_DEMO_DATA: 'true' })).toBe(true);
+
+    await seedDemoDataIfEmpty(db, systemClock, { NODE_ENV: 'production' });
+    const skippedUsers = await db.query(`SELECT id FROM users`);
+    expect(skippedUsers.rowCount).toBe(0);
+
+    await seedDemoDataIfEmpty(db, systemClock, {
+      NODE_ENV: 'production',
+      SEED_DEMO_DATA: 'true',
+    });
+    const seededUsers = await db.query(`SELECT id FROM users`);
+    expect(seededUsers.rowCount).toBe(1);
+  });
+
   // AC: require DATABASE_URL (no SQLite default path)
   it('rejects opening a database without DATABASE_URL', async () => {
     const previous = process.env.DATABASE_URL;
@@ -113,5 +132,30 @@ describe('Postgres persistence (Issue #17)', () => {
     } finally {
       process.env.DATABASE_URL = previous;
     }
+  });
+
+  it('enables pg SSL config only when DATABASE_SSL=true (or options.ssl is set)', () => {
+    const url = 'postgres://questline:questline@localhost:5432/questline_test';
+
+    expect(buildPoolConfig({}, { NODE_ENV: 'production', DATABASE_URL: url })).toEqual({
+      connectionString: url,
+    });
+    expect(
+      buildPoolConfig({}, { NODE_ENV: 'production', DATABASE_URL: url, DATABASE_SSL: 'false' }),
+    ).toEqual({
+      connectionString: url,
+    });
+    expect(
+      buildPoolConfig({}, { NODE_ENV: 'production', DATABASE_URL: url, DATABASE_SSL: 'true' }),
+    ).toEqual({
+      connectionString: url,
+      ssl: { rejectUnauthorized: false },
+    });
+    expect(
+      buildPoolConfig({ connectionString: url, ssl: true }, { NODE_ENV: 'development' }),
+    ).toEqual({
+      connectionString: url,
+      ssl: { rejectUnauthorized: false },
+    });
   });
 });

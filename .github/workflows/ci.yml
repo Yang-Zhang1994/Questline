@@ -46,5 +46,15 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Build
+        run: npm run build
+
       - name: Test
         run: npm test
+
+      # TODO(#TBD-zod, #TBD-vitest): make blocking again once zod 4.x and vitest 5.x land.
+      # Known advisories: zod <4.6.6 (high, runtime), tinypool via vitest 3.x (critical, dev-only).
+      # See README "Known security advisories".
+      - name: Security audit (non-blocking)
+        run: npm audit --audit-level=high
+        continue-on-error: true

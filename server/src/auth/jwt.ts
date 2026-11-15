@@ -1,4 +1,5 @@
 import { SignJWT, jwtVerify } from 'jose';
+import { assertJwtSecret } from '../config/env.js';
 
 export type AuthTokenClaims = {
   userId: number;
@@ -8,10 +9,7 @@ export type AuthTokenClaims = {
 const DEFAULT_TTL = '7d';
 
 function getSecretKey(): Uint8Array {
-  const secret = process.env.JWT_SECRET;
-  if (!secret || secret.trim().length < 8) {
-    throw new Error('JWT_SECRET must be set to a non-trivial value (≥8 characters)');
-  }
+  const secret = assertJwtSecret(process.env);
   return new TextEncoder().encode(secret);
 }
 
