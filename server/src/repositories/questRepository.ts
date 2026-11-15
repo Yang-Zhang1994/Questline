@@ -3,6 +3,7 @@ import {
   type Milestone,
   type ProposedQuest,
   type Quest,
+  type RescheduleMove,
   type RoadmapGoal,
   type StampCard,
   type UserProgress,
@@ -322,6 +323,123 @@ export function createQuestRepository(db: Db) {
             `INSERT INTO quests (milestone_id, title, due_date, estimated_minutes, completed_at)
              VALUES ($1, $2, $3, $4, NULL)`,
             [milestoneId, item.title, item.due_date, item.estimated_minutes],
+          );
+        }
+
+        const allForMilestone = await client.query<QuestRow>(
+          `SELECT id, milestone_id, title, due_date, estimated_minutes, completed_at
+           FROM quests
+           WHERE milestone_id = $1
+           ORDER BY due_date ASC, id ASC`,
+          [milestoneId],
+        );
+
+        await client.query('COMMIT');
+        return allForMilestone.rows.map(mapQuest);
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+    },
+
+    /**
+     * Transactionally locks the current milestone and its quests (`FOR UPDATE`), re-validates
+     * that every move still targets an incomplete quest on this milestone at `from_date < today`
+     * and fits within `timeBudgetMinutesPerDay`, and updates only `due_date` (#14).
+     */
+    async saveConfirmedRescheduleMoves(
+      userId: number,
+      milestoneId: number,
+      today: string,
+      windowStart: string,
+      windowEnd: string,
+      timeBudgetMinutesPerDay: number,
+      moves: RescheduleMove[],
+    ): Promise<Quest[]> {
+      const client = await db.connect();
+      try {
+        await client.query('BEGIN');
+
+        const lockResult = await client.query<{ id: number }>(
+          `SELECT m.id
+           FROM milestones m
+           INNER JOIN goals g ON g.id = m.goal_id
+           WHERE m.id = $1
+             AND g.user_id = $2
+             AND g.status = 'active'
+             AND m.status = 'current'
+           FOR UPDATE OF m, g`,
+          [milestoneId, userId],
+        );
+        if (lockResult.rows.length === 0) {
+          throw notFound('No current milestone found for active goal.');
+        }
+
+        const existingRows = await client.query<QuestRow>(
+          `SELECT id, milestone_id, title, due_date, estimated_minutes, completed_at
+           FROM quests
+           WHERE milestone_id = $1
+           ORDER BY due_date ASC, id ASC
+           FOR UPDATE`,
+          [milestoneId],
+        );
+        const existingQuests = existingRows.rows.map(mapQuest);
+        const existingById = new Map(existingQuests.map((q) => [q.id, q]));
+
+        const seenIds = new Set<number>();
+        for (const move of moves) {
+          if (seenIds.has(move.quest_id)) {
+            throw validationError(`Quest "${move.title}" appears more than once in the schedule.`);
+          }
+          seenIds.add(move.quest_id);
+
+          const current = existingById.get(move.quest_id);
+          if (!current) {
+            throw conflict(
+              'One of those quests was updated or removed — let Mochi take a fresh peek first ♡',
+            );
+          }
+          if (
+            current.completed_at !== null ||
+            current.due_date >= today ||
+            current.due_date !== move.from_date
+          ) {
+            throw conflict(
+              'Some of your quests have already been checked off or moved — let Mochi refresh the schedule first ♡',
+            );
+          }
+        }
+
+        const minutesByDate = new Map<string, number>();
+        for (const existing of existingQuests) {
+          if (seenIds.has(existing.id)) continue;
+          if (existing.due_date >= windowStart && existing.due_date <= windowEnd) {
+            const mins =
+              existing.estimated_minutes && existing.estimated_minutes > 0
+                ? existing.estimated_minutes
+                : 0;
+            minutesByDate.set(existing.due_date, (minutesByDate.get(existing.due_date) ?? 0) + mins);
+          }
+        }
+
+        for (const move of moves) {
+          const nextMinutes = (minutesByDate.get(move.to_date) ?? 0) + move.estimated_minutes;
+          if (nextMinutes > timeBudgetMinutesPerDay) {
+            throw validationError(
+              `Total estimated_minutes on ${move.to_date} (${nextMinutes}) exceeds daily time budget (${timeBudgetMinutesPerDay})`,
+            );
+          }
+          minutesByDate.set(move.to_date, nextMinutes);
+        }
+
+        for (const move of moves) {
+          await client.query(
+            `UPDATE quests
+             SET due_date = $1
+             WHERE id = $2 AND milestone_id = $3`,
+            [move.to_date, move.quest_id, milestoneId],
           );
         }
 

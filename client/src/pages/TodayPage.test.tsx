@@ -2,8 +2,10 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { BrowserRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
+  ConfirmRescheduleResponse,
   CurrentMilestoneQuestsResponse,
   DiaryNote,
+  ProposeRescheduleResponse,
   ToggleQuestCompletionResponse,
 } from '@questline/shared';
 import * as diaryApi from '../api/diary';
@@ -759,6 +761,186 @@ describe('TodayPage (Issue #8)', () => {
       );
       expect(screen.getByTestId('stamp-card-progress')).toHaveTextContent('0 of 10 stamps ♡');
       expect(screen.getByTestId('toggle-past-cards')).toHaveTextContent('View past cards (1)');
+    });
+  });
+
+  describe('Reschedule earlier quests on Today view (Issue #14)', () => {
+    const GUILT_WORDS_REGEX = /\b(overdue|late|behind|failed|fail|failure)\b/i;
+
+    it('flags incomplete past-due quests gently in a "From earlier" section with a count and "Reschedule with Mochi" button, with zero guilt words, and only saves after confirming the preview', async () => {
+      const payloadWithEarlier: CurrentMilestoneQuestsResponse = {
+        ...basePayload,
+        window_start: '2026-11-10',
+        window_end: '2026-11-12',
+        quests: [
+          {
+            id: 90,
+            milestone_id: 10,
+            title: 'Earlier incomplete katakana sheet',
+            due_date: '2026-11-08',
+            estimated_minutes: 10,
+            completed_at: null,
+          },
+          {
+            id: 91,
+            milestone_id: 10,
+            title: 'Earlier incomplete particle exercises',
+            due_date: '2026-11-09',
+            estimated_minutes: 10,
+            completed_at: null,
+          },
+          {
+            id: 92,
+            milestone_id: 10,
+            title: 'Completed past quest (must not appear in From earlier)',
+            due_date: '2026-11-07',
+            estimated_minutes: 10,
+            completed_at: '2026-11-07T12:00:00Z',
+          },
+          ...basePayload.quests,
+        ],
+      };
+
+      const proposeResponse: ProposeRescheduleResponse = {
+        goal: payloadWithEarlier.goal!,
+        milestone: payloadWithEarlier.milestone!,
+        window_start: '2026-11-10',
+        window_end: '2026-11-16',
+        time_budget_minutes_per_day: 30,
+        overdue_quests: [payloadWithEarlier.quests[0], payloadWithEarlier.quests[1]],
+        existing_quests: payloadWithEarlier.quests,
+        moves: [
+          {
+            quest_id: 90,
+            title: 'Earlier incomplete katakana sheet',
+            from_date: '2026-11-08',
+            to_date: '2026-11-11',
+            estimated_minutes: 10,
+          },
+          {
+            quest_id: 91,
+            title: 'Earlier incomplete particle exercises',
+            from_date: '2026-11-09',
+            to_date: '2026-11-12',
+            estimated_minutes: 10,
+          },
+        ],
+        mochi_message: {
+          id: 500,
+          user_id: 1,
+          goal_id: 1,
+          role: 'mochi',
+          content: "Let's gently rearrange these 2 quests into your upcoming days ♡",
+          created_at: '2026-11-10T15:00:00Z',
+        },
+        user_message: null,
+      };
+
+      const updatedQuestsAfterConfirm = payloadWithEarlier.quests.map((q) => {
+        if (q.id === 90) return { ...q, due_date: '2026-11-11' };
+        if (q.id === 91) return { ...q, due_date: '2026-11-12' };
+        return q;
+      });
+
+      const confirmResponse: ConfirmRescheduleResponse = {
+        goal: payloadWithEarlier.goal!,
+        milestone: payloadWithEarlier.milestone!,
+        window_start: '2026-11-10',
+        window_end: '2026-11-16',
+        quests: updatedQuestsAfterConfirm,
+      };
+
+      const reloadedPayload: CurrentMilestoneQuestsResponse = {
+        ...payloadWithEarlier,
+        quests: updatedQuestsAfterConfirm,
+      };
+
+      const fetchSpy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => JSON.stringify(payloadWithEarlier),
+        } as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => JSON.stringify(proposeResponse),
+        } as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => JSON.stringify(confirmResponse),
+        } as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => JSON.stringify(reloadedPayload),
+        } as Response);
+
+      const { container } = render(
+        <BrowserRouter>
+          <TodayPage />
+        </BrowserRouter>,
+      );
+
+      const earlierSection = await screen.findByTestId('from-earlier-section');
+      expect(earlierSection).toHaveTextContent(/from earlier/i);
+      expect(earlierSection).toHaveTextContent('2');
+      expect(earlierSection).toHaveTextContent('Earlier incomplete katakana sheet');
+      expect(earlierSection).toHaveTextContent('Earlier incomplete particle exercises');
+      expect(
+        screen.queryByText(/Completed past quest \(must not appear in From earlier\)/),
+      ).not.toBeInTheDocument();
+
+      // Zero guilt words anywhere on the page
+      expect(container.textContent ?? '').not.toMatch(GUILT_WORDS_REGEX);
+
+      // Click "Reschedule with Mochi" -> calls propose endpoint, shows preview, scrolls into view, and moves focus to preview heading
+      const scrollIntoViewMock = vi.fn();
+      Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+        configurable: true,
+        writable: true,
+        value: scrollIntoViewMock,
+      });
+
+      const rescheduleBtn = screen.getByRole('button', { name: /reschedule with mochi/i });
+      rescheduleBtn.focus();
+      expect(rescheduleBtn).toHaveFocus();
+      fireEvent.click(rescheduleBtn);
+
+      const preview = await screen.findByTestId('reschedule-preview');
+      const previewHeading = screen.getByRole('heading', {
+        name: /mochi's new schedule preview/i,
+      });
+      expect(previewHeading).toHaveFocus();
+      expect(preview.contains(document.activeElement)).toBe(true);
+      expect(scrollIntoViewMock).toHaveBeenCalledWith({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
+      expect(preview.className).toContain('scroll-mb-28');
+
+      expect(preview).toHaveTextContent(/gently rearrange these 2 quests/i);
+      expect(screen.getByTestId('reschedule-day-2026-11-11')).toHaveTextContent('2026-11-08');
+      expect(screen.getByTestId('reschedule-day-2026-11-11')).toHaveTextContent('2026-11-11');
+      expect(screen.getByTestId('reschedule-day-total-2026-11-11')).toHaveTextContent(
+        'Total: 30 / 30 min',
+      );
+      expect(screen.getByTestId('reschedule-day-total-2026-11-12')).toHaveTextContent(
+        'Total: 10 / 30 min',
+      );
+      expect(container.textContent ?? '').not.toMatch(GUILT_WORDS_REGEX);
+
+      // Confirm has NOT been called yet
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      expect(fetchSpy.mock.calls[1][0]).toBe('/api/quests/reschedule/propose');
+
+      // Click confirm button -> calls confirm endpoint and reloads quests
+      fireEvent.click(screen.getByTestId('accept-reschedule-button'));
+
+      await waitFor(() => {
+        expect(fetchSpy).toHaveBeenCalledWith(
+          '/api/quests/reschedule/confirm',
+          expect.objectContaining({ method: 'POST' }),
+        );
+      });
     });
   });
 });

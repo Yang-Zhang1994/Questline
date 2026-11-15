@@ -1,11 +1,17 @@
 import {
+  ConfirmRescheduleResponseSchema,
   ConfirmWeekPlanResponseSchema,
   CurrentMilestoneQuestsResponseSchema,
+  ProposeRescheduleResponseSchema,
   ProposeWeekPlanResponseSchema,
   ToggleQuestCompletionResponseSchema,
+  type ConfirmRescheduleBody,
+  type ConfirmRescheduleResponse,
   type ConfirmWeekPlanBody,
   type ConfirmWeekPlanResponse,
   type CurrentMilestoneQuestsResponse,
+  type ProposeRescheduleBody,
+  type ProposeRescheduleResponse,
   type ProposeWeekPlanBody,
   type ProposeWeekPlanResponse,
   type ToggleQuestCompletionResponse,
@@ -21,6 +27,9 @@ export const FRIENDLY_QUEST_TOGGLE_ERROR =
 
 export const FRIENDLY_WEEK_PLAN_ERROR =
   "Mochi couldn't sketch your weekly quest plan right now. Take a gentle breath and try again in a moment ♡";
+
+export const FRIENDLY_RESCHEDULE_ERROR =
+  "Mochi couldn't rearrange your quest schedule right now. Take a gentle breath and try again in a moment ♡";
 
 async function parseJson(res: Response): Promise<unknown> {
   const text = await res.text();
@@ -170,6 +179,64 @@ export async function confirmWeekPlan(
   if (!parsed.success) {
     console.error('Invalid confirmWeekPlan response payload:', parsed.error);
     throw new Error(FRIENDLY_WEEK_PLAN_ERROR);
+  }
+  return parsed.data;
+}
+
+export async function proposeReschedule(
+  options: ProposeRescheduleBody = {},
+): Promise<ProposeRescheduleResponse> {
+  const res = await fetch('/api/quests/reschedule/propose', {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(options),
+  });
+  let body: unknown;
+  try {
+    body = await parseJson(res);
+  } catch {
+    throw new Error(FRIENDLY_RESCHEDULE_ERROR);
+  }
+  if (!res.ok) {
+    throw new ApiError(
+      errorMessage(body, FRIENDLY_RESCHEDULE_ERROR),
+      errorCode(body),
+      res.status,
+    );
+  }
+  const parsed = ProposeRescheduleResponseSchema.safeParse(body);
+  if (!parsed.success) {
+    console.error('Invalid proposeReschedule response payload:', parsed.error);
+    throw new Error(FRIENDLY_RESCHEDULE_ERROR);
+  }
+  return parsed.data;
+}
+
+export async function confirmReschedule(
+  options: ConfirmRescheduleBody,
+): Promise<ConfirmRescheduleResponse> {
+  const res = await fetch('/api/quests/reschedule/confirm', {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(options),
+  });
+  let body: unknown;
+  try {
+    body = await parseJson(res);
+  } catch {
+    throw new Error(FRIENDLY_RESCHEDULE_ERROR);
+  }
+  if (!res.ok) {
+    throw new ApiError(
+      errorMessage(body, FRIENDLY_RESCHEDULE_ERROR),
+      errorCode(body),
+      res.status,
+    );
+  }
+  const parsed = ConfirmRescheduleResponseSchema.safeParse(body);
+  if (!parsed.success) {
+    console.error('Invalid confirmReschedule response payload:', parsed.error);
+    throw new Error(FRIENDLY_RESCHEDULE_ERROR);
   }
   return parsed.data;
 }

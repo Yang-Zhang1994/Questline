@@ -1,12 +1,17 @@
 import {
   QuestGenerationAiResponseSchema,
+  RescheduleAiResponseSchema,
   WeekPlanAiResponseSchema,
   createQuestProposalListSchema,
+  createRescheduleMovesSchema,
   type ChatMessage,
+  type ConfirmRescheduleResponse,
   type ConfirmWeekPlanResponse,
   type CurrentMilestoneQuestsResponse,
+  type ProposeRescheduleResponse,
   type ProposeWeekPlanResponse,
   type ProposedQuest,
+  type RescheduleMove,
   type StageReadySummary,
   type StampCard,
   type ToggleQuestCompletionResponse,
@@ -15,6 +20,7 @@ import {
 import type { ChatAiClient, ClaudeChatTurn } from '../ai/client.js';
 import {
   buildDefaultQuestProposal,
+  buildDefaultRescheduleProposal,
   buildDefaultWeekPlanProposal,
   computeQuestGenerationWindow,
   computeWeekPlanWindow,
@@ -31,7 +37,7 @@ import type { ChatRepository } from '../repositories/chatRepository.js';
 import { mapGoalRowToRoadmapGoal } from '../repositories/goalRepository.js';
 import type { ProgressRepository } from '../repositories/progressRepository.js';
 import type { QuestRepository } from '../repositories/questRepository.js';
-import { aiUnavailable, notFound, validationError } from './errors.js';
+import { aiUnavailable, conflict, notFound, validationError } from './errors.js';
 
 export type QuestServiceDeps = {
   quests: QuestRepository;
@@ -50,6 +56,17 @@ export type ProposeWeekPlanOptions = {
 export type ConfirmWeekPlanOptions = {
   local_date?: string;
   quests: ProposedQuest[];
+};
+
+export type ProposeRescheduleOptions = {
+  local_date?: string;
+  feedback?: string;
+  current_draft?: RescheduleMove[];
+};
+
+export type ConfirmRescheduleOptions = {
+  local_date?: string;
+  moves: RescheduleMove[];
 };
 
 function toClaudeHistory(messages: ChatMessage[]): ClaudeChatTurn[] {
@@ -573,12 +590,265 @@ export function createQuestService(deps: QuestServiceDeps) {
     };
   }
 
+  /**
+   * Proposes or adjusts a new schedule for incomplete quests on the current milestone with
+   * `due_date < local_date` without mutating any quest rows (Issue #14).
+   */
+  async function proposeReschedule(
+    userId: number,
+    options: ProposeRescheduleOptions = {},
+  ): Promise<ProposeRescheduleResponse> {
+    const today = resolveClientLocalDate(options.local_date, deps.clock);
+    const { goal: rawGoal, milestone } = await deps.quests.getCurrentMilestoneContextForUser(userId);
+    const goal = normalizeGoal(rawGoal);
+
+    if (!goal) {
+      throw notFound('Confirm a goal first before rescheduling quests.');
+    }
+    if (!milestone) {
+      throw notFound('Confirm a milestone plan with a current stage before rescheduling quests.');
+    }
+
+    const { windowStart, windowEnd } = computeWeekPlanWindow(today, milestone.target_date);
+    const timeBudgetMinutesPerDay =
+      goal.time_budget_minutes_per_day && goal.time_budget_minutes_per_day > 0
+        ? goal.time_budget_minutes_per_day
+        : DEFAULT_TIME_BUDGET_MINUTES;
+
+    const existingQuests = await deps.quests.listForMilestone(userId, milestone.id);
+    const overdueQuests = existingQuests.filter(
+      (q) => q.due_date < today && q.completed_at === null,
+    );
+    if (overdueQuests.length === 0) {
+      throw validationError('All your earlier quests are already taken care of ♡');
+    }
+
+    const overdueIds = new Set(overdueQuests.map((q) => q.id));
+    const existingScheduledQuests = existingQuests.filter((q) => !overdueIds.has(q.id));
+    const history = deps.chat ? toClaudeHistory(await deps.chat.listForUser(userId)) : [];
+
+    const requestInput = {
+      goal,
+      milestone,
+      windowStart,
+      windowEnd,
+      timeBudgetMinutesPerDay,
+      overdueQuests,
+      existingQuests,
+      history,
+      current_draft: options.current_draft,
+      feedback: options.feedback,
+    };
+
+    let rawProposal;
+    try {
+      rawProposal = deps.ai.proposeReschedule
+        ? await deps.ai.proposeReschedule(requestInput)
+        : buildDefaultRescheduleProposal(requestInput);
+    } catch {
+      throw aiUnavailable();
+    }
+
+    const validationSchema = RescheduleAiResponseSchema.extend({
+      moves: createRescheduleMovesSchema({
+        windowStart,
+        windowEnd,
+        milestoneTargetDate: milestone.target_date,
+        timeBudgetMinutesPerDay,
+        overdueQuests,
+        existingScheduledQuests,
+      }),
+    });
+
+    const parsed = validationSchema.safeParse(rawProposal);
+    if (!parsed.success) {
+      throw aiUnavailable(
+        'Mochi got a little tangled while rearranging your quests. Please try again in a moment.',
+      );
+    }
+
+    const now = deps.clock.now();
+    const userCreatedAt = toIsoDateTime(now);
+    const mochiCreatedAt = toIsoDateTime(new Date(now.getTime() + 1000));
+    const trimmedFeedback = options.feedback?.trim();
+
+    if (deps.chat) {
+      if (trimmedFeedback) {
+        const pair = await deps.chat.insertPair(
+          userId,
+          trimmedFeedback,
+          parsed.data.mochi_message,
+          userCreatedAt,
+          mochiCreatedAt,
+          goal.id,
+        );
+        return {
+          goal,
+          milestone,
+          window_start: windowStart,
+          window_end: windowEnd,
+          time_budget_minutes_per_day: timeBudgetMinutesPerDay,
+          overdue_quests: overdueQuests,
+          existing_quests: existingQuests,
+          moves: parsed.data.moves,
+          user_message: pair.userMessage,
+          mochi_message: pair.mochiMessage,
+        };
+      }
+
+      const mochiMessage = await deps.chat.insert(
+        userId,
+        'mochi',
+        parsed.data.mochi_message,
+        userCreatedAt,
+        goal.id,
+      );
+      return {
+        goal,
+        milestone,
+        window_start: windowStart,
+        window_end: windowEnd,
+        time_budget_minutes_per_day: timeBudgetMinutesPerDay,
+        overdue_quests: overdueQuests,
+        existing_quests: existingQuests,
+        moves: parsed.data.moves,
+        user_message: null,
+        mochi_message: mochiMessage,
+      };
+    }
+
+    return {
+      goal,
+      milestone,
+      window_start: windowStart,
+      window_end: windowEnd,
+      time_budget_minutes_per_day: timeBudgetMinutesPerDay,
+      overdue_quests: overdueQuests,
+      existing_quests: existingQuests,
+      moves: parsed.data.moves,
+      user_message: trimmedFeedback
+        ? {
+            id: 1,
+            user_id: userId,
+            goal_id: goal.id,
+            role: 'user',
+            content: trimmedFeedback,
+            created_at: userCreatedAt,
+          }
+        : null,
+      mochi_message: {
+        id: 2,
+        user_id: userId,
+        goal_id: goal.id,
+        role: 'mochi',
+        content: parsed.data.mochi_message,
+        created_at: mochiCreatedAt,
+      },
+    };
+  }
+
+  /**
+   * Re-validates and saves the confirmed reschedule moves in one locked transaction (Issue #14).
+   * Rejects stale/completed quests and double confirms, and preserves completion/stamps/XP.
+   */
+  async function confirmReschedule(
+    userId: number,
+    options: ConfirmRescheduleOptions,
+  ): Promise<ConfirmRescheduleResponse> {
+    const today = resolveClientLocalDate(options.local_date, deps.clock);
+    const { goal: rawGoal, milestone } = await deps.quests.getCurrentMilestoneContextForUser(userId);
+    const goal = normalizeGoal(rawGoal);
+
+    if (!goal) {
+      throw notFound('No active goal found to confirm a reschedule for.');
+    }
+    if (!milestone) {
+      throw notFound('No current milestone found to confirm a reschedule for.');
+    }
+
+    const { windowStart, windowEnd } = computeWeekPlanWindow(today, milestone.target_date);
+    const timeBudgetMinutesPerDay =
+      goal.time_budget_minutes_per_day && goal.time_budget_minutes_per_day > 0
+        ? goal.time_budget_minutes_per_day
+        : DEFAULT_TIME_BUDGET_MINUTES;
+
+    const existingQuests = await deps.quests.listForMilestone(userId, milestone.id);
+    const existingById = new Map(existingQuests.map((q) => [q.id, q]));
+
+    // If a target quest was already completed, moved (e.g. double confirm), or removed since preview,
+    // reject with 409 CONFLICT and a friendly message before running Zod window/budget validation.
+    for (const move of options.moves) {
+      const current = existingById.get(move.quest_id);
+      if (!current) {
+        throw conflict(
+          'One of those quests was updated or removed — let Mochi take a fresh peek first ♡',
+        );
+      }
+      if (
+        current.completed_at !== null ||
+        current.due_date >= today ||
+        current.due_date !== move.from_date
+      ) {
+        throw conflict(
+          'Some of your quests have already been checked off or moved — let Mochi refresh the schedule first ♡',
+        );
+      }
+    }
+
+    const overdueQuests = existingQuests.filter(
+      (q) => q.due_date < today && q.completed_at === null,
+    );
+    const movingIds = new Set(options.moves.map((m) => m.quest_id));
+    const existingScheduledQuests = existingQuests.filter((q) => !movingIds.has(q.id));
+
+    const movesSchema = createRescheduleMovesSchema({
+      windowStart,
+      windowEnd,
+      milestoneTargetDate: milestone.target_date,
+      timeBudgetMinutesPerDay,
+      overdueQuests,
+      existingScheduledQuests,
+    });
+
+    const parsed = movesSchema.safeParse(options.moves);
+    if (!parsed.success) {
+      const firstMessage = parsed.error.issues[0]?.message ?? 'Invalid reschedule plan';
+      throw validationError(firstMessage);
+    }
+
+    const savedQuests = await deps.quests.saveConfirmedRescheduleMoves(
+      userId,
+      milestone.id,
+      today,
+      windowStart,
+      windowEnd,
+      timeBudgetMinutesPerDay,
+      parsed.data,
+    );
+
+    const updatedMilestone = {
+      ...milestone,
+      total_quests: savedQuests.length,
+      done_quests: savedQuests.filter((q) => q.completed_at !== null).length,
+    };
+
+    return {
+      goal,
+      milestone: updatedMilestone,
+      window_start: windowStart,
+      window_end: windowEnd,
+      quests: savedQuests,
+    };
+  }
+
   return {
     getCurrentMilestoneQuests,
     generateCurrentMilestoneQuests,
     toggleQuestCompletion,
     proposeWeekPlan,
     confirmWeekPlan,
+    proposeReschedule,
+    confirmReschedule,
   };
 }
 

@@ -246,6 +246,219 @@ export const ConfirmWeekPlanResponseSchema = z.object({
 
 export type ConfirmWeekPlanResponse = z.infer<typeof ConfirmWeekPlanResponseSchema>;
 
+export const RescheduleMoveSchema = z.object({
+  quest_id: z.number().int().positive(),
+  title: z
+    .string()
+    .trim()
+    .min(1, 'Quest title is required')
+    .max(200, 'Quest title is too long (max 200 characters)'),
+  from_date: IsoDateSchema,
+  to_date: IsoDateSchema,
+  estimated_minutes: z
+    .number()
+    .int('Quest estimated_minutes must be a whole number')
+    .positive('Quest estimated_minutes must be positive'),
+});
+
+export type RescheduleMove = z.infer<typeof RescheduleMoveSchema>;
+
+export const RescheduleMoveListSchema = z
+  .array(RescheduleMoveSchema)
+  .min(1, 'At least one quest move is required');
+
+export type RescheduleMoveList = z.infer<typeof RescheduleMoveListSchema>;
+
+export type RescheduleValidationOptions = {
+  windowStart: string;
+  windowEnd: string;
+  milestoneTargetDate?: string | null;
+  timeBudgetMinutesPerDay: number;
+  overdueQuests: ReadonlyArray<{
+    id: number;
+    title: string;
+    due_date: string;
+    estimated_minutes: number | null;
+  }>;
+  existingScheduledQuests?: ReadonlyArray<{
+    id?: number;
+    title: string;
+    due_date: string;
+    estimated_minutes: number | null;
+  }>;
+};
+
+/**
+ * Builds a Zod schema for reschedule moves (#14) that enforces:
+ * - each move references an incomplete earlier quest in `overdueQuests` and appears at most once
+ * - each move preserves the quest's `from_date`, `title`, and `estimated_minutes`
+ * - each move `to_date` is within `[windowStart, windowEnd]` and not after `milestoneTargetDate` (when `milestoneTargetDate >= windowStart`)
+ * - each day's total minutes (existing quests on that day + rescheduled moves onto that day) fits within `timeBudgetMinutesPerDay`
+ */
+export function createRescheduleMovesSchema(options: RescheduleValidationOptions) {
+  const {
+    windowStart,
+    windowEnd,
+    milestoneTargetDate,
+    timeBudgetMinutesPerDay,
+    overdueQuests,
+    existingScheduledQuests = [],
+  } = options;
+
+  const effectiveTargetDate =
+    milestoneTargetDate && milestoneTargetDate >= windowStart ? milestoneTargetDate : null;
+
+  const overdueById = new Map(overdueQuests.map((q) => [q.id, q]));
+
+  return RescheduleMoveListSchema.superRefine((moves, ctx) => {
+    const minutesByDate = new Map<string, number>();
+    for (const existing of existingScheduledQuests) {
+      if (existing.due_date >= windowStart && existing.due_date <= windowEnd) {
+        const mins =
+          existing.estimated_minutes && existing.estimated_minutes > 0
+            ? existing.estimated_minutes
+            : 0;
+        minutesByDate.set(existing.due_date, (minutesByDate.get(existing.due_date) ?? 0) + mins);
+      }
+    }
+
+    const seenQuestIds = new Set<number>();
+
+    for (let i = 0; i < moves.length; i += 1) {
+      const move = moves[i];
+      const sourceQuest = overdueById.get(move.quest_id);
+
+      if (!sourceQuest) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [i, 'quest_id'],
+          message: `Quest #${move.quest_id} is not in your earlier quests for this stage — let Mochi refresh the schedule first ♡`,
+        });
+        continue;
+      }
+
+      if (seenQuestIds.has(move.quest_id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [i, 'quest_id'],
+          message: `Quest "${move.title}" appears more than once in the proposed schedule`,
+        });
+        continue;
+      }
+      seenQuestIds.add(move.quest_id);
+
+      if (move.from_date !== sourceQuest.due_date) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [i, 'from_date'],
+          message: `Quest "${sourceQuest.title}" has a different current date (${sourceQuest.due_date}) than ${move.from_date}`,
+        });
+      }
+
+      if (normalizeQuestTitle(move.title) !== normalizeQuestTitle(sourceQuest.title)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [i, 'title'],
+          message: `Rescheduling moves existing quests without renaming them ("${sourceQuest.title}")`,
+        });
+      }
+
+      const expectedMinutes =
+        sourceQuest.estimated_minutes && sourceQuest.estimated_minutes > 0
+          ? sourceQuest.estimated_minutes
+          : move.estimated_minutes;
+      if (move.estimated_minutes !== expectedMinutes) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [i, 'estimated_minutes'],
+          message: `Quest "${sourceQuest.title}" must keep its estimated_minutes (${expectedMinutes})`,
+        });
+      }
+
+      if (move.to_date < windowStart || move.to_date > windowEnd) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [i, 'to_date'],
+          message: `New date (${move.to_date}) must be within the window ${windowStart}..${windowEnd}`,
+        });
+      }
+
+      if (effectiveTargetDate && move.to_date > effectiveTargetDate) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [i, 'to_date'],
+          message: `New date (${move.to_date}) must not be after the milestone target date (${effectiveTargetDate})`,
+        });
+      }
+
+      const nextTotal = (minutesByDate.get(move.to_date) ?? 0) + move.estimated_minutes;
+      minutesByDate.set(move.to_date, nextTotal);
+    }
+
+    for (const [date, totalMinutes] of minutesByDate.entries()) {
+      if (totalMinutes > timeBudgetMinutesPerDay) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['moves'],
+          message: `Total estimated_minutes on ${date} (${totalMinutes}) exceeds daily time budget (${timeBudgetMinutesPerDay})`,
+        });
+      }
+    }
+  });
+}
+
+export const RescheduleAiResponseSchema = z.object({
+  mochi_message: z.string().trim().min(1, 'Mochi message is required').max(1000),
+  moves: RescheduleMoveListSchema,
+});
+
+export type RescheduleAiResponse = z.infer<typeof RescheduleAiResponseSchema>;
+
+export const ProposeRescheduleBodySchema = z.object({
+  local_date: IsoDateSchema.optional(),
+  feedback: z
+    .string()
+    .trim()
+    .min(1, 'Adjustment request cannot be empty')
+    .max(2000, 'Adjustment request is too long (max 2000 characters)')
+    .optional(),
+  current_draft: RescheduleMoveListSchema.optional(),
+});
+
+export type ProposeRescheduleBody = z.infer<typeof ProposeRescheduleBodySchema>;
+
+export const ProposeRescheduleResponseSchema = z.object({
+  goal: RoadmapGoalSchema,
+  milestone: MilestoneSchema,
+  window_start: IsoDateSchema,
+  window_end: IsoDateSchema,
+  time_budget_minutes_per_day: z.number().int().positive(),
+  overdue_quests: z.array(QuestSchema),
+  existing_quests: z.array(QuestSchema),
+  moves: RescheduleMoveListSchema,
+  mochi_message: ChatMessageSchema,
+  user_message: ChatMessageSchema.nullable(),
+});
+
+export type ProposeRescheduleResponse = z.infer<typeof ProposeRescheduleResponseSchema>;
+
+export const ConfirmRescheduleBodySchema = z.object({
+  local_date: IsoDateSchema.optional(),
+  moves: RescheduleMoveListSchema,
+});
+
+export type ConfirmRescheduleBody = z.infer<typeof ConfirmRescheduleBodySchema>;
+
+export const ConfirmRescheduleResponseSchema = z.object({
+  goal: RoadmapGoalSchema,
+  milestone: MilestoneSchema,
+  window_start: IsoDateSchema,
+  window_end: IsoDateSchema,
+  quests: z.array(QuestSchema),
+});
+
+export type ConfirmRescheduleResponse = z.infer<typeof ConfirmRescheduleResponseSchema>;
+
 export const QuestGenerationAiResponseSchema = z.object({
   quests: ProposedQuestListSchema,
 });

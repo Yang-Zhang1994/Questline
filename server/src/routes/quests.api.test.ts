@@ -1,4 +1,4 @@
-import type { ProposedQuest } from '@questline/shared';
+import type { ProposedQuest, RescheduleMove } from '@questline/shared';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createEchoChatClient, type ChatAiClient } from '../ai/client.js';
@@ -967,6 +967,224 @@ describe('GET /api/quests & POST /api/quests/generate (Issue #7)', () => {
           local_date: '2026-11-10',
           quests: [{ title: 'Some quest', due_date: '2026-11-10', estimated_minutes: 15 }],
         })
+        .expect(404);
+    });
+  });
+
+  describe('POST /api/quests/reschedule/propose & POST /api/quests/reschedule/confirm (Issue #14)', () => {
+    const GUILT_WORDS_REGEX = /\b(overdue|late|behind|failed|fail|failure)\b/i;
+
+    it('returns past-due incomplete quests in GET /api/quests, proposes a reschedule draft without saving, supports feedback adjustments, and updates only due_date on confirm', async () => {
+      const { ProposeRescheduleResponseSchema, ConfirmRescheduleResponseSchema } = await import(
+        '@questline/shared'
+      );
+      const echo = createEchoChatClient();
+      const app = buildApp(echo);
+      const token = await loginAsDemo(app);
+
+      // Seed:
+      // - 2 incomplete past-due quests on current milestone (milestone_id = 1)
+      // - 1 completed past-due quest (should NOT be rescheduled, and completed_local_date / XP / stamps must stay intact)
+      // - 1 quest already due today (2026-11-10) taking 15m of the 30m budget
+      const insertRes = await db.query<{ id: number }>(
+        `INSERT INTO quests (milestone_id, title, due_date, estimated_minutes, completed_at, completed_local_date)
+         VALUES
+           (1, 'Earlier reading step 1', '2026-11-08', 15, NULL, NULL),
+           (1, 'Earlier grammar note 2', '2026-11-09', 20, NULL, NULL),
+           (1, 'Finished past quest', '2026-11-08', 10, '2026-11-08T12:00:00Z', '2026-11-08'),
+           (1, 'Today scheduled quest', '2026-11-10', 15, NULL, NULL)
+         RETURNING id`,
+      );
+      const [pastQuest1Id, pastQuest2Id, donePastQuestId] = insertRes.rows.map((r) => r.id);
+
+      await db.query(
+        `INSERT INTO stamps (user_id, card_number, stamp_date) VALUES (1, 1, '2026-11-08')`,
+      );
+      await db.query(
+        `INSERT INTO user_progress (user_id, xp, level, current_streak, best_streak, last_active_date, active_day_completions)
+         VALUES (1, 10, 1, 1, 1, '2026-11-08', 1)
+         ON CONFLICT (user_id) DO UPDATE SET xp = 10, current_streak = 1, best_streak = 1, last_active_date = '2026-11-08'`,
+      );
+
+      // Verify GET /api/quests returns past-due quests so the Today page "From earlier" section can find them
+      const getBeforeRes = await request(app)
+        .get('/api/quests?local_date=2026-11-10')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(getBeforeRes.body.quests.map((q: { id: number }) => q.id)).toContain(pastQuest1Id);
+      expect(getBeforeRes.body.quests.map((q: { id: number }) => q.id)).toContain(pastQuest2Id);
+
+      // 1. Propose reschedule -> preview only, nothing saved in DB
+      const proposeRes = await request(app)
+        .post('/api/quests/reschedule/propose')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ local_date: '2026-11-10' })
+        .expect(200);
+
+      expect(ProposeRescheduleResponseSchema.safeParse(proposeRes.body).success).toBe(true);
+      expect(proposeRes.body.overdue_quests.map((q: { id: number }) => q.id)).toEqual([
+        pastQuest1Id,
+        pastQuest2Id,
+      ]);
+      expect(proposeRes.body.moves).toHaveLength(2);
+      expect(proposeRes.body.mochi_message.content).not.toMatch(GUILT_WORDS_REGEX);
+
+      // Check DB is untouched before confirming
+      const beforeDb = await db.query<{ id: number; due_date: string }>(
+        `SELECT id, due_date FROM quests WHERE id IN ($1, $2) ORDER BY id`,
+        [pastQuest1Id, pastQuest2Id],
+      );
+      expect(beforeDb.rows).toEqual([
+        { id: pastQuest1Id, due_date: '2026-11-08' },
+        { id: pastQuest2Id, due_date: '2026-11-09' },
+      ]);
+
+      // 2. Confirm reschedule -> updates due_dates in one locked transaction without touching XP, stamps, or completed_local_date
+      const confirmRes = await request(app)
+        .post('/api/quests/reschedule/confirm')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          local_date: '2026-11-10',
+          moves: proposeRes.body.moves,
+        })
+        .expect(200);
+
+      expect(ConfirmRescheduleResponseSchema.safeParse(confirmRes.body).success).toBe(true);
+      const moved1 = confirmRes.body.quests.find((q: { id: number }) => q.id === pastQuest1Id);
+      const moved2 = confirmRes.body.quests.find((q: { id: number }) => q.id === pastQuest2Id);
+      expect(moved1.due_date >= '2026-11-10').toBe(true);
+      expect(moved2.due_date >= '2026-11-10').toBe(true);
+
+      // Verify completed_local_date, completed_at, XP, and stamps were not changed
+      const doneRow = await db.query<{
+        completed_at: Date | null;
+        completed_local_date: string | null;
+      }>(`SELECT completed_at, completed_local_date FROM quests WHERE id = $1`, [donePastQuestId]);
+      expect(doneRow.rows[0].completed_at).not.toBeNull();
+      expect(doneRow.rows[0].completed_local_date).toBe('2026-11-08');
+
+      const progressRow = await db.query<{ xp: number }>(
+        `SELECT xp FROM user_progress WHERE user_id = 1`,
+      );
+      expect(progressRow.rows[0].xp).toBe(10);
+
+      const stampsCount = await db.query<{ c: number }>(
+        `SELECT COUNT(*)::int AS c FROM stamps WHERE user_id = 1`,
+      );
+      expect(stampsCount.rows[0].c).toBe(1);
+    });
+
+    it('supports partial rescheduling when overdue quests exceed the window capacity, leaving unmoved quests unchanged', async () => {
+      const echo = createEchoChatClient();
+      const app = buildApp(echo);
+      const token = await loginAsDemo(app);
+
+      // Set milestone target_date to 2026-11-10 (1-day window, 30m daily budget)
+      await db.query(`UPDATE milestones SET target_date = '2026-11-10' WHERE id = 1`);
+
+      const insertRes = await db.query<{ id: number }>(
+        `INSERT INTO quests (milestone_id, title, due_date, estimated_minutes, completed_at)
+         VALUES
+           (1, 'First 20m past quest (fits)', '2026-11-08', 20, NULL),
+           (1, 'Second 20m past quest (exceeds 30m capacity)', '2026-11-09', 20, NULL)
+         RETURNING id`,
+      );
+      const [q1Id, q2Id] = insertRes.rows.map((r) => r.id);
+
+      const proposeRes = await request(app)
+        .post('/api/quests/reschedule/propose')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ local_date: '2026-11-10' })
+        .expect(200);
+
+      expect(proposeRes.body.overdue_quests).toHaveLength(2);
+      expect(proposeRes.body.moves).toHaveLength(1);
+      expect(proposeRes.body.moves[0].quest_id).toBe(q1Id);
+      expect(proposeRes.body.moves[0].to_date).toBe('2026-11-10');
+      expect(proposeRes.body.mochi_message.content).not.toMatch(GUILT_WORDS_REGEX);
+
+      const confirmRes = await request(app)
+        .post('/api/quests/reschedule/confirm')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          local_date: '2026-11-10',
+          moves: proposeRes.body.moves,
+        })
+        .expect(200);
+
+      expect(confirmRes.body.quests.find((q: { id: number }) => q.id === q1Id).due_date).toBe(
+        '2026-11-10',
+      );
+      expect(confirmRes.body.quests.find((q: { id: number }) => q.id === q2Id).due_date).toBe(
+        '2026-11-09',
+      );
+    });
+
+    it('rejects a double confirm, a stale/completed quest, and another user’s quests', async () => {
+      const echo = createEchoChatClient();
+      const app = buildApp(echo);
+      const token = await loginAsDemo(app);
+
+      const insertRes = await db.query<{ id: number }>(
+        `INSERT INTO quests (milestone_id, title, due_date, estimated_minutes, completed_at)
+         VALUES (1, 'Past quest to reschedule', '2026-11-08', 15, NULL)
+         RETURNING id`,
+      );
+      const questId = insertRes.rows[0].id;
+
+      const proposeRes = await request(app)
+        .post('/api/quests/reschedule/propose')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ local_date: '2026-11-10' })
+        .expect(200);
+
+      const moves = proposeRes.body.moves as RescheduleMove[];
+
+      // 1. Concurrent / double confirm -> one 200 and one 409 CONFLICT
+      const [resA, resB] = await Promise.all([
+        request(app)
+          .post('/api/quests/reschedule/confirm')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ local_date: '2026-11-10', moves }),
+        request(app)
+          .post('/api/quests/reschedule/confirm')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ local_date: '2026-11-10', moves }),
+      ]);
+
+      expect([resA.status, resB.status].sort()).toEqual([200, 409]);
+
+      // 2. Reset due_date to 2026-11-08, mark completed since preview -> confirm rejects with 409/400 friendly message
+      await db.query(
+        `UPDATE quests SET due_date = '2026-11-08', completed_at = '2026-11-10T12:00:00Z' WHERE id = $1`,
+        [questId],
+      );
+
+      const staleRes = await request(app)
+        .post('/api/quests/reschedule/confirm')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ local_date: '2026-11-10', moves });
+      expect([400, 409]).toContain(staleRes.status);
+      expect(staleRes.body.error.message).not.toMatch(GUILT_WORDS_REGEX);
+
+      // 3. Another user cannot reschedule demo user's quests
+      await db.query(`UPDATE quests SET completed_at = NULL WHERE id = $1`, [questId]);
+      const otherReg = await request(app)
+        .post('/api/auth/register')
+        .send({ email: 'resched-other@questline.local', password: 'other-password-123' })
+        .expect(201);
+      const otherToken = otherReg.body.token as string;
+
+      await request(app)
+        .post('/api/quests/reschedule/propose')
+        .set('Authorization', `Bearer ${otherToken}`)
+        .send({ local_date: '2026-11-10' })
+        .expect(404);
+
+      await request(app)
+        .post('/api/quests/reschedule/confirm')
+        .set('Authorization', `Bearer ${otherToken}`)
+        .send({ local_date: '2026-11-10', moves })
         .expect(404);
     });
   });
