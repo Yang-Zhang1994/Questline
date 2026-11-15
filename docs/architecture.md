@@ -7,10 +7,11 @@ Companion to `AGENTS.md` §1.3. Stack: **React + Vite** SPA ↔ **Express 5** AP
 ```mermaid
 flowchart LR
   User([Player]) --> SPA[React + Vite SPA<br/>Today / Map / Talk]
-  SPA -->|Bearer JWT /api| API[Express API<br/>routes → services → repos]
+  SPA -->|Bearer JWT /api| API[Express 5 API<br/>routes → services → repos]
+  API -.->|production static| SPA
   API --> PG[(PostgreSQL)]
   API -->|@anthropic-ai/sdk| Claude[Claude API<br/>ANTHROPIC_*]
-  Shared[shared/schemas<br/>zod] -.-> SPA
+  Shared[shared/src/schemas<br/>zod] -.-> SPA
   Shared -.-> API
 ```
 
@@ -19,7 +20,7 @@ flowchart LR
 ```mermaid
 flowchart TB
   subgraph Client
-    Pages[pages + hooks]
+    Pages[pages + components + hooks]
     ApiHelpers[client/src/api]
     Pages --> ApiHelpers
   end
@@ -30,13 +31,14 @@ flowchart TB
     Services[services/]
     Repos[repositories/]
     AI[ai/client.ts + prompts/]
+    Static[express.static client/dist<br/>NODE_ENV=production]
     Routes --> MW --> Services
     Services --> Repos
     Services --> AI
   end
 
   ApiHelpers -->|HTTP JSON| Routes
-  Repos --> DB[(PostgreSQL migrations)]
+  Repos --> DB[(PostgreSQL migrations 001–005)]
   AI --> Claude[(Anthropic)]
 ```
 
@@ -45,13 +47,13 @@ flowchart TB
 | Layer | Owns | Does not |
 | ----- | ---- | -------- |
 | `client/` | UI, React Router, Bearer fetch | Claude keys, SQL, business rules |
-| `server/routes/` | HTTP verbs, zod parse, status codes | SQL, XP math, prompt text |
-| `server/services/` | Domain logic, confirm-before-save, transactions | Express `req`/`res` |
-| `server/repositories/` | Parameterized SQL | Auth / AI decisions |
-| `server/ai/` | Claude gateway + prompts | Direct DB writes of drafts as final rows |
-| `shared/schemas/` | Request/response zod contracts | Runtime side effects |
+| `server/src/routes/` | HTTP verbs, rate-limiters, zod parse, status codes | SQL, XP math, prompt text |
+| `server/src/services/` | Domain logic, confirm-before-save, transactions | Express `req`/`res` |
+| `server/src/repositories/` | Parameterized SQL | Auth / AI decisions |
+| `server/src/ai/` | Claude gateway + prompts (plus echo fallback when enabled) | Direct DB writes of drafts as final rows |
+| `shared/src/schemas/` | Request/response zod contracts | Runtime side effects |
 
-**Confirm-before-save:** Mochi proposals land in JSONB drafts (`goals.milestone_draft`, `milestones.quest_draft`, `goals.reschedule_draft`, `goals.week_plan_draft`). Only `*/confirm` (or manual-plan submit) writes Goal / Milestone / Quest rows.
+**Confirm-before-save:** Goal interview answers and the pending goal proposal live in `goal_interviews` (`goal_draft` JSONB) until `POST /api/goals/new` confirms and writes to `goals`. Milestone, daily-quest, reschedule, and week-plan proposals are returned as transient previews from `*/draft` or `*/propose` endpoints and only persisted to `milestones` / `quests` when the user confirms via `*/confirm` (or `POST /api/goals/manual-plan`).
 
 ## API surface (summary)
 
@@ -59,8 +61,9 @@ flowchart TB
 | ----- | ------- |
 | `GET /api/health` | Liveness |
 | `/api/auth` | Register / login → JWT |
-| `/api/goals` | List, activate, delete, new-goal interview, manual plan |
+| `/api/goals` | List, activate, delete, new-goal confirm, manual plan |
 | `/api/milestones` | Draft → revise → confirm; stage complete |
+| `/api/roadmap` | Active goal roadmap (start → milestones → goal) |
 | `/api/quests` | Today (+ progress HUD), CRUD, quest draft, reschedule, week plan |
 | `/api/chat` | Messages + interview restart |
 | `/api/diary-notes` | Daily note get / upsert |
@@ -69,7 +72,7 @@ Full contract: [`openapi.yaml`](./openapi.yaml).
 
 ## Database schema (ER)
 
-Derived from `server/src/db/migrations/` (`001`–`008`). Calendar dates are `TEXT` as `YYYY-MM-DD`; timestamps are `TIMESTAMPTZ`.
+Derived from `server/src/db/migrations/` (`001`–`005`, tracked in `schema_migrations`). Calendar dates are `TEXT` as `YYYY-MM-DD`; timestamps are `TIMESTAMPTZ`.
 
 ```mermaid
 erDiagram
@@ -99,9 +102,6 @@ erDiagram
     int time_budget_minutes_per_day
     text deadline
     text status
-    jsonb milestone_draft
-    jsonb reschedule_draft
-    jsonb week_plan_draft
     timestamptz created_at
   }
 
@@ -113,7 +113,6 @@ erDiagram
     text description
     text target_date
     text status
-    jsonb quest_draft
   }
 
   quests {
@@ -123,6 +122,7 @@ erDiagram
     text due_date
     int estimated_minutes
     timestamptz completed_at
+    text completed_local_date
   }
 
   user_progress {
@@ -161,6 +161,7 @@ erDiagram
     text starting_point
     text time_budget
     text deadline
+    jsonb goal_draft
     timestamptz created_at
     timestamptz updated_at
   }
