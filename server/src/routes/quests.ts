@@ -1,6 +1,8 @@
 import {
   ConfirmRescheduleBodySchema,
   ConfirmWeekPlanBodySchema,
+  CreateQuestBodySchema,
+  DeleteQuestBodySchema,
   IsoDateSchema,
   ProposeRescheduleBodySchema,
   ProposeWeekPlanBodySchema,
@@ -20,6 +22,7 @@ const QuestIdParamSchema = z.object({
 
 const LocalDateQuerySchema = z.object({
   local_date: IsoDateSchema.optional(),
+  milestone_id: z.coerce.number().int().positive('Milestone id must be a positive integer').optional(),
 });
 
 export function createQuestsRouter(questService: QuestService): Router {
@@ -45,9 +48,30 @@ export function createQuestsRouter(questService: QuestService): Router {
       if (!user) {
         throw unauthorized();
       }
-      const { local_date: localDate } = LocalDateQuerySchema.parse(req.query);
+      const { local_date: localDate, milestone_id: milestoneId } = LocalDateQuerySchema.parse(
+        req.query,
+      );
+      if (milestoneId !== undefined) {
+        const payload = await questService.listMilestoneQuests(user.id, milestoneId);
+        res.status(200).json(payload);
+        return;
+      }
       const payload = await questService.getCurrentMilestoneQuests(user.id, localDate);
       res.status(200).json(payload);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/', questGenerateLimiter, async (req, res, next) => {
+    try {
+      const user = getRequestUser(req);
+      if (!user) {
+        throw unauthorized();
+      }
+      const body = CreateQuestBodySchema.parse(req.body ?? {});
+      const payload = await questService.createManualQuest(user.id, body);
+      res.status(201).json(payload);
     } catch (err) {
       next(err);
     }
@@ -151,6 +175,23 @@ export function createQuestsRouter(questService: QuestService): Router {
         body.completed,
         body.local_date,
       );
+      res.status(200).json(payload);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.delete('/:questId', questGenerateLimiter, async (req, res, next) => {
+    try {
+      const user = getRequestUser(req);
+      if (!user) {
+        throw unauthorized();
+      }
+      const { questId } = QuestIdParamSchema.parse(req.params);
+      const query = LocalDateQuerySchema.parse(req.query);
+      const body = DeleteQuestBodySchema.parse(req.body ?? {});
+      const localDate = query.local_date ?? body.local_date;
+      const payload = await questService.deleteQuest(user.id, questId, localDate);
       res.status(200).json(payload);
     } catch (err) {
       next(err);

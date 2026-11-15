@@ -1,5 +1,8 @@
+import { useState } from 'react';
+import type { Milestone } from '@questline/shared';
 import { RoadmapView } from '../components/RoadmapView/RoadmapView';
 import { BottomDock } from '../components/BottomDock/BottomDock';
+import { MilestoneSheet } from '../components/MilestoneSheet/MilestoneSheet';
 import { useRoadmap } from '../hooks/useRoadmap';
 
 export type MapPageProps = {
@@ -8,7 +11,8 @@ export type MapPageProps = {
 };
 
 export function MapPage({ userEmail = null, onLogout }: MapPageProps) {
-  const { data, loading, error } = useRoadmap();
+  const { data, loading, error, reload } = useRoadmap();
+  const [selectedMilestone, setSelectedMilestone] = useState<Milestone | null>(null);
 
   return (
     <div className="flex min-h-screen flex-col items-center px-4 pb-24 pt-6">
@@ -46,8 +50,22 @@ export function MapPage({ userEmail = null, onLogout }: MapPageProps) {
           milestones={data?.milestones ?? []}
           loading={loading}
           error={error}
+          onSelectMilestone={(milestone) => {
+            setSelectedMilestone(milestone);
+          }}
         />
       </main>
+
+      <MilestoneSheet
+        milestone={selectedMilestone}
+        timeBudgetMinutesPerDay={data?.goal?.time_budget_minutes_per_day ?? null}
+        onClose={() => {
+          setSelectedMilestone(null);
+        }}
+        onQuestsChanged={() => {
+          void reload();
+        }}
+      />
 
       <BottomDock />
     </div>

@@ -1,7 +1,10 @@
 import {
   ConfirmRescheduleResponseSchema,
   ConfirmWeekPlanResponseSchema,
+  CreateQuestResponseSchema,
   CurrentMilestoneQuestsResponseSchema,
+  DeleteQuestResponseSchema,
+  MilestoneQuestsResponseSchema,
   ProposeRescheduleResponseSchema,
   ProposeWeekPlanResponseSchema,
   ToggleQuestCompletionResponseSchema,
@@ -9,7 +12,11 @@ import {
   type ConfirmRescheduleResponse,
   type ConfirmWeekPlanBody,
   type ConfirmWeekPlanResponse,
+  type CreateQuestBody,
+  type CreateQuestResponse,
   type CurrentMilestoneQuestsResponse,
+  type DeleteQuestResponse,
+  type MilestoneQuestsResponse,
   type ProposeRescheduleBody,
   type ProposeRescheduleResponse,
   type ProposeWeekPlanBody,
@@ -240,3 +247,100 @@ export async function confirmReschedule(
   }
   return parsed.data;
 }
+
+export const FRIENDLY_MILESTONE_QUESTS_ERROR =
+  "Mochi couldn't open this stage's quests right now. Take a gentle breath and try again in a moment ♡";
+
+export const FRIENDLY_CREATE_QUEST_ERROR =
+  "Mochi couldn't add that quest just now. Take a gentle breath and try again in a moment ♡";
+
+export const FRIENDLY_DELETE_QUEST_ERROR =
+  "Mochi couldn't remove that quest just now. Take a gentle breath and try again in a moment ♡";
+
+export async function fetchMilestoneQuests(
+  milestoneId: number,
+): Promise<MilestoneQuestsResponse> {
+  const res = await fetch(`/api/quests?milestone_id=${encodeURIComponent(String(milestoneId))}`, {
+    headers: authHeaders(),
+  });
+  let body: unknown;
+  try {
+    body = await parseJson(res);
+  } catch {
+    throw new Error(FRIENDLY_MILESTONE_QUESTS_ERROR);
+  }
+  if (!res.ok) {
+    throw new ApiError(
+      errorMessage(body, FRIENDLY_MILESTONE_QUESTS_ERROR),
+      errorCode(body),
+      res.status,
+    );
+  }
+  const parsed = MilestoneQuestsResponseSchema.safeParse(body);
+  if (!parsed.success) {
+    console.error('Invalid fetchMilestoneQuests response payload:', parsed.error);
+    throw new Error(FRIENDLY_MILESTONE_QUESTS_ERROR);
+  }
+  return parsed.data;
+}
+
+export async function createQuest(
+  input: CreateQuestBody,
+): Promise<CreateQuestResponse> {
+  const res = await fetch('/api/quests', {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(input),
+  });
+  let body: unknown;
+  try {
+    body = await parseJson(res);
+  } catch {
+    throw new Error(FRIENDLY_CREATE_QUEST_ERROR);
+  }
+  if (!res.ok) {
+    throw new ApiError(
+      errorMessage(body, FRIENDLY_CREATE_QUEST_ERROR),
+      errorCode(body),
+      res.status,
+    );
+  }
+  const parsed = CreateQuestResponseSchema.safeParse(body);
+  if (!parsed.success) {
+    console.error('Invalid createQuest response payload:', parsed.error);
+    throw new Error(FRIENDLY_CREATE_QUEST_ERROR);
+  }
+  return parsed.data;
+}
+
+export async function deleteQuest(
+  questId: number,
+  localDate?: string,
+): Promise<DeleteQuestResponse> {
+  const qs = localDate ? `?local_date=${encodeURIComponent(localDate)}` : '';
+  const res = await fetch(`/api/quests/${encodeURIComponent(String(questId))}${qs}`, {
+    method: 'DELETE',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(localDate ? { local_date: localDate } : {}),
+  });
+  let body: unknown;
+  try {
+    body = await parseJson(res);
+  } catch {
+    throw new Error(FRIENDLY_DELETE_QUEST_ERROR);
+  }
+  if (!res.ok) {
+    throw new ApiError(
+      errorMessage(body, FRIENDLY_DELETE_QUEST_ERROR),
+      errorCode(body),
+      res.status,
+    );
+  }
+  const parsed = DeleteQuestResponseSchema.safeParse(body);
+  if (!parsed.success) {
+    console.error('Invalid deleteQuest response payload:', parsed.error);
+    throw new Error(FRIENDLY_DELETE_QUEST_ERROR);
+  }
+  return parsed.data;
+}
+

@@ -733,6 +733,264 @@ export function createQuestRepository(db: Db) {
         client.release();
       }
     },
+
+    /**
+     * Find a milestone belonging to the authenticated user's active goal (#20).
+     * Returns null if not found, owned by another user, or belongs to a non-active goal.
+     */
+    async findMilestoneForActiveGoal(
+      userId: number,
+      milestoneId: number,
+    ): Promise<{
+      milestone: Milestone;
+      time_budget_minutes_per_day: number | null;
+    } | null> {
+      const result = await db.query<
+        MilestoneRow & { time_budget_minutes_per_day: number | null }
+      >(
+        `SELECT
+           m.id,
+           m.goal_id,
+           m.position,
+           m.title,
+           m.description,
+           m.target_date,
+           m.status,
+           g.time_budget_minutes_per_day,
+           COUNT(q.id)::int AS total_quests,
+           COALESCE(SUM(CASE WHEN q.completed_at IS NOT NULL THEN 1 ELSE 0 END), 0)::int AS done_quests
+         FROM milestones m
+         INNER JOIN goals g ON g.id = m.goal_id
+         LEFT JOIN quests q ON q.milestone_id = m.id
+         WHERE m.id = $1
+           AND g.user_id = $2
+           AND g.status = 'active'
+         GROUP BY m.id, g.time_budget_minutes_per_day`,
+        [milestoneId, userId],
+      );
+      const row = result.rows[0];
+      if (!row) return null;
+      return {
+        milestone: mapMilestone(row),
+        time_budget_minutes_per_day: row.time_budget_minutes_per_day,
+      };
+    },
+
+    /**
+     * Transactionally locks the milestone on the user's active goal (`FOR UPDATE`),
+     * inserts the manual quest, and computes that day's total estimated_minutes on the milestone (#20).
+     * Returns null if the milestone does not belong to the user's active goal.
+     */
+    async createManualQuestForActiveGoal(
+      userId: number,
+      milestoneId: number,
+      title: string,
+      dueDate: string,
+      estimatedMinutes: number | null,
+    ): Promise<{
+      quest: Quest;
+      dailyMinutesOnDueDate: number;
+      timeBudgetMinutesPerDay: number | null;
+    } | null> {
+      const client = await db.connect();
+      try {
+        await client.query('BEGIN');
+
+        const lockResult = await client.query<{
+          id: number;
+          time_budget_minutes_per_day: number | null;
+        }>(
+          `SELECT m.id, g.time_budget_minutes_per_day
+           FROM milestones m
+           INNER JOIN goals g ON g.id = m.goal_id
+           WHERE m.id = $1
+             AND g.user_id = $2
+             AND g.status = 'active'
+           FOR UPDATE OF m, g`,
+          [milestoneId, userId],
+        );
+        const locked = lockResult.rows[0];
+        if (!locked) {
+          await client.query('ROLLBACK');
+          return null;
+        }
+
+        const inserted = await client.query<QuestRow>(
+          `INSERT INTO quests (milestone_id, title, due_date, estimated_minutes, completed_at)
+           VALUES ($1, $2, $3, $4, NULL)
+           RETURNING id, milestone_id, title, due_date, estimated_minutes, completed_at`,
+          [milestoneId, title, dueDate, estimatedMinutes],
+        );
+
+        const sumResult = await client.query<{ total: number }>(
+          `SELECT COALESCE(SUM(COALESCE(q.estimated_minutes, 0)), 0)::int AS total
+           FROM quests q
+           INNER JOIN milestones m ON m.id = q.milestone_id
+           WHERE m.goal_id = (SELECT goal_id FROM milestones WHERE id = $1)
+             AND q.due_date = $2`,
+          [milestoneId, dueDate],
+        );
+        const dailyMinutesOnDueDate = Number(sumResult.rows[0]?.total ?? 0);
+
+        await client.query('COMMIT');
+        return {
+          quest: mapQuest(inserted.rows[0]),
+          dailyMinutesOnDueDate,
+          timeBudgetMinutesPerDay: locked.time_budget_minutes_per_day,
+        };
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+    },
+
+    /**
+     * Transactionally deletes a quest belonging to a milestone of the user's active goal (#20).
+     * - Returns null if the quest does not exist or is not in the user's active goal.
+     * - If the quest was completed:
+     *   - Subtracts `xpToReverse` (clamped at 0) and recalculates level.
+     *   - If `completed_local_date` is non-null:
+     *     - Decrements `active_day_completions` and reverts `last_active_date` streak if `last_active_date === completed_local_date` and no completions remain on that day.
+     *     - Removes the stamp for `completed_local_date` only if no other completed quest of this user has `completed_local_date`.
+     *   - If `completed_local_date` is null (legacy completion before #13), reverses only XP and leaves streak and stamps untouched.
+     */
+    async deleteQuestWithXpReverse(
+      userId: number,
+      questId: number,
+      xpToReverse: number,
+    ): Promise<{
+      quest: Quest;
+      xpReversed: boolean;
+      progress: UserProgress;
+      stampCard: StampCard;
+    } | null> {
+      const client = await db.connect();
+      try {
+        await client.query('BEGIN');
+
+        const owned = await client.query<QuestRow>(
+          `SELECT q.id, q.milestone_id, q.title, q.due_date, q.estimated_minutes,
+                  q.completed_at, q.completed_local_date
+           FROM quests q
+           INNER JOIN milestones m ON m.id = q.milestone_id
+           INNER JOIN goals g ON g.id = m.goal_id
+           WHERE q.id = $1
+             AND g.user_id = $2
+             AND g.status = 'active'
+           FOR UPDATE OF q`,
+          [questId, userId],
+        );
+        const target = owned.rows[0];
+        if (!target) {
+          await client.query('ROLLBACK');
+          return null;
+        }
+
+        const wasCompleted = target.completed_at !== null;
+        const completedLocalDate = target.completed_local_date ?? null;
+
+        await client.query(`DELETE FROM quests WHERE id = $1`, [questId]);
+
+        const progressRow = await client.query<{
+          xp: number;
+          level: number;
+          current_streak: number;
+          best_streak: number;
+          last_active_date: string | null;
+          active_day_completions: number;
+        }>(
+          `INSERT INTO user_progress (
+             user_id, xp, level, current_streak, best_streak, last_active_date, active_day_completions
+           )
+           VALUES ($1, 0, 1, 0, 0, NULL, 0)
+           ON CONFLICT (user_id) DO UPDATE SET user_id = EXCLUDED.user_id
+           RETURNING xp, level, current_streak, best_streak, last_active_date, active_day_completions`,
+          [userId],
+        );
+
+        let nextXp = progressRow.rows[0].xp;
+        let nextLevel = progressRow.rows[0].level;
+        let streak: StreakState = {
+          current_streak: progressRow.rows[0].current_streak,
+          best_streak: progressRow.rows[0].best_streak,
+          last_active_date: progressRow.rows[0].last_active_date,
+        };
+        let activeDayCompletions = progressRow.rows[0].active_day_completions;
+
+        if (wasCompleted) {
+          nextXp = Math.max(0, nextXp - xpToReverse);
+          nextLevel = levelFromTotalXp(nextXp);
+
+          if (completedLocalDate !== null) {
+            if (streak.last_active_date === completedLocalDate) {
+              activeDayCompletions = Math.max(0, activeDayCompletions - 1);
+              if (activeDayCompletions === 0) {
+                streak = revertActiveDay(streak, completedLocalDate);
+              }
+            }
+
+            const remainingForDate = await client.query<{ c: number }>(
+              `SELECT COUNT(*)::int AS c
+               FROM quests q
+               INNER JOIN milestones m ON m.id = q.milestone_id
+               INNER JOIN goals g ON g.id = m.goal_id
+               WHERE g.user_id = $1
+                 AND q.completed_at IS NOT NULL
+                 AND q.completed_local_date = $2`,
+              [userId, completedLocalDate],
+            );
+            if (Number(remainingForDate.rows[0]?.c ?? 0) === 0) {
+              await client.query(
+                `DELETE FROM stamps
+                 WHERE user_id = $1 AND stamp_date = $2`,
+                [userId, completedLocalDate],
+              );
+            }
+          }
+
+          await client.query(
+            `UPDATE user_progress
+             SET xp = $1, level = $2,
+                 current_streak = $3, best_streak = $4, last_active_date = $5,
+                 active_day_completions = $6
+             WHERE user_id = $7`,
+            [
+              nextXp,
+              nextLevel,
+              streak.current_streak,
+              streak.best_streak,
+              streak.last_active_date,
+              activeDayCompletions,
+              userId,
+            ],
+          );
+        }
+
+        const stampRows = await client.query<StampRowInput>(
+          `SELECT card_number, stamp_date
+           FROM stamps
+           WHERE user_id = $1
+           ORDER BY card_number ASC, stamp_date ASC, id ASC`,
+          [userId],
+        );
+        const stampCard = buildStampCardSnapshot(stampRows.rows);
+
+        await client.query('COMMIT');
+        return {
+          quest: mapQuest(target),
+          xpReversed: wasCompleted,
+          progress: progressSnapshotFromXp(nextXp, streak),
+          stampCard,
+        };
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+    },
   };
 }
 
