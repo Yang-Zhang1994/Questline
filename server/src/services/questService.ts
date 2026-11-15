@@ -7,7 +7,11 @@ import {
   type ChatMessage,
   type ConfirmRescheduleResponse,
   type ConfirmWeekPlanResponse,
+  type CreateQuestBody,
+  type CreateQuestResponse,
   type CurrentMilestoneQuestsResponse,
+  type DeleteQuestResponse,
+  type MilestoneQuestsResponse,
   type ProposeRescheduleResponse,
   type ProposeWeekPlanResponse,
   type ProposedQuest,
@@ -841,6 +845,28 @@ export function createQuestService(deps: QuestServiceDeps) {
     };
   }
 
+  async function listMilestoneQuests(
+    _userId: number,
+    _milestoneId: number,
+  ): Promise<MilestoneQuestsResponse> {
+    throw new Error('Not implemented: listMilestoneQuests');
+  }
+
+  async function createManualQuest(
+    _userId: number,
+    _input: CreateQuestBody,
+  ): Promise<CreateQuestResponse> {
+    throw new Error('Not implemented: createManualQuest');
+  }
+
+  async function deleteQuest(
+    _userId: number,
+    _questId: number,
+    _localDate?: string,
+  ): Promise<DeleteQuestResponse> {
+    throw new Error('Not implemented: deleteQuest');
+  }
+
   return {
     getCurrentMilestoneQuests,
     generateCurrentMilestoneQuests,
@@ -849,6 +875,9 @@ export function createQuestService(deps: QuestServiceDeps) {
     confirmWeekPlan,
     proposeReschedule,
     confirmReschedule,
+    listMilestoneQuests,
+    createManualQuest,
+    deleteQuest,
   };
 }
 

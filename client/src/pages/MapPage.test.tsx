@@ -133,4 +133,61 @@ describe('MapPage', () => {
     expect(alert.textContent).not.toContain('[');
     expect(consoleErrorSpy).toHaveBeenCalled();
   });
+
+  it('opens the accessible milestone sheet when a milestone node is tapped, closes on Escape, and returns focus to the milestone node (Issue #20)', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      text: async () => JSON.stringify(mockPayload),
+    } as Response);
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      text: async () =>
+        JSON.stringify({
+          milestone: {
+            id: 2,
+            title: 'Build a tiny daily reading habit',
+            description: 'Read graded readers for 15 minutes each day.',
+            target_date: '2026-12-01',
+            status: 'current',
+            position: 2,
+          },
+          quests: [
+            {
+              id: 50,
+              milestone_id: 2,
+              title: 'Read 2 pages before tea',
+              due_date: '2026-11-10',
+              estimated_minutes: 15,
+              completed_at: null,
+            },
+          ],
+          done_count: 0,
+          total_count: 1,
+        }),
+    } as Response);
+
+    render(
+      <BrowserRouter>
+        <MapPage />
+      </BrowserRouter>,
+    );
+
+    const node = await screen.findByTestId('milestone-node-2');
+    node.focus();
+    node.click();
+
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toBeInTheDocument();
+    expect(await screen.findByText('Read 2 pages before tea')).toBeInTheDocument();
+
+    // Pressing Escape closes the dialog and restores focus to the milestone node
+    const { fireEvent, waitFor } = await import('@testing-library/react');
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+    expect(document.activeElement).toBe(node);
+  });
 });

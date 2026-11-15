@@ -519,3 +519,83 @@ export const ToggleQuestCompletionResponseSchema = z.object({
 });
 
 export type ToggleQuestCompletionResponse = z.infer<typeof ToggleQuestCompletionResponseSchema>;
+
+/** Manual quest creation + milestone sheet listing + quest deletion (Issue #20). */
+export const MilestoneSheetMilestoneSchema = z.object({
+  id: z.number().int().positive(),
+  title: z.string().min(1),
+  description: z.string().nullable(),
+  target_date: IsoDateSchema.nullable(),
+  status: z.enum(['upcoming', 'current', 'completed']),
+  position: z.number().int().positive(),
+  time_budget_minutes_per_day: z.number().int().positive().optional(),
+});
+
+export type MilestoneSheetMilestone = z.infer<typeof MilestoneSheetMilestoneSchema>;
+
+export const MilestoneQuestsResponseSchema = z.object({
+  milestone: MilestoneSheetMilestoneSchema,
+  quests: z.array(QuestSchema),
+  done_count: z.number().int().nonnegative(),
+  total_count: z.number().int().nonnegative(),
+});
+
+export type MilestoneQuestsResponse = z.infer<typeof MilestoneQuestsResponseSchema>;
+
+export const CreateQuestBodySchema = z.object({
+  milestone_id: z.number().int().positive('Milestone id is required'),
+  title: z
+    .string()
+    .trim()
+    .min(1, 'Please give your quest a name before adding it ♡')
+    .max(200, 'Quest title is too long (max 200 characters)'),
+  due_date: IsoDateSchema,
+  estimated_minutes: z
+    .number()
+    .int('Estimated minutes must be a whole number')
+    .min(1, 'Estimated minutes must be at least 1')
+    .max(120, 'Estimated minutes must be 120 or less')
+    .nullable()
+    .optional(),
+  local_date: IsoDateSchema.optional(),
+});
+
+export type CreateQuestBody = z.infer<typeof CreateQuestBodySchema>;
+
+export function createManualQuestBodySchema(todayLocalDate: string) {
+  return CreateQuestBodySchema.superRefine((data, ctx) => {
+    if (data.due_date < todayLocalDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['due_date'],
+        message: 'Please pick today or a future date for your quest ♡',
+      });
+    }
+  });
+}
+
+export const CreateQuestResponseSchema = z.object({
+  quest: QuestSchema,
+  daily_minutes_on_due_date: z.number().int().nonnegative().optional(),
+  time_budget_minutes_per_day: z.number().int().positive().optional(),
+  over_daily_budget: z.boolean().optional(),
+});
+
+export type CreateQuestResponse = z.infer<typeof CreateQuestResponseSchema>;
+
+export const DeleteQuestBodySchema = z.object({
+  local_date: IsoDateSchema.optional(),
+});
+
+export type DeleteQuestBody = z.infer<typeof DeleteQuestBodySchema>;
+
+export const DeleteQuestResponseSchema = z.object({
+  ok: z.literal(true),
+  quest: QuestSchema,
+  xp_reversed: z.boolean(),
+  progress: UserProgressSchema,
+  stamp_card: StampCardSchema,
+});
+
+export type DeleteQuestResponse = z.infer<typeof DeleteQuestResponseSchema>;
+
