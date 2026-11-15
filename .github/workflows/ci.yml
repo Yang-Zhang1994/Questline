@@ -52,7 +52,7 @@ jobs:
       - name: Test
         run: npm test
 
-      # TODO(#TBD-zod, #TBD-vitest): make blocking again once zod 4.x and vitest 5.x land.
+      # TODO(#80, #81): make blocking again once zod 4.x (#80) and vitest 5.x (#81) land.
       # Known advisories: zod <4.6.6 (high, runtime), tinypool via vitest 3.x (critical, dev-only).
       # See README "Known security advisories".
       - name: Security audit (non-blocking)

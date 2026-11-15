@@ -252,8 +252,8 @@ CI runs `npm audit --audit-level=high` with `continue-on-error: true` until thes
 
 | Advisory | Package (path) | Scope | Tracking |
 | -------- | -------------- | ----- | -------- |
-| [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) — memory exhaustion validating oversized constrained collections (high) | `zod@3.25.76` (server, client, shared, `@anthropic-ai/sdk`) | runtime | Issue #TBD — upgrade zod to 4.x |
-| [GHSA-5gmw-xhrv-c9v3](https://github.com/advisories/GHSA-5gmw-xhrv-c9v3), [GHSA-85c8-ppgw-ccpr](https://github.com/advisories/GHSA-85c8-ppgw-ccpr) — prototype pollution → RCE (critical) | `tinypool@1.1.1` via `vitest@3.2.7` | dev only | Issue #TBD — upgrade vitest to 5.x |
+| [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) — memory exhaustion validating oversized constrained collections (high) | `zod@3.25.76` (server, client, shared, `@anthropic-ai/sdk`) | runtime | [#80](https://github.com/Yang-Zhang1994/Questline/issues/80) — upgrade zod to 4.x |
+| [GHSA-5gmw-xhrv-c9v3](https://github.com/advisories/GHSA-5gmw-xhrv-c9v3), [GHSA-85c8-ppgw-ccpr](https://github.com/advisories/GHSA-85c8-ppgw-ccpr) — prototype pollution → RCE (critical) | `tinypool@1.1.1` via `vitest@3.2.7` | dev only | [#81](https://github.com/Yang-Zhang1994/Questline/issues/81) — upgrade vitest to 5.x |
 
 The audit step goes back to blocking once both Issues are closed.
 
