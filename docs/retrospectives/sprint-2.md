@@ -1,6 +1,6 @@
 # Sprint 2 Retrospective — Questline (P2)
 
-> **STATUS: DRAFT — Pending confirmation by both partners (`Yang-Zhang1994` and `Yifeicarrots`).**  
+> **STATUS: Yang Zhang confirmed (`2026-11-15`). Pending confirmation by Yanni Zhao (`Yifeicarrots`).**  
 > Grounded in `git` commit history and PR merges from `2026-11-11` through `2026-11-15`.
 
 **Sprint 2 Goal (from `docs/PRD.md`):** Stage advance, rewards (XP/streak/stamps), reschedule/week plan, multi-goal, diary, manual fallbacks, documentation, and production deployment (`#10`–`#16`, `#18`–`#21`, `#74`, `#80`, `#81`).  
@@ -28,3 +28,8 @@
 - Upgrade `zod` to 4.x (`#80`) and `vitest` to 5.x (`#81`), then make `npm audit --audit-level=high` blocking in CI.
 - Add Playwright E2E coverage for Flows A/B/C and a diary history view.
 - Confirm both partners' sign-off on [docs/contribution-log.md](../contribution-log.md) and both retrospectives.
+
+## Partner Confirmation
+
+- [x] **Yang Zhang (`Yang-Zhang1994`)** — reviewed and confirmed (`2026-11-15`)
+- [ ] **Yanni Zhao (`Yifeicarrots`)** — reviewed and confirmed
