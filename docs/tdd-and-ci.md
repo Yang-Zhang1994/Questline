@@ -24,8 +24,8 @@ Companion to `AGENTS.md` §1.6 / §4–5. Stack: Vitest, RTL, Supertest + test P
 
 - Coverage targets: ≥80% `server/src/services` + `server/src/ai/parse.ts`; ≥70% overall.
 - CI must fail on lint, type errors, or failing tests.
-- Prefer multi-stage GitHub Actions: install → lint/typecheck → unit/API → e2e (when ready) → security scan (`npm audit` / configured scanner).
-- Deploy previews and env management land via dedicated Issues; do not invent deploy tooling in unrelated PRs.
+- Multi-stage GitHub Actions: install → lint/typecheck → build → unit/API → **blocking** `npm audit --audit-level=high` → Playwright E2E (`e2e/` against Express + `client/dist`) → PR preview artifact + Render `previews.generation: automatic`.
+- Local E2E: create DB `questline_e2e`, then `npm run test:e2e` (set `E2E_REUSE=1` only if a production `npm start` is already serving the SPA).
 
 ## Definition of Done (testing slice)
 

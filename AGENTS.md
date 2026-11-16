@@ -37,9 +37,9 @@ Pin exact versions in `package.json` and commit the lockfile. Do not upgrade maj
 | Backend              | Express                            | 5.x                  |
 | Database             | PostgreSQL (`pg` or equivalent)    | 16.x+                |
 | Auth                 | JWT (OAuth optional later)         | —                    |
-| Validation           | `zod` (shared client/server)       | 3.x                  |
+| Validation           | `zod` (shared client/server)       | 4.x                  |
 | AI                   | Claude API via `@anthropic-ai/sdk` | latest stable        |
-| Unit/component tests | Vitest + React Testing Library     | Vitest 3.x           |
+| Unit/component tests | Vitest + React Testing Library     | Vitest 5.x           |
 | API / E2E tests      | Supertest / Playwright             | latest stable        |
 | Lint/format          | ESLint (flat config) + Prettier    | ESLint 9.x           |
 | CI                   | GitHub Actions                     | —                    |

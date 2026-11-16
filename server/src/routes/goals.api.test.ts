@@ -69,13 +69,13 @@ describe('GET/POST /api/goals (Issue #4)', () => {
   });
 
   function buildApp(ai?: Partial<ChatAiClient>) {
-    const base: ChatAiClient = {
+    const base = {
       completeChat: vi.fn(async () => 'soft chat'),
       evaluateInterviewAnswer,
       proposeGoalDraft,
       reviseGoalDraft,
-    };
-    return createApp({ db, clock, ai: { ...base, ...ai } });
+    } as ChatAiClient;
+    return createApp({ db, clock, ai: { ...base, ...ai } as ChatAiClient });
   }
 
   async function completeInterview(app: ReturnType<typeof createApp>, token: string) {

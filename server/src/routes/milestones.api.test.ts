@@ -71,13 +71,13 @@ describe('GET/POST /api/milestones (Issue #5)', () => {
     return createApp({
       db,
       clock,
-      ai: ai ?? {
+      ai: ai ?? ({
         completeChat: vi.fn(async () => 'Chat reply ♡'),
         evaluateInterviewAnswer: vi.fn(),
         proposeGoalDraft: vi.fn(),
         reviseGoalDraft: vi.fn(),
         proposeMilestones,
-      },
+      }) as ChatAiClient,
     });
   }
 

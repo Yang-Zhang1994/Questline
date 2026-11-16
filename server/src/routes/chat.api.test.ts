@@ -53,12 +53,12 @@ describe('GET/POST /api/chat interview (Issue #3)', () => {
     return createApp({
       db,
       clock,
-      ai: ai ?? {
+      ai: ai ?? ({
         completeChat,
         evaluateInterviewAnswer,
         proposeGoalDraft: vi.fn(),
         reviseGoalDraft: vi.fn(),
-      },
+      }) as ChatAiClient,
     });
   }
 

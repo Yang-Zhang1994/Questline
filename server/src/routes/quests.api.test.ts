@@ -75,14 +75,14 @@ describe('GET /api/quests & POST /api/quests/generate (Issue #7)', () => {
     return createApp({
       db,
       clock,
-      ai: ai ?? {
+      ai: ai ?? ({
         completeChat: vi.fn(async () => 'Chat reply ♡'),
         evaluateInterviewAnswer: vi.fn(),
         proposeGoalDraft: vi.fn(),
         reviseGoalDraft: vi.fn(),
         proposeMilestones: vi.fn(),
         generateDailyQuests,
-      },
+      }) as ChatAiClient,
     });
   }
 
@@ -571,7 +571,7 @@ describe('GET /api/quests & POST /api/quests/generate (Issue #7)', () => {
           reviseGoalDraft: vi.fn(),
           proposeMilestones: vi.fn(),
           generateDailyQuests,
-        },
+        } as ChatAiClient,
       });
       const token = await loginAsDemo(dynamicApp);
 
@@ -923,7 +923,7 @@ describe('GET /api/quests & POST /api/quests/generate (Issue #7)', () => {
     });
 
     it('handles invalid AI output gracefully with 503 AI_UNAVAILABLE and rejects another user with 404 NOT_FOUND', async () => {
-      const badAi: ChatAiClient = {
+      const badAi = {
         completeChat: vi.fn(),
         evaluateInterviewAnswer: vi.fn(),
         proposeGoalDraft: vi.fn(),
@@ -936,7 +936,7 @@ describe('GET /api/quests & POST /api/quests/generate (Issue #7)', () => {
             { title: 'Way over budget', due_date: '2026-11-10', estimated_minutes: 999 },
           ],
         })),
-      };
+      } as ChatAiClient;
       const app = buildApp(badAi);
       const demoToken = await loginAsDemo(app);
 
