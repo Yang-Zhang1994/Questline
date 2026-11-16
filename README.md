@@ -4,6 +4,8 @@
 
 Cozy life-sim goal tracker: chat with **Mochi**, confirm a measurable **Goal**, walk a game-style roadmap of **Milestones**, and complete small daily **Quests** with XP, streaks, and stamps.
 
+**Demo Video:** https://northeastern-my.sharepoint.com/:v:/g/personal/zhao_yann_northeastern_edu/IQAeTMGSPKIlS4BKXLBU5izmARRZFcLjTXgwlzIEG9hxSxI?nav=eyJyZWZlcnJhbEluZm8iOnsicmVmZXJyYWxBcHAiOiJPbmVEcml2ZUZvckJ1c2luZXNzIiwicmVmZXJyYWxBcHBQbGF0Zm9ybSI6IldlYiIsInJlZmVycmFsTW9kZSI6InZpZXciLCJyZWZlcnJhbFZpZXciOiJNeUZpbGVzTGlua0NvcHkifX0&e=vrdUHu
+
 ## The Ambition-Action Gap
 
 Many people start personal projects with big dreams but fall into the **Ambition-Action Gap**: a goal like “learn Japanese” feels exciting but is too vague to act on. Nobody tells them what to do *today*, so they over-plan once and never follow through — or never plan at all. Tracking alone feels lonely; missing days creates guilt; the project dies within weeks.
