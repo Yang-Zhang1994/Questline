@@ -1,6 +1,6 @@
 # Contribution Log — Questline (P2)
 
-> **STATUS: DRAFT — Pending confirmation by both partners (`Yang-Zhang1994` and `Yifeicarrots`).**  
+> **STATUS: Yang Zhang confirmed (`2026-11-15`). Pending confirmation by Yanni Zhao (`Yifeicarrots`).**  
 > Compiled from `git` commit history, PR merge commits, and Issue references in `Yang-Zhang1994/Questline` through `2026-11-15`.
 
 **Repo:** https://github.com/Yang-Zhang1994/Questline (Deploy fork: https://github.com/Yifeicarrots/Questline1)  
@@ -27,7 +27,7 @@
 | `#16` (PRs `#22`–`#26`, `#52`) | Docs / Product | Yang Zhang | PRD, `AGENTS.md`, mockup screenshots, Scrum/TDD/data-model docs, README setup & usage |
 | PR `#27` | Architecture | Yang Zhang | Lock P2 stack (PostgreSQL, TailwindCSS, JWT) and trim `AGENTS.md` |
 | PR `#56` | Docs / API | Yang Zhang | Add `docs/openapi.yaml`, `docs/architecture.md`, and `docs/diagrams/*.svg` |
-| `#54`, `#55`, `#59`, `#60` (PRs `#57`, `#63`, `#65`) | Process | Yang Zhang | Sprint standup/retro issues and `docs/partner-contribution-log.md` |
+| `#54`, `#55`, `#59`, `#60` (PRs `#57`, `#63`, `#65`) | Process | Yang Zhang | Sprint standup/retro issues; contribution log now lives in `docs/contribution-log.md` (`docs/partner-contribution-log.md` is a pointer) |
 | PR `#61` | Process / Git | Yang Zhang | Surgical revert of `#8`/`#9` so Yanni could re-own Today quest UI |
 
 ### 2. Core Infrastructure, Auth, Styling & Deployment
@@ -79,5 +79,5 @@
 
 ## Partner Confirmation
 
-- [ ] **Yang Zhang (`Yang-Zhang1994`)** — reviewed and confirmed
+- [x] **Yang Zhang (`Yang-Zhang1994`)** — reviewed and confirmed (`2026-11-15`)
 - [ ] **Yanni Zhao (`Yifeicarrots`)** — reviewed and confirmed

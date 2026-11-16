@@ -1,6 +1,6 @@
 # Sprint 1 Retrospective — Questline (P2)
 
-> **STATUS: DRAFT — Pending confirmation by both partners (`Yang-Zhang1994` and `Yifeicarrots`).**  
+> **STATUS: Yang Zhang confirmed (`2026-11-15`). Pending confirmation by Yanni Zhao (`Yifeicarrots`).**  
 > Grounded in `git` commit history and PR merges from `2026-10-27` through `2026-11-12`.
 
 **Sprint 1 Goal (from `docs/PRD.md`):** Onboarding chat → confirm Goal + Milestones → roadmap → complete today's Quests (`#1`–`#9`, `#17`, plus `#31`, `#32`).  
@@ -28,3 +28,8 @@
 - Keep one Issue per branch and coordinate Today/Map/Talk ownership upfront to avoid reverts.
 - Have both partners actively review and merge each other's PRs.
 - Land Sprint 2 features (`#10`–`#15`, `#18`–`#21`), deployment (`#74`), and documentation (`#16`, OpenAPI, architecture) before submission.
+
+## Partner Confirmation
+
+- [x] **Yang Zhang (`Yang-Zhang1994`)** — reviewed and confirmed (`2026-11-15`)
+- [ ] **Yanni Zhao (`Yifeicarrots`)** — reviewed and confirmed
