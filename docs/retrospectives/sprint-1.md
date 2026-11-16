@@ -1,6 +1,6 @@
 # Sprint 1 Retrospective — Questline (P2)
 
-> **STATUS: Yang Zhang confirmed (`2026-11-15`). Pending confirmation by Yanni Zhao (`Yifeicarrots`).**  
+> **STATUS: Confirmed by both partners (`2026-11-15`).**  
 > Grounded in `git` commit history and PR merges from `2026-10-27` through `2026-11-12`.
 
 **Sprint 1 Goal (from `docs/PRD.md`):** Onboarding chat → confirm Goal + Milestones → roadmap → complete today's Quests (`#1`–`#9`, `#17`, plus `#31`, `#32`).  
@@ -32,4 +32,4 @@
 ## Partner Confirmation
 
 - [x] **Yang Zhang (`Yang-Zhang1994`)** — reviewed and confirmed (`2026-11-15`)
-- [ ] **Yanni Zhao (`Yifeicarrots`)** — reviewed and confirmed
+- [x] **Yanni Zhao (`Yifeicarrots`)** — reviewed and confirmed (`2026-11-15`)

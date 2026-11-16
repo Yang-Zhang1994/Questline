@@ -1,6 +1,6 @@
 # Sprint 2 Retrospective — Questline (P2)
 
-> **STATUS: Yang Zhang confirmed (`2026-11-15`). Pending confirmation by Yanni Zhao (`Yifeicarrots`).**  
+> **STATUS: Confirmed by both partners (`2026-11-15`).**  
 > Grounded in `git` commit history and PR merges from `2026-11-11` through `2026-11-15`.
 
 **Sprint 2 Goal (from `docs/PRD.md`):** Stage advance, rewards (XP/streak/stamps), reschedule/week plan, multi-goal, diary, manual fallbacks, documentation, and production deployment (`#10`–`#16`, `#18`–`#21`, `#74`, `#80`, `#81`).  
@@ -32,4 +32,4 @@
 ## Partner Confirmation
 
 - [x] **Yang Zhang (`Yang-Zhang1994`)** — reviewed and confirmed (`2026-11-15`)
-- [ ] **Yanni Zhao (`Yifeicarrots`)** — reviewed and confirmed
+- [x] **Yanni Zhao (`Yifeicarrots`)** — reviewed and confirmed (`2026-11-15`)

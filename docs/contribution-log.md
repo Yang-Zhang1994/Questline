@@ -1,6 +1,6 @@
 # Contribution Log — Questline (P2)
 
-> **STATUS: Yang Zhang confirmed (`2026-11-15`). Pending confirmation by Yanni Zhao (`Yifeicarrots`).**  
+> **STATUS: Confirmed by both partners (`2026-11-15`).**  
 > Compiled from `git` commit history, PR merge commits, and Issue references in `Yang-Zhang1994/Questline` through `2026-11-15`.
 
 **Repo:** https://github.com/Yang-Zhang1994/Questline (Deploy fork: https://github.com/Yifeicarrots/Questline1)  
@@ -80,4 +80,4 @@
 ## Partner Confirmation
 
 - [x] **Yang Zhang (`Yang-Zhang1994`)** — reviewed and confirmed (`2026-11-15`)
-- [ ] **Yanni Zhao (`Yifeicarrots`)** — reviewed and confirmed
+- [x] **Yanni Zhao (`Yifeicarrots`)** — reviewed and confirmed (`2026-11-15`)
