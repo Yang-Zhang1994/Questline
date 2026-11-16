@@ -12,6 +12,9 @@ services:
     buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
+    # Pull Request Previews (enable in the Render dashboard if the plan allows).
+    previews:
+      generation: automatic
     envVars:
       - key: NODE_VERSION
         value: "22"

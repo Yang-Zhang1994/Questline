@@ -134,6 +134,7 @@ JWT_SECRET=change-me-in-local-dev
 sudo -u postgres psql -c "CREATE USER questline WITH PASSWORD 'questline';"
 sudo -u postgres psql -c "CREATE DATABASE questline OWNER questline;"
 sudo -u postgres psql -c "CREATE DATABASE questline_test OWNER questline;"
+sudo -u postgres psql -c "CREATE DATABASE questline_e2e OWNER questline;"
 
 # 2. Configure env
 cp .env.example .env
@@ -141,6 +142,7 @@ cp .env.example .env
 
 # 3. Install
 npm install
+npx playwright install chromium   # once, for local E2E
 
 # 4. Run API + client (migrations + demo seed run on API boot)
 npm run dev:server   # http://localhost:3001
@@ -154,7 +156,8 @@ Or both from the root: `npm run dev`.
 ```bash
 npm run lint
 npm run typecheck
-npm test             # uses DATABASE_URL (Vitest targets questline_test in CI)
+npm test             # Vitest (server Supertest + client RTL)
+npm run test:e2e     # Playwright against production Express + client/dist (uses questline_e2e by default)
 ```
 
 Migrations live in `server/src/db/migrations/` and apply automatically when the server (or tests) open the pool.
@@ -254,18 +257,8 @@ JWT notes: the API returns a token in the JSON body; the SPA sends `Authorizatio
 - **One active Goal** drives Today/Map at a time (the multi-goal selector can switch goals, and only one is active).
 - **Live Mochi chat** needs `ANTHROPIC_API_KEY` + `ANTHROPIC_MODEL`; without keys (or with `ALLOW_ECHO_AI=true`), use the manual plan form or seeded demo Goal.
 - **Scope:** SQLite / Next.js paths are **not** supported for new work (stack is Postgres + Vite). No native apps, push/email notifications, calendar sync, payments, or social sharing.
-- **Testing:** Playwright E2E suite is planned; CI currently covers ESLint, TypeScript typecheck, production client build, Vitest + Supertest/RTL (mocked Claude), and a non-blocking `npm audit --audit-level=high` (see below).
-
-### Known security advisories
-
-CI runs `npm audit --audit-level=high` with `continue-on-error: true` until these two security Issues are resolved (both require a breaking major-version bump, so `npm audit fix` without `--force` cannot resolve them):
-
-| Advisory | Package (path) | Scope | Tracking |
-| -------- | -------------- | ----- | -------- |
-| [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) — memory exhaustion validating oversized constrained collections (high) | `zod@3.25.76` (server, client, shared, `@anthropic-ai/sdk`) | runtime | [#80](https://github.com/Yang-Zhang1994/Questline/issues/80) — upgrade zod to 4.x |
-| [GHSA-5gmw-xhrv-c9v3](https://github.com/advisories/GHSA-5gmw-xhrv-c9v3), [GHSA-85c8-ppgw-ccpr](https://github.com/advisories/GHSA-85c8-ppgw-ccpr) — prototype pollution → RCE (critical) | `tinypool@1.1.1` via `vitest@3.2.7` | dev only | [#81](https://github.com/Yang-Zhang1994/Questline/issues/81) — upgrade vitest to 5.x |
-
-The audit step goes back to blocking once both Issues are closed.
+- **Testing:** CI runs ESLint, TypeScript typecheck, production client build, Vitest + Supertest/RTL (mocked Claude), **blocking** `npm audit --audit-level=high`, and **Playwright E2E** (`e2e/`, Chromium) against the Express + `client/dist` build with demo seed + `ALLOW_ECHO_AI`.
+- **PR deploy previews:** every PR uploads a `pr-preview-build-<n>` artifact (production SPA) and comments on the PR; `render.yaml` sets `previews.generation: automatic` for Render Pull Request Previews when enabled on the service.
 
 ## Future ideas
 

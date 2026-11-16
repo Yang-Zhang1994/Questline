@@ -26,7 +26,7 @@ jobs:
 
     env:
       DATABASE_URL: postgres://questline:questline@localhost:5432/questline_test
-      JWT_SECRET: ci-test-jwt-secret-not-for-prod
+      JWT_SECRET: ci-test-jwt-secret-not-for-prod!!
       NODE_VERSION: '22'
 
     steps:
@@ -52,9 +52,126 @@ jobs:
       - name: Test
         run: npm test
 
-      # TODO(#80, #81): make blocking again once zod 4.x (#80) and vitest 5.x (#81) land.
-      # Known advisories: zod <4.6.6 (high, runtime), tinypool via vitest 3.x (critical, dev-only).
-      # See README "Known security advisories".
-      - name: Security audit (non-blocking)
+      - name: Security audit
         run: npm audit --audit-level=high
-        continue-on-error: true
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: build-test
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: questline
+          POSTGRES_PASSWORD: questline
+          POSTGRES_DB: questline_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U questline -d questline_e2e"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://questline:questline@localhost:5432/questline_e2e
+      JWT_SECRET: ci-e2e-jwt-secret-at-least-32-chars!!
+      NODE_VERSION: '22'
+      CI: 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium --with-deps
+
+      - name: Playwright E2E
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+
+  preview:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    needs: build-test
+    permissions:
+      contents: read
+      pull-requests: write
+
+    env:
+      NODE_VERSION: '22'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build production SPA
+        run: npm run build
+
+      - name: Upload PR preview build
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-preview-build-${{ github.event.pull_request.number }}
+          path: client/dist/
+          retention-days: 7
+
+      - name: Comment preview details on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request.number;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              '### PR deploy preview',
+              '',
+              `- **Production SPA build** uploaded as artifact \`pr-preview-build-${pr}\` (download from the [workflow run](${runUrl})).`,
+              '- **E2E** boots the same Express + `client/dist` build against Postgres in CI (`npm run test:e2e`).',
+              '- **Render:** Blueprint enables automatic PR previews when the linked Render service has Pull Request Previews turned on (`render.yaml` → `previews.generation: automatic`).',
+              `- Live prod: https://questline-lgbi.onrender.com`,
+            ].join('\n');
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr,
+            });
+            const marker = '### PR deploy preview';
+            const existing = comments.find((c) => c.user?.type === 'Bot' && c.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr,
+                body,
+              });
+            }
